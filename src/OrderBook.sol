@@ -658,4 +658,18 @@ contract OrderBook is
         Storage storage $ = getStorage();
         return $.orderQueues[side][price].orderCount == 0;
     }
+
+    function updateTradingRules(TradingRules memory _newRules) external {
+        Storage storage $ = getStorage();
+
+        if (msg.sender != owner()) {
+            revert NotAuthorized();
+        }
+
+        $.tradingRules = _newRules;
+
+        emit TradingRulesUpdated($.poolKey.toId(), _newRules);
+    }
+
+    error NotAuthorized();
 }

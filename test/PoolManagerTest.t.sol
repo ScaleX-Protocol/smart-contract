@@ -134,4 +134,41 @@ contract PoolManagerTest is Test {
         // Assert equality
         assertEq(uint256(PoolId.unwrap(expectedId)), uint256(PoolId.unwrap(actualId)));
     }
+
+    function testCreatePoolWithInvalidTradingRules() public {
+        PoolKey memory key = PoolKey(weth, usdc);
+
+        IOrderBook.TradingRules memory invalidRules = IOrderBook.TradingRules({
+            minTradeAmount: 0,
+            minAmountMovement: 0,
+            minOrderSize: 0,
+            minPriceMovement: 0
+        });
+
+        vm.startPrank(owner);
+        poolManager.setRouter(operator);
+        vm.expectRevert();
+        poolManager.createPool(weth, usdc, invalidRules);
+        vm.stopPrank();
+    }
+
+    function testOverrideTradingRules() public {
+        PoolKey memory key = PoolKey(weth, usdc);
+
+        IOrderBook.TradingRules memory customRules = IOrderBook.TradingRules({
+            minTradeAmount: 2e14,
+            minAmountMovement: 2e14,
+            minOrderSize: 10e6,
+            minPriceMovement: 2e4
+        });
+
+        vm.startPrank(owner);
+        poolManager.setRouter(operator);
+        poolManager.createPool(weth, usdc, customRules);
+        vm.stopPrank();
+
+        IPoolManager.Pool memory pool = poolManager.getPool(key);
+        assertEq(IOrderBook(pool.orderBook).getTradingRules().minTradeAmount, 2e14);
+        assertEq(IOrderBook(pool.orderBook).getTradingRules().minOrderSize, 10e6);
+    }
 }

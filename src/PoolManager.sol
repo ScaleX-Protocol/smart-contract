@@ -10,6 +10,7 @@ import {IPoolManager} from "./interfaces/IPoolManager.sol";
 import {Currency} from "./libraries/Currency.sol";
 import {PoolId, PoolKey} from "./libraries/Pool.sol";
 import {PoolManagerStorage} from "./storages/PoolManagerStorage.sol";
+import {TradingRulesValidator} from "./libraries/TradingRulesValidator.sol";
 
 import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
@@ -60,6 +61,8 @@ contract PoolManager is Initializable, OwnableUpgradeable, PoolManagerStorage, I
             revert InvalidRouter();
         }
 
+        validateTradingRules(_tradingRules);
+
         PoolKey memory key = createPoolKey(_baseCurrency, _quoteCurrency);
         PoolId id = key.toId();
 
@@ -100,6 +103,25 @@ contract PoolManager is Initializable, OwnableUpgradeable, PoolManagerStorage, I
         emit PoolCreated(id, address(orderBookProxy), key.baseCurrency, key.quoteCurrency);
 
         return id;
+    }
+
+    function updatePoolTradingRules(
+        PoolId _poolId,
+        IOrderBook.TradingRules memory _newRules
+    ) external onlyOwner {
+        validateTradingRules(_newRules);
+
+        Storage storage $ = getStorage();
+
+        require(address($.pools[_poolId].orderBook) != address(0), "Pool does not exist");
+
+        IOrderBook(address($.pools[_poolId].orderBook)).updateTradingRules(_newRules);
+
+        emit TradingRulesUpdated(_poolId, _newRules);
+    }
+
+    function validateTradingRules(IOrderBook.TradingRules memory _rules) internal pure {
+        TradingRulesValidator.validate(_rules);
     }
 
     function addCommonIntermediary(
