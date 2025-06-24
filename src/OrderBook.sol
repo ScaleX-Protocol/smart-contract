@@ -395,6 +395,11 @@ contract OrderBook is
 
         if (matchingOrder.filled == matchingOrder.quantity) {
             _removeOrderFromQueue(queue, matchingOrder);
+            matchingOrder.status = Status.FILLED;
+            emit UpdateOrder(matchingOrder.id, uint48(block.timestamp), matchingOrder.filled, Status.FILLED);
+        } else {
+            matchingOrder.status = Status.PARTIALLY_FILLED;
+            emit UpdateOrder(matchingOrder.id, uint48(block.timestamp), matchingOrder.filled, Status.PARTIALLY_FILLED);
         }
 
         emit OrderMatched(
