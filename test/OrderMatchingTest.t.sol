@@ -1,27 +1,28 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.26;
 
-import {GTXRouter} from "../src/GTXRouter.sol";
-import {OrderBook} from "../src/OrderBook.sol";
-import {PoolManager} from "../src/PoolManager.sol";
-import {IOrderBook} from "../src/interfaces/IOrderBook.sol";
-import {IPoolManager} from "../src/interfaces/IPoolManager.sol";
-
-import {Currency} from "../src/libraries/Currency.sol";
-import {PoolKey} from "../src/libraries/Pool.sol";
-import {MockToken} from "../src/mocks/MockToken.sol";
-
-import {BeaconDeployer} from "./helpers/BeaconDeployer.t.sol";
-import {ERC20Mock} from "@openzeppelin/contracts/mocks/token/ERC20Mock.sol";
+import "../src/interfaces/IOrderBook.sol";
 import "@openzeppelin/contracts/proxy/beacon/BeaconProxy.sol";
 import "@openzeppelin/contracts/proxy/beacon/UpgradeableBeacon.sol";
-import {Test} from "forge-std/Test.sol";
-
-import {Upgrades} from "openzeppelin-foundry-upgrades/Upgrades.sol";
-
 import {BalanceManager} from "../src/BalanceManager.sol";
 import {BeaconDeployer} from "./helpers/BeaconDeployer.t.sol";
+
+import {BeaconDeployer} from "./helpers/BeaconDeployer.t.sol";
+import {Currency} from "../src/libraries/Currency.sol";
+import {ERC20Mock} from "@openzeppelin/contracts/mocks/token/ERC20Mock.sol";
+
+import {GTXRouter} from "../src/GTXRouter.sol";
+import {IOrderBook} from "../src/interfaces/IOrderBook.sol";
+import {IPoolManager} from "../src/interfaces/IPoolManager.sol";
+import {MockToken} from "../src/mocks/MockToken.sol";
+import {OrderBook} from "../src/OrderBook.sol";
+
+import {PoolKey} from "../src/libraries/Pool.sol";
+
+import {PoolManager} from "../src/PoolManager.sol";
 import {Test, console} from "forge-std/Test.sol";
+import {Test} from "forge-std/Test.sol";
+import {Upgrades} from "openzeppelin-foundry-upgrades/Upgrades.sol";
 
 contract OrderMatchingTest is Test {
     OrderBook public orderBook;
@@ -145,7 +146,7 @@ contract OrderMatchingTest is Test {
         IOrderBook.Side side = IOrderBook.Side.BUY;
 
         IPoolManager.Pool memory pool = _getPool(baseCurrency, quoteCurrency);
-        router.placeOrderWithDeposit(pool, price, quantity, side);
+        router.placeOrderWithDeposit(pool, price, quantity, side, IOrderBook.TimeInForce.GTC);
 
         (uint48 orderCount, uint256 totalVolume) = orderBook.getOrderQueue(side, price);
 
@@ -162,7 +163,7 @@ contract OrderMatchingTest is Test {
         IOrderBook.Side limitSide = IOrderBook.Side.BUY;
 
         IPoolManager.Pool memory pool = _getPool(baseCurrency, quoteCurrency);
-        router.placeOrderWithDeposit(pool, limitPrice, limitQuantity, limitSide);
+        router.placeOrderWithDeposit(pool, limitPrice, limitQuantity, limitSide,IOrderBook.TimeInForce.GTC);
         vm.stopPrank();
 
         vm.startPrank(alice);

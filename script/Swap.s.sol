@@ -138,7 +138,8 @@ contract Swap is Script, DeployHelpers {
             wethUsdcPool,
             uint128(2000e8),
             uint128(3_000_000_000e18),
-            IOrderBook.Side.SELL
+            IOrderBook.Side.SELL,
+            IOrderBook.TimeInForce.GTC
         );
 
         vm.stopBroadcast();

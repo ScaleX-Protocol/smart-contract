@@ -39,18 +39,20 @@ contract GTXRouter is IGTXRouter, GTXRouterStorage, Initializable, OwnableUpgrad
         IPoolManager.Pool memory pool,
         uint128 _price,
         uint128 _quantity,
-        IOrderBook.Side _side
+        IOrderBook.Side _side,
+        IOrderBook.TimeInForce _timeInForce
     ) public returns (uint48 orderId) {
-        orderId = _placeLimitOrder(pool, _price, _quantity, _side, false, msg.sender);
+        orderId = _placeLimitOrder(pool, _price, _quantity, _side, _timeInForce, false, msg.sender);
     }
 
     function placeOrderWithDeposit(
         IPoolManager.Pool memory pool,
         uint128 _price,
         uint128 _quantity,
-        IOrderBook.Side _side
+        IOrderBook.Side _side,
+        IOrderBook.TimeInForce _timeInForce
     ) external returns (uint48 orderId) {
-        orderId = _placeLimitOrder(pool, _price, _quantity, _side, true, msg.sender);
+        orderId = _placeLimitOrder(pool, _price, _quantity, _side, _timeInForce, true, msg.sender);
     }
 
     function _validateCallerBalance(
@@ -103,6 +105,7 @@ contract GTXRouter is IGTXRouter, GTXRouterStorage, Initializable, OwnableUpgrad
         uint128 _price,
         uint128 _quantity,
         IOrderBook.Side _side,
+        IOrderBook.TimeInForce _timeInForce,
         bool depositTokens,
         address _user
     ) internal returns (uint48 orderId) {
@@ -118,7 +121,7 @@ contract GTXRouter is IGTXRouter, GTXRouterStorage, Initializable, OwnableUpgrad
             balanceManager.deposit(depositCurrency, requiredBalance, _user, _user);
         }
 
-        orderId = pool.orderBook.placeOrder(_price, _quantity, _side, _user, IOrderBook.TimeInForce.GTC);
+        orderId = pool.orderBook.placeOrder(_price, _quantity, _side, _user, _timeInForce);
     }
 
     function _placeMarketOrder(
