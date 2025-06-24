@@ -143,8 +143,8 @@ contract PlaceMarketMockOrderBook is Script, DeployHelpers {
 
         for (uint8 i = 0; i < numOrders; i++) {
             // Market orders typically use 0 for price
-            uint48 orderId = gtxRouter.placeMarketOrderWithDeposit(
-                pool, 
+            (uint48 orderId, uint128 filled) = gtxRouter.placeMarketOrderWithDeposit(
+                pool,
                 quantities[i % 5], 
                 IOrderBook.Side.BUY
             );
@@ -171,8 +171,8 @@ contract PlaceMarketMockOrderBook is Script, DeployHelpers {
 
         for (uint8 i = 0; i < numOrders; i++) {
             // Market orders typically use 0 for price
-            uint48 orderId = gtxRouter.placeMarketOrderWithDeposit(
-                pool, 
+            (uint48 orderId, uint128 filled) = gtxRouter.placeMarketOrderWithDeposit(
+                pool,
                 quantities[i % 5], 
                 IOrderBook.Side.SELL
             );

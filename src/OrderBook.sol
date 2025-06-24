@@ -268,7 +268,7 @@ contract OrderBook is
         uint128 quantity,
         Side side,
         address user
-    ) external onlyRouter nonReentrant returns (uint48 orderId) {
+    ) external onlyRouter nonReentrant returns (uint48 orderId, uint128 receivedAmount) {
         Storage storage $ = getStorage();
         validateOrder(0, quantity, side, OrderType.MARKET, TimeInForce.GTC);
 
@@ -290,13 +290,22 @@ contract OrderBook is
 
         emit OrderPlaced(orderId, user, side, 0, quantity, marketOrder.expiry, true, Status.OPEN);
 
-        _matchOrder(marketOrder, side, user, true);
+        uint128 filled = _matchOrder(marketOrder, side, user, true);
 
-        unchecked {
+        IBalanceManager bm = IBalanceManager($.balanceManager);
+        uint256 feeTaker = bm.feeTaker();
+        uint256 feeUnit = bm.getFeeUnit();
+        address feeReceiver = bm.feeReceiver();
+
+        uint128 feeAmount = uint128(uint256(filled) * feeTaker / feeUnit);
+        receivedAmount = filled > feeAmount ? filled - feeAmount : 0;
+
+
+    unchecked {
             $.nextOrderId++;
         }
 
-        return orderId;
+        return (orderId, receivedAmount);
     }
 
     function cancelOrder(uint48 orderId, address user) external onlyRouter {

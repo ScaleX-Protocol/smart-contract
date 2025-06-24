@@ -124,7 +124,7 @@ interface IOrderBook {
         uint48 orderId
     ) external view returns (Order memory order);
 
-    function placeMarketOrder(uint128 quantity, Side side, address user) external returns (uint48);
+    function placeMarketOrder(uint128 quantity, Side side, address user) external returns (uint48, uint128);
 
     function cancelOrder(uint48 orderId, address user) external;
 

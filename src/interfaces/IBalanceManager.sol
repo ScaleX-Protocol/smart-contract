@@ -65,4 +65,12 @@ interface IBalanceManager {
     function setAuthorizedOperator(address operator, bool approved) external;
 
     function setFees(uint256 _feeMaker, uint256 _feeTaker) external;
+
+    function feeMaker() external view returns (uint256);
+
+    function feeTaker() external view returns (uint256);
+
+    function feeReceiver() external view returns (address);
+
+    function getFeeUnit() external view returns (uint256);
 }

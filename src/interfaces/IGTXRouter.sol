@@ -27,13 +27,13 @@ interface IGTXRouter {
         IPoolManager.Pool memory pool,
         uint128 _quantity,
         IOrderBook.Side _side
-    ) external returns (uint48 orderId);
+    ) external returns (uint48 orderId, uint128 filled);
 
     function placeMarketOrderWithDeposit(
         IPoolManager.Pool memory pool,
         uint128 _quantity,
         IOrderBook.Side _side
-    ) external returns (uint48 orderId);
+    ) external returns (uint48 orderId, uint128 filled);
 
     function cancelOrder(IPoolManager.Pool memory pool, uint48 orderId) external;
 

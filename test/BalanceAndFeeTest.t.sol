@@ -60,10 +60,8 @@ contract BalanceAndFeeTest is Test, PoolHelper {
 
     function setUp() public {
         // Set up tokens
-        baseToken = new MockToken("WETH", "WETH", 18);
         quoteToken = new MockToken("USDC", "USDC", 6);
-        baseTokenAddress = address(baseToken);
-        quoteTokenAddress = address(quoteToken);
+        baseToken = new MockToken("WETH", "WETH", 18);
 
         rules = IOrderBook.TradingRules({
             minTradeAmount: 1e14, // 0.0001 ETH (18 decimals)
@@ -83,9 +81,6 @@ contract BalanceAndFeeTest is Test, PoolHelper {
         quoteToken.mint(charlie, initialAmount);
         quoteToken.mint(david, initialAmount);
 
-        baseCurrency = Currency.wrap(baseTokenAddress);
-        quoteCurrency = Currency.wrap(quoteTokenAddress);
-
         BeaconDeployer beaconDeployer = new BeaconDeployer();
 
         (BeaconProxy balanceManagerProxy, /*address balanceManagerBeacon*/ ) = beaconDeployer.deployUpgradeableContract(
@@ -104,6 +99,29 @@ contract BalanceAndFeeTest is Test, PoolHelper {
             abi.encodeCall(PoolManager.initialize, (owner, address(balanceManager), address(orderBookBeaconAddress)))
         );
         poolManager = PoolManager(address(poolManagerProxy));
+
+        Currency weth = Currency.wrap(address(quoteToken));
+        Currency usdc = Currency.wrap(address(baseToken));
+
+        PoolKey memory key = poolManager.createPoolKey(weth, usdc);
+
+        console.log("Pool key created with base currency:", address(Currency.unwrap(key.baseCurrency)));
+        console.log("Pool key created with quote currency:", address(Currency.unwrap(key.quoteCurrency)));
+
+        baseCurrency = key.baseCurrency;
+        quoteCurrency = key.quoteCurrency;
+
+        baseToken = MockToken(address(Currency.unwrap(baseCurrency)));
+        quoteToken = MockToken(address(Currency.unwrap(quoteCurrency)));
+
+        baseTokenAddress = address(baseToken);
+        quoteTokenAddress = address(quoteToken);
+
+        baseDecimals = MockToken(baseTokenAddress).decimals();
+        quoteDecimals = MockToken(quoteTokenAddress).decimals();
+
+        console.log("Base decimals:", baseDecimals);
+        console.log("Quote decimals:", quoteDecimals);
 
         (BeaconProxy routerProxy, /*address gtxRouterBeacon*/ ) = beaconDeployer.deployUpgradeableContract(
             address(new GTXRouter()),
@@ -140,9 +158,6 @@ contract BalanceAndFeeTest is Test, PoolHelper {
         key = poolManager.createPoolKey(baseCurrency, quoteCurrency);
         pool = poolManager.getPool(key);
         orderBook = OrderBook(address(pool.orderBook));
-
-        baseDecimals = MockToken(baseTokenAddress).decimals();
-        quoteDecimals = MockToken(quoteTokenAddress).decimals();
     }
 
     function testMultipleMakersSingleTakerFullOrderMatching() public {

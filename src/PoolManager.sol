@@ -187,6 +187,13 @@ contract PoolManager is Initializable, OwnableUpgradeable, PoolManagerStorage, I
     }
 
     function createPoolKey(Currency currency1, Currency currency2) public pure returns (PoolKey memory) {
-        return PoolKey({baseCurrency: currency1, quoteCurrency: currency2});
+        address addr1 = Currency.unwrap(currency1);
+        address addr2 = Currency.unwrap(currency2);
+
+        if (addr1 < addr2) {
+            return PoolKey({baseCurrency: currency1, quoteCurrency: currency2});
+        } else {
+            return PoolKey({baseCurrency: currency2, quoteCurrency: currency1});
+        }
     }
 }
