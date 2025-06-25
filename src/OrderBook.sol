@@ -268,7 +268,7 @@ contract OrderBook is
         uint128 quantity,
         Side side,
         address user
-    ) external onlyRouter nonReentrant returns (uint48 orderId) {
+    ) external onlyRouter nonReentrant returns (uint48 orderId, uint128 receivedAmount) {
         Storage storage $ = getStorage();
         validateOrder(0, quantity, side, OrderType.MARKET, TimeInForce.GTC);
 
@@ -290,13 +290,22 @@ contract OrderBook is
 
         emit OrderPlaced(orderId, user, side, 0, quantity, marketOrder.expiry, true, Status.OPEN);
 
-        _matchOrder(marketOrder, side, user, true);
+        uint128 filled = _matchOrder(marketOrder, side, user, true);
 
-        unchecked {
+        IBalanceManager bm = IBalanceManager($.balanceManager);
+        uint256 feeTaker = bm.feeTaker();
+        uint256 feeUnit = bm.getFeeUnit();
+        address feeReceiver = bm.feeReceiver();
+
+        uint128 feeAmount = uint128(uint256(filled) * feeTaker / feeUnit);
+        receivedAmount = filled > feeAmount ? filled - feeAmount : 0;
+
+
+    unchecked {
             $.nextOrderId++;
         }
 
-        return orderId;
+        return (orderId, receivedAmount);
     }
 
     function cancelOrder(uint48 orderId, address user) external onlyRouter {
@@ -314,7 +323,7 @@ contract OrderBook is
 
         IOrderBook.Status orderStatus = order.status;
 
-        if (orderStatus != Status.OPEN || orderStatus == Status.PARTIALLY_FILLED) {
+        if (orderStatus != Status.OPEN && orderStatus != Status.PARTIALLY_FILLED) {
             revert OrderIsNotOpenOrder(orderStatus);
         }
 
@@ -395,6 +404,11 @@ contract OrderBook is
 
         if (matchingOrder.filled == matchingOrder.quantity) {
             _removeOrderFromQueue(queue, matchingOrder);
+            matchingOrder.status = Status.FILLED;
+            emit UpdateOrder(matchingOrder.id, uint48(block.timestamp), matchingOrder.filled, Status.FILLED);
+        } else {
+            matchingOrder.status = Status.PARTIALLY_FILLED;
+            emit UpdateOrder(matchingOrder.id, uint48(block.timestamp), matchingOrder.filled, Status.PARTIALLY_FILLED);
         }
 
         emit OrderMatched(
@@ -658,4 +672,18 @@ contract OrderBook is
         Storage storage $ = getStorage();
         return $.orderQueues[side][price].orderCount == 0;
     }
+
+    function updateTradingRules(TradingRules memory _newRules) external {
+        Storage storage $ = getStorage();
+
+        if (msg.sender != owner()) {
+            revert NotAuthorized();
+        }
+
+        $.tradingRules = _newRules;
+
+        emit TradingRulesUpdated($.poolKey.toId(), _newRules);
+    }
+
+    error NotAuthorized();
 }

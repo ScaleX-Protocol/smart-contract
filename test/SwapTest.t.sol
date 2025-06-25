@@ -272,7 +272,7 @@ contract SwapTest is Test, PoolHelper {
             2000e6, // 1 ETH = 2000 USDC
             10e18, // 10 ETH
             IOrderBook.Side.SELL,
-            alice
+            IOrderBook.TimeInForce.GTC
         );
 
         // For USDC -> WBTC, we need a SELL order to provide WBTC
@@ -282,7 +282,7 @@ contract SwapTest is Test, PoolHelper {
             30_000e6, // 1 BTC = 30,000 USDC
             1e8, // 1 BTC
             IOrderBook.Side.SELL,
-            alice
+            IOrderBook.TimeInForce.GTC
         );
         vm.stopPrank();
 
@@ -362,7 +362,7 @@ contract SwapTest is Test, PoolHelper {
             2000e6, // 1 ETH = 2000 USDC
             10e18, // 10 ETH
             IOrderBook.Side.BUY,
-            alice
+            IOrderBook.TimeInForce.GTC
         );
         vm.stopPrank();
 
@@ -438,7 +438,7 @@ contract SwapTest is Test, PoolHelper {
             2000e6, // 1 ETH = 2000 USDC
             10e18, // 10 ETH
             IOrderBook.Side.SELL,
-            alice
+            IOrderBook.TimeInForce.GTC
         );
         vm.stopPrank();
 
@@ -523,7 +523,7 @@ contract SwapTest is Test, PoolHelper {
             2000e6, // 1 ETH = 2000 USDC
             5e18, // 5 ETH
             IOrderBook.Side.SELL,
-            alice
+            IOrderBook.TimeInForce.GTC
         );
         vm.stopPrank();
 
@@ -535,7 +535,7 @@ contract SwapTest is Test, PoolHelper {
             2010e6, // 1 ETH = 2010 USDC (slightly different price)
             5e18, // 5 ETH
             IOrderBook.Side.SELL,
-            bob
+            IOrderBook.TimeInForce.GTC
         );
         vm.stopPrank();
 
@@ -652,8 +652,8 @@ contract SwapTest is Test, PoolHelper {
             pools["WETH/USDC"],
             alicePrice,
             aliceQuantity,
-            IOrderBook.Side.BUY, // BUY order to receive WETH
-            alice
+            IOrderBook.Side.BUY,
+            IOrderBook.TimeInForce.GTC
         );
         vm.stopPrank();
 
@@ -663,8 +663,8 @@ contract SwapTest is Test, PoolHelper {
             pools["WETH/USDC"],
             charliePrice,
             charlieQuantity,
-            IOrderBook.Side.BUY, // BUY order to receive WETH,
-            charlie
+            IOrderBook.Side.BUY,
+            IOrderBook.TimeInForce.GTC
         );
         vm.stopPrank();
 
@@ -674,8 +674,8 @@ contract SwapTest is Test, PoolHelper {
             pools["WETH/USDC"],
             davidPrice,
             davidQuantity,
-            IOrderBook.Side.BUY, // BUY order to receive WETH
-            david
+            IOrderBook.Side.BUY,
+            IOrderBook.TimeInForce.GTC
         );
         vm.stopPrank();
 
@@ -814,7 +814,7 @@ contract SwapTest is Test, PoolHelper {
             2000e6, // 1 ETH = 2000 USDC
             5e18, // 5 ETH
             IOrderBook.Side.BUY,
-            alice
+            IOrderBook.TimeInForce.GTC
         );
         vm.stopPrank();
 
@@ -826,7 +826,7 @@ contract SwapTest is Test, PoolHelper {
             30_000e6, // 1 BTC = 30000 USDC
             1e8, // 1 BTC
             IOrderBook.Side.SELL,
-            bob
+            IOrderBook.TimeInForce.GTC
         );
         vm.stopPrank();
 

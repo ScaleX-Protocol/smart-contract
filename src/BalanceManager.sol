@@ -69,23 +69,25 @@ contract BalanceManager is IBalanceManager, BalanceManagerStorage, OwnableUpgrad
         return getStorage().lockedBalanceOf[user][operator][currency.toId()];
     }
 
-    function deposit(Currency currency, uint256 amount, address sender, address user) public nonReentrant {
+    function deposit(Currency currency, uint256 amount, address sender, address user) public payable nonReentrant {
         if (amount == 0) {
             revert ZeroAmount();
         }
 
         Storage storage $ = getStorage();
         // Verify if the caller is the user or an authorized operator
-        if (msg.sender != user && !$.authorizedOperators[msg.sender]) {
+        if (msg.sender != sender && !$.authorizedOperators[msg.sender]) {
             revert UnauthorizedOperator(msg.sender);
         }
 
-        // Transfer tokens directly from the user to this contract
-        currency.transferFrom(sender, address(this), amount);
+        if (currency.isAddressZero()) {
+            require(msg.value == amount, "Incorrect ETH amount sent");
+        } else {
+            require(msg.value == 0, "No ETH should be sent for ERC20 deposit");
+            currency.transferFrom(sender, address(this), amount);
+        }
 
-        // Credit the balance to the specified user
         uint256 currencyId = currency.toId();
-
         unchecked {
             $.balanceOf[user][currencyId] += amount;
         }
@@ -111,7 +113,7 @@ contract BalanceManager is IBalanceManager, BalanceManagerStorage, OwnableUpgrad
         }
 
         // Transfer tokens directly from sender to this contract
-        currency.transferFrom(user, address(orderBook), amount);
+        currency.transferFrom(user, address(this), amount);
 
         // Credit directly to locked balance, bypassing the regular balance
         uint256 currencyId = currency.toId();

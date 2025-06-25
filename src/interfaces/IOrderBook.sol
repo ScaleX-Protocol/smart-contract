@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.26;
 
-import {PoolKey} from "../libraries/Pool.sol";
+import {PoolKey, PoolId} from "../libraries/Pool.sol";
 
 interface IOrderBook {
     enum Side {
@@ -99,6 +99,8 @@ interface IOrderBook {
 
     event OrderCancelled(uint48 indexed orderId, address indexed user, uint48 timestamp, Status status);
 
+    event TradingRulesUpdated(PoolId indexed poolId, IOrderBook.TradingRules newRules);
+
     function initialize(
         address poolManager,
         address balanceManager,
@@ -122,7 +124,7 @@ interface IOrderBook {
         uint48 orderId
     ) external view returns (Order memory order);
 
-    function placeMarketOrder(uint128 quantity, Side side, address user) external returns (uint48);
+    function placeMarketOrder(uint128 quantity, Side side, address user) external returns (uint48, uint128);
 
     function cancelOrder(uint48 orderId, address user) external;
 
@@ -139,4 +141,6 @@ interface IOrderBook {
     ) external;
 
     function getTradingRules() external view returns (TradingRules memory);
+
+    function updateTradingRules(TradingRules memory _newRules) external;
 }

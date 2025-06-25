@@ -40,9 +40,9 @@ contract GTXRouter is IGTXRouter, GTXRouterStorage, Initializable, OwnableUpgrad
         uint128 _price,
         uint128 _quantity,
         IOrderBook.Side _side,
-        address _user
+        IOrderBook.TimeInForce _timeInForce
     ) public returns (uint48 orderId) {
-        orderId = _placeLimitOrder(pool, _price, _quantity, _side, false, _user);
+        orderId = _placeLimitOrder(pool, _price, _quantity, _side, _timeInForce, false, msg.sender);
     }
 
     function placeOrderWithDeposit(
@@ -50,9 +50,9 @@ contract GTXRouter is IGTXRouter, GTXRouterStorage, Initializable, OwnableUpgrad
         uint128 _price,
         uint128 _quantity,
         IOrderBook.Side _side,
-        address _user
+        IOrderBook.TimeInForce _timeInForce
     ) external returns (uint48 orderId) {
-        orderId = _placeLimitOrder(pool, _price, _quantity, _side, true, _user);
+        orderId = _placeLimitOrder(pool, _price, _quantity, _side, _timeInForce, true, msg.sender);
     }
 
     function _validateCallerBalance(
@@ -105,13 +105,14 @@ contract GTXRouter is IGTXRouter, GTXRouterStorage, Initializable, OwnableUpgrad
         uint128 _price,
         uint128 _quantity,
         IOrderBook.Side _side,
+        IOrderBook.TimeInForce _timeInForce,
         bool depositTokens,
         address _user
     ) internal returns (uint48 orderId) {
         //TODO: Immediately deposit and lock balance for limit order
 
         (Currency depositCurrency, uint256 requiredBalance) =
-            _validateCallerBalance(pool, _user, _side, _quantity, _price, false, depositTokens);
+                        _validateCallerBalance(pool, _user, _side, _quantity, _price, false, depositTokens);
 
         Storage storage $ = getStorage();
         IBalanceManager balanceManager = IBalanceManager($.balanceManager);
@@ -120,7 +121,7 @@ contract GTXRouter is IGTXRouter, GTXRouterStorage, Initializable, OwnableUpgrad
             balanceManager.deposit(depositCurrency, requiredBalance, _user, _user);
         }
 
-        orderId = pool.orderBook.placeOrder(_price, _quantity, _side, _user, IOrderBook.TimeInForce.GTC);
+        orderId = pool.orderBook.placeOrder(_price, _quantity, _side, _user, _timeInForce);
     }
 
     function _placeMarketOrder(
@@ -128,18 +129,17 @@ contract GTXRouter is IGTXRouter, GTXRouterStorage, Initializable, OwnableUpgrad
         uint128 quantity,
         IOrderBook.Side side,
         address user
-    ) internal returns (uint48 orderId) {
-        orderId = pool.orderBook.placeMarketOrder(quantity, side, user);
+    ) internal returns (uint48 orderId, uint128 filled) {
+        (orderId, filled) = pool.orderBook.placeMarketOrder(quantity, side, user);
     }
 
     function placeMarketOrder(
         IPoolManager.Pool memory pool,
         uint128 _quantity,
-        IOrderBook.Side _side,
-        address _user
-    ) public returns (uint48 orderId) {
-        _validateCallerBalance(pool, _user, _side, _quantity, 0, false, false);
-        return _placeMarketOrder(pool, _quantity, _side, _user);
+        IOrderBook.Side _side
+    ) public returns (uint48 orderId, uint128 filled) {
+        _validateCallerBalance(pool, msg.sender, _side, _quantity, 0, false, false);
+        return _placeMarketOrder(pool, _quantity, _side, msg.sender);
     }
 
     /**
@@ -155,7 +155,7 @@ contract GTXRouter is IGTXRouter, GTXRouterStorage, Initializable, OwnableUpgrad
         uint256 amount,
         IOrderBook.Side side,
         address user
-    ) internal returns (uint48 orderId) {
+    ) internal returns (uint48 orderId, uint128 filled) {
         Storage storage $ = getStorage();
         IPoolManager poolManager = IPoolManager($.poolManager);
         IPoolManager.Pool memory pool = poolManager.getPool(key);
@@ -173,24 +173,23 @@ contract GTXRouter is IGTXRouter, GTXRouterStorage, Initializable, OwnableUpgrad
         if (quantity == 0) {
             revert InvalidQuantity();
         }
-        return placeMarketOrder(pool, quantity, side, user);
+        return placeMarketOrder(pool, quantity, side);
     }
 
     function placeMarketOrderWithDeposit(
         IPoolManager.Pool memory pool,
         uint128 _quantity,
-        IOrderBook.Side _side,
-        address _user
-    ) external returns (uint48 orderId) {
+        IOrderBook.Side _side
+    ) external returns (uint48 orderId, uint128 filled) {
         (Currency depositCurrency, uint256 requiredBalance) =
-            _validateCallerBalance(pool, _user, _side, _quantity, 0, true, true);
+                        _validateCallerBalance(pool, msg.sender, _side, _quantity, 0, true, true);
 
         Storage storage $ = getStorage();
         IBalanceManager balanceManager = IBalanceManager($.balanceManager);
 
-        balanceManager.deposit(depositCurrency, requiredBalance, _user, _user);
+        balanceManager.deposit(depositCurrency, requiredBalance, msg.sender, msg.sender);
         //
-        return _placeMarketOrder(pool, _quantity, _side, _user);
+        return _placeMarketOrder(pool, _quantity, _side, msg.sender);
     }
 
     function cancelOrder(IPoolManager.Pool memory pool, uint48 orderId) external {
@@ -269,10 +268,10 @@ contract GTXRouter is IGTXRouter, GTXRouterStorage, Initializable, OwnableUpgrad
         // Try direct swap first (most efficient)
         if (poolManager.poolExists(srcCurrency, dstCurrency)) {
             receivedAmount =
-                executeDirectSwap(srcCurrency, dstCurrency, srcCurrency, dstCurrency, srcAmount, minDstAmount, user);
+                            executeDirectSwap(srcCurrency, dstCurrency, srcCurrency, dstCurrency, srcAmount, minDstAmount, user);
         } else if (poolManager.poolExists(dstCurrency, srcCurrency)) {
             receivedAmount =
-                executeDirectSwap(dstCurrency, srcCurrency, srcCurrency, dstCurrency, srcAmount, minDstAmount, user);
+                            executeDirectSwap(dstCurrency, srcCurrency, srcCurrency, dstCurrency, srcAmount, minDstAmount, user);
         }
         // If no direct pool, try to find intermediaries
         // Try common intermediaries first (from PoolManager)
@@ -284,7 +283,7 @@ contract GTXRouter is IGTXRouter, GTXRouterStorage, Initializable, OwnableUpgrad
                 // Skip if intermediary is source or destination currency
                 if (
                     Currency.unwrap(intermediary) == Currency.unwrap(srcCurrency)
-                        || Currency.unwrap(intermediary) == Currency.unwrap(dstCurrency)
+                    || Currency.unwrap(intermediary) == Currency.unwrap(dstCurrency)
                 ) {
                     continue;
                 }
@@ -292,24 +291,24 @@ contract GTXRouter is IGTXRouter, GTXRouterStorage, Initializable, OwnableUpgrad
                 if (
                     (
                         poolManager.poolExists(srcCurrency, intermediary)
-                            && poolManager.poolExists(intermediary, dstCurrency)
+                        && poolManager.poolExists(intermediary, dstCurrency)
                     )
-                        || (
-                            poolManager.poolExists(srcCurrency, intermediary)
-                                && poolManager.poolExists(dstCurrency, intermediary)
-                        )
-                        || (
-                            poolManager.poolExists(intermediary, srcCurrency)
-                                && poolManager.poolExists(dstCurrency, intermediary)
-                        )
-                        || (
-                            poolManager.poolExists(intermediary, srcCurrency)
-                                && poolManager.poolExists(dstCurrency, intermediary)
-                        )
+                    || (
+                        poolManager.poolExists(srcCurrency, intermediary)
+                        && poolManager.poolExists(dstCurrency, intermediary)
+                    )
+                    || (
+                        poolManager.poolExists(intermediary, srcCurrency)
+                        && poolManager.poolExists(dstCurrency, intermediary)
+                    )
+                    || (
+                    poolManager.poolExists(intermediary, srcCurrency)
+                    && poolManager.poolExists(dstCurrency, intermediary)
+                )
                 ) {
                     // Execute multi-hop swap where second pool is accessed in reverse
                     receivedAmount =
-                        executeMultiHopSwap(srcCurrency, intermediary, dstCurrency, srcAmount, minDstAmount, user);
+                                    executeMultiHopSwap(srcCurrency, intermediary, dstCurrency, srcAmount, minDstAmount, user);
                 }
             }
         }
@@ -346,12 +345,7 @@ contract GTXRouter is IGTXRouter, GTXRouterStorage, Initializable, OwnableUpgrad
         }
         // Deposit the source currency to the protocol
         balanceManager.deposit(srcCurrency, srcAmount, msg.sender, user);
-        // Record balance before swap to calculate actual received amount
-        uint256 balanceBefore = balanceManager.getBalance(user, dstCurrency);
-        _placeMarketOrderForSwap(key, srcAmount, side, user);
-        // Calculate the amount received
-        uint256 balanceAfter = balanceManager.getBalance(user, dstCurrency);
-        receivedAmount = balanceAfter - balanceBefore;
+        (, uint128 receivedAmount) = _placeMarketOrderForSwap(key, srcAmount, side, user);
         // Ensure minimum destination amount is met
         if (receivedAmount < minDstAmount) {
             revert SlippageTooHigh(receivedAmount, minDstAmount);
@@ -426,14 +420,9 @@ contract GTXRouter is IGTXRouter, GTXRouterStorage, Initializable, OwnableUpgrad
         IPoolManager poolManager = IPoolManager($.poolManager);
         IBalanceManager balanceManager = IBalanceManager($.balanceManager);
         PoolKey memory key = poolManager.createPoolKey(baseCurrency, quoteCurrency);
-        // Record balance before swap to calculate actual received amount
-        uint256 balanceBefore = balanceManager.getBalance(user, dstCurrency);
-        _placeMarketOrderForSwap(key, srcAmount, side, user);
-        // Calculate the amount received
-        uint256 balanceAfter = balanceManager.getBalance(user, dstCurrency);
-        receivedAmount = balanceAfter - balanceBefore;
-        // Ensure minimum destination amount is met (if specified)
-        if (minDstAmount > 0 && receivedAmount < minDstAmount) {
+        (, uint128 receivedAmount) = _placeMarketOrderForSwap(key, srcAmount, side, user);
+
+        if (receivedAmount < minDstAmount) {
             revert SlippageTooHigh(receivedAmount, minDstAmount);
         }
         return receivedAmount;

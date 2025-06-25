@@ -13,7 +13,9 @@ interface IPoolManager {
     }
 
     error InvalidRouter();
-
+    error PoolAlreadyExists(PoolId id);
+    error InvalidTradingRule(string reason);
+    event TradingRulesUpdated(PoolId indexed poolId, IOrderBook.TradingRules newRules);
     event PoolCreated(PoolId indexed poolId, address orderBook, Currency baseCurrency, Currency quoteCurrency);
     event CurrencyAdded(Currency currency);
     event IntermediaryAdded(Currency currency);

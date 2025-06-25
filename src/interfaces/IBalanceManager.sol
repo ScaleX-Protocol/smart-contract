@@ -37,7 +37,7 @@ interface IBalanceManager {
 
     function getLockedBalance(address user, address operator, Currency currency) external view returns (uint256);
 
-    function deposit(Currency currency, uint256 amount, address sender, address user) external;
+    function deposit(Currency currency, uint256 amount, address sender, address user) payable external;
 
     function depositAndLock(
         Currency currency,
@@ -65,4 +65,12 @@ interface IBalanceManager {
     function setAuthorizedOperator(address operator, bool approved) external;
 
     function setFees(uint256 _feeMaker, uint256 _feeTaker) external;
+
+    function feeMaker() external view returns (uint256);
+
+    function feeTaker() external view returns (uint256);
+
+    function feeReceiver() external view returns (address);
+
+    function getFeeUnit() external view returns (uint256);
 }

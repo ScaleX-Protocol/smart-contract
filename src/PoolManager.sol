@@ -10,6 +10,7 @@ import {IPoolManager} from "./interfaces/IPoolManager.sol";
 import {Currency} from "./libraries/Currency.sol";
 import {PoolId, PoolKey} from "./libraries/Pool.sol";
 import {PoolManagerStorage} from "./storages/PoolManagerStorage.sol";
+import {TradingRulesValidator} from "./libraries/TradingRulesValidator.sol";
 
 import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
@@ -60,8 +61,14 @@ contract PoolManager is Initializable, OwnableUpgradeable, PoolManagerStorage, I
             revert InvalidRouter();
         }
 
+        validateTradingRules(_tradingRules);
+
         PoolKey memory key = createPoolKey(_baseCurrency, _quoteCurrency);
         PoolId id = key.toId();
+
+        if (address($.pools[id].orderBook) != address(0)) {
+            revert PoolAlreadyExists(id);
+        }
 
         bytes memory initData =
             abi.encodeWithSelector(IOrderBook.initialize.selector, address(this), $.balanceManager, _tradingRules, key);
@@ -96,6 +103,25 @@ contract PoolManager is Initializable, OwnableUpgradeable, PoolManagerStorage, I
         emit PoolCreated(id, address(orderBookProxy), key.baseCurrency, key.quoteCurrency);
 
         return id;
+    }
+
+    function updatePoolTradingRules(
+        PoolId _poolId,
+        IOrderBook.TradingRules memory _newRules
+    ) external onlyOwner {
+        validateTradingRules(_newRules);
+
+        Storage storage $ = getStorage();
+
+        require(address($.pools[_poolId].orderBook) != address(0), "Pool does not exist");
+
+        IOrderBook(address($.pools[_poolId].orderBook)).updateTradingRules(_newRules);
+
+        emit TradingRulesUpdated(_poolId, _newRules);
+    }
+
+    function validateTradingRules(IOrderBook.TradingRules memory _rules) internal pure {
+        TradingRulesValidator.validate(_rules);
     }
 
     function addCommonIntermediary(
@@ -161,6 +187,13 @@ contract PoolManager is Initializable, OwnableUpgradeable, PoolManagerStorage, I
     }
 
     function createPoolKey(Currency currency1, Currency currency2) public pure returns (PoolKey memory) {
-        return PoolKey({baseCurrency: currency1, quoteCurrency: currency2});
+        address addr1 = Currency.unwrap(currency1);
+        address addr2 = Currency.unwrap(currency2);
+
+        if (addr1 < addr2) {
+            return PoolKey({baseCurrency: currency1, quoteCurrency: currency2});
+        } else {
+            return PoolKey({baseCurrency: currency2, quoteCurrency: currency1});
+        }
     }
 }

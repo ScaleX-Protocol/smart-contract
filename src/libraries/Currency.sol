@@ -46,7 +46,9 @@ library CurrencyLibrary {
 
     function transferFrom(Currency currency, address from, address to, uint256 amount) internal {
         if (isAddressZero(currency)) {
-            revert NativeTransferFailed();
+            require(from == msg.sender, "ETH transfer requires direct sender");
+            require(address(this).balance >= amount, "Insufficient contract ETH balance");
+            SafeTransferLib.safeTransferETH(to, amount);
         } else {
             SafeTransferLib.safeTransferFrom(Currency.unwrap(currency), from, to, amount);
         }
@@ -92,6 +94,10 @@ library CurrencyLibrary {
     function decimals(
         Currency currency
     ) internal view returns (uint8) {
-        return IERC20(Currency.unwrap(currency)).decimals();
+        if (isAddressZero(currency)) {
+            return 18;
+        } else {
+            return IERC20(Currency.unwrap(currency)).decimals();
+        }
     }
 }
