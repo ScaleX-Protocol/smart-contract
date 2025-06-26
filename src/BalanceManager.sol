@@ -212,7 +212,7 @@ contract BalanceManager is IBalanceManager, BalanceManagerStorage, OwnableUpgrad
             revert InsufficientBalance(sender, currency.toId(), amount, $.balanceOf[sender][currency.toId()]);
         }
 
-        IERC20(Currency.unwrap(currency)).transfer(receiver, amount);
+        currency.transfer(receiver, amount);
 
         $.balanceOf[sender][currency.toId()] -= amount;
     }
