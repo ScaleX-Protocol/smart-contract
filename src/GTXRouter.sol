@@ -138,7 +138,7 @@ contract GTXRouter is IGTXRouter, GTXRouterStorage, Initializable, OwnableUpgrad
         uint128 _quantity,
         IOrderBook.Side _side
     ) public returns (uint48 orderId, uint128 filled) {
-        _validateCallerBalance(pool, msg.sender, _side, _quantity, 0, false, false);
+        _validateCallerBalance(pool, msg.sender, _side, _quantity, 0, true, false);
         return _placeMarketOrder(pool, _quantity, _side, msg.sender);
     }
 
