@@ -18,7 +18,7 @@ interface DeployedContracts {
 export const deployedContracts: DeployedContracts = {
   31337: {
     BalanceManager: {
-      address: "0x5fbdb2315678afecb367f032d93f642f64180aa3",
+      address: "0x959922be3caee4b8cd9a407cc3ac1c251c2007b1",
       abi: [
         {
           type: "constructor",
@@ -51,7 +51,7 @@ export const deployedContracts: DeployedContracts = {
             },
           ],
           outputs: [],
-          stateMutability: "nonpayable",
+          stateMutability: "payable",
         },
         {
           type: "function",
@@ -784,11 +784,6 @@ export const deployedContracts: DeployedContracts = {
         },
         {
           type: "error",
-          name: "NativeTransferFailed",
-          inputs: [],
-        },
-        {
-          type: "error",
           name: "NotInitializing",
           inputs: [],
         },
@@ -871,7 +866,11 @@ export const deployedContracts: DeployedContracts = {
       inheritedFunctions: {
         deposit: "src/interfaces/IBalanceManager.sol",
         depositAndLock: "src/interfaces/IBalanceManager.sol",
+        feeMaker: "src/interfaces/IBalanceManager.sol",
+        feeReceiver: "src/interfaces/IBalanceManager.sol",
+        feeTaker: "src/interfaces/IBalanceManager.sol",
         getBalance: "src/interfaces/IBalanceManager.sol",
+        getFeeUnit: "src/interfaces/IBalanceManager.sol",
         getLockedBalance: "src/interfaces/IBalanceManager.sol",
         lock: "src/interfaces/IBalanceManager.sol",
         setAuthorizedOperator: "src/interfaces/IBalanceManager.sol",
@@ -890,7 +889,7 @@ export const deployedContracts: DeployedContracts = {
       },
     },
     UpgradeableBeacon: {
-      address: "0xa513e6e4b8f2a923d98304ec87f64353c4d5c853",
+      address: "0x322813fd9a801c5507c9de605d63cea4f2ce6c44",
       abi: [
         {
           type: "constructor",
@@ -1045,7 +1044,7 @@ export const deployedContracts: DeployedContracts = {
       },
     },
     PoolManager: {
-      address: "0x9fe46736679d2d9a65f0992f2272de9f3c7fa6e0",
+      address: "0x68b1d87f95878fe05b998f19b66f4baba5de1aed",
       abi: [
         {
           type: "constructor",
@@ -1418,6 +1417,46 @@ export const deployedContracts: DeployedContracts = {
           stateMutability: "nonpayable",
         },
         {
+          type: "function",
+          name: "updatePoolTradingRules",
+          inputs: [
+            {
+              name: "_poolId",
+              type: "bytes32",
+              internalType: "PoolId",
+            },
+            {
+              name: "_newRules",
+              type: "tuple",
+              internalType: "struct IOrderBook.TradingRules",
+              components: [
+                {
+                  name: "minTradeAmount",
+                  type: "uint128",
+                  internalType: "uint128",
+                },
+                {
+                  name: "minAmountMovement",
+                  type: "uint128",
+                  internalType: "uint128",
+                },
+                {
+                  name: "minPriceMovement",
+                  type: "uint128",
+                  internalType: "uint128",
+                },
+                {
+                  name: "minOrderSize",
+                  type: "uint128",
+                  internalType: "uint128",
+                },
+              ],
+            },
+          ],
+          outputs: [],
+          stateMutability: "nonpayable",
+        },
+        {
           type: "event",
           name: "CurrencyAdded",
           inputs: [
@@ -1539,6 +1578,47 @@ export const deployedContracts: DeployedContracts = {
           anonymous: false,
         },
         {
+          type: "event",
+          name: "TradingRulesUpdated",
+          inputs: [
+            {
+              name: "poolId",
+              type: "bytes32",
+              indexed: true,
+              internalType: "PoolId",
+            },
+            {
+              name: "newRules",
+              type: "tuple",
+              indexed: false,
+              internalType: "struct IOrderBook.TradingRules",
+              components: [
+                {
+                  name: "minTradeAmount",
+                  type: "uint128",
+                  internalType: "uint128",
+                },
+                {
+                  name: "minAmountMovement",
+                  type: "uint128",
+                  internalType: "uint128",
+                },
+                {
+                  name: "minPriceMovement",
+                  type: "uint128",
+                  internalType: "uint128",
+                },
+                {
+                  name: "minOrderSize",
+                  type: "uint128",
+                  internalType: "uint128",
+                },
+              ],
+            },
+          ],
+          anonymous: false,
+        },
+        {
           type: "error",
           name: "InvalidInitialization",
           inputs: [],
@@ -1547,6 +1627,17 @@ export const deployedContracts: DeployedContracts = {
           type: "error",
           name: "InvalidRouter",
           inputs: [],
+        },
+        {
+          type: "error",
+          name: "InvalidTradingRule",
+          inputs: [
+            {
+              name: "reason",
+              type: "string",
+              internalType: "string",
+            },
+          ],
         },
         {
           type: "error",
@@ -1575,6 +1666,17 @@ export const deployedContracts: DeployedContracts = {
             },
           ],
         },
+        {
+          type: "error",
+          name: "PoolAlreadyExists",
+          inputs: [
+            {
+              name: "id",
+              type: "bytes32",
+              internalType: "PoolId",
+            },
+          ],
+        },
       ],
       inheritedFunctions: {
         owner:
@@ -1598,7 +1700,7 @@ export const deployedContracts: DeployedContracts = {
       },
     },
     GTXRouter: {
-      address: "0xdc64a140aa3e981100a9beca4e685f962f0cf6c9",
+      address: "0xc6e7df5e7b4f2a278906862b61205850344d4e7d",
       abi: [
         {
           type: "constructor",
@@ -1936,17 +2038,17 @@ export const deployedContracts: DeployedContracts = {
               type: "uint8",
               internalType: "enum IOrderBook.Side",
             },
-            {
-              name: "_user",
-              type: "address",
-              internalType: "address",
-            },
           ],
           outputs: [
             {
               name: "orderId",
               type: "uint48",
               internalType: "uint48",
+            },
+            {
+              name: "filled",
+              type: "uint128",
+              internalType: "uint128",
             },
           ],
           stateMutability: "nonpayable",
@@ -1987,17 +2089,17 @@ export const deployedContracts: DeployedContracts = {
               type: "uint8",
               internalType: "enum IOrderBook.Side",
             },
-            {
-              name: "_user",
-              type: "address",
-              internalType: "address",
-            },
           ],
           outputs: [
             {
               name: "orderId",
               type: "uint48",
               internalType: "uint48",
+            },
+            {
+              name: "filled",
+              type: "uint128",
+              internalType: "uint128",
             },
           ],
           stateMutability: "nonpayable",
@@ -2044,9 +2146,9 @@ export const deployedContracts: DeployedContracts = {
               internalType: "enum IOrderBook.Side",
             },
             {
-              name: "_user",
-              type: "address",
-              internalType: "address",
+              name: "_timeInForce",
+              type: "uint8",
+              internalType: "enum IOrderBook.TimeInForce",
             },
           ],
           outputs: [
@@ -2100,9 +2202,9 @@ export const deployedContracts: DeployedContracts = {
               internalType: "enum IOrderBook.Side",
             },
             {
-              name: "_user",
-              type: "address",
-              internalType: "address",
+              name: "_timeInForce",
+              type: "uint8",
+              internalType: "enum IOrderBook.TimeInForce",
             },
           ],
           outputs: [
@@ -2280,6 +2382,17 @@ export const deployedContracts: DeployedContracts = {
         },
         {
           type: "error",
+          name: "InvalidTradingRule",
+          inputs: [
+            {
+              name: "reason",
+              type: "string",
+              internalType: "string",
+            },
+          ],
+        },
+        {
+          type: "error",
           name: "NotInitializing",
           inputs: [],
         },
@@ -2442,7 +2555,7 @@ export const deployedContracts: DeployedContracts = {
       },
     },
     OrderBook: {
-      address: "0x0165878a594ca255338adfa4d48449f69242eb8f",
+      address: "0x4ed7c70f96b99c776995fb64377f0d4ab3b0e1c1",
       abi: [
         {
           type: "constructor",
@@ -2780,6 +2893,11 @@ export const deployedContracts: DeployedContracts = {
               type: "uint48",
               internalType: "uint48",
             },
+            {
+              name: "receivedAmount",
+              type: "uint128",
+              internalType: "uint128",
+            },
           ],
           stateMutability: "nonpayable",
         },
@@ -2885,6 +3003,41 @@ export const deployedContracts: DeployedContracts = {
               name: "newOwner",
               type: "address",
               internalType: "address",
+            },
+          ],
+          outputs: [],
+          stateMutability: "nonpayable",
+        },
+        {
+          type: "function",
+          name: "updateTradingRules",
+          inputs: [
+            {
+              name: "_newRules",
+              type: "tuple",
+              internalType: "struct IOrderBook.TradingRules",
+              components: [
+                {
+                  name: "minTradeAmount",
+                  type: "uint128",
+                  internalType: "uint128",
+                },
+                {
+                  name: "minAmountMovement",
+                  type: "uint128",
+                  internalType: "uint128",
+                },
+                {
+                  name: "minPriceMovement",
+                  type: "uint128",
+                  internalType: "uint128",
+                },
+                {
+                  name: "minOrderSize",
+                  type: "uint128",
+                  internalType: "uint128",
+                },
+              ],
             },
           ],
           outputs: [],
@@ -3059,6 +3212,47 @@ export const deployedContracts: DeployedContracts = {
         },
         {
           type: "event",
+          name: "TradingRulesUpdated",
+          inputs: [
+            {
+              name: "poolId",
+              type: "bytes32",
+              indexed: true,
+              internalType: "PoolId",
+            },
+            {
+              name: "newRules",
+              type: "tuple",
+              indexed: false,
+              internalType: "struct IOrderBook.TradingRules",
+              components: [
+                {
+                  name: "minTradeAmount",
+                  type: "uint128",
+                  internalType: "uint128",
+                },
+                {
+                  name: "minAmountMovement",
+                  type: "uint128",
+                  internalType: "uint128",
+                },
+                {
+                  name: "minPriceMovement",
+                  type: "uint128",
+                  internalType: "uint128",
+                },
+                {
+                  name: "minOrderSize",
+                  type: "uint128",
+                  internalType: "uint128",
+                },
+              ],
+            },
+          ],
+          anonymous: false,
+        },
+        {
+          type: "event",
           name: "UpdateOrder",
           inputs: [
             {
@@ -3154,6 +3348,22 @@ export const deployedContracts: DeployedContracts = {
         {
           type: "error",
           name: "InvalidQuantityIncrement",
+          inputs: [],
+        },
+        {
+          type: "error",
+          name: "InvalidTradingRule",
+          inputs: [
+            {
+              name: "reason",
+              type: "string",
+              internalType: "string",
+            },
+          ],
+        },
+        {
+          type: "error",
+          name: "NotAuthorized",
           inputs: [],
         },
         {
@@ -3323,10 +3533,11 @@ export const deployedContracts: DeployedContracts = {
         placeOrder: "src/interfaces/IOrderBook.sol",
         setRouter: "src/interfaces/IOrderBook.sol",
         setTradingRules: "src/interfaces/IOrderBook.sol",
+        updateTradingRules: "src/interfaces/IOrderBook.sol",
       },
     },
     PoolManagerResolver: {
-      address: "0x2279b7a0a67db372996a5fab50d91eaa73d2ebe6",
+      address: "0xa85233c63b9ee964add6f2cffe00fd84eb32338f",
       abi: [
         {
           type: "constructor",
@@ -3424,7 +3635,7 @@ export const deployedContracts: DeployedContracts = {
       inheritedFunctions: {},
     },
     BeaconProxy: {
-      address: "0xb7f8bc63bbcad18155201308c8f3540b07f84f5e",
+      address: "0x09635f643e140090a9a8dcd712ed6285858cebef",
       abi: [
         {
           type: "constructor",
@@ -3541,7 +3752,7 @@ export const deployedContracts: DeployedContracts = {
             },
           ],
           outputs: [],
-          stateMutability: "nonpayable",
+          stateMutability: "payable",
         },
         {
           type: "function",
@@ -4274,11 +4485,6 @@ export const deployedContracts: DeployedContracts = {
         },
         {
           type: "error",
-          name: "NativeTransferFailed",
-          inputs: [],
-        },
-        {
-          type: "error",
           name: "NotInitializing",
           inputs: [],
         },
@@ -4361,7 +4567,11 @@ export const deployedContracts: DeployedContracts = {
       inheritedFunctions: {
         deposit: "src/interfaces/IBalanceManager.sol",
         depositAndLock: "src/interfaces/IBalanceManager.sol",
+        feeMaker: "src/interfaces/IBalanceManager.sol",
+        feeReceiver: "src/interfaces/IBalanceManager.sol",
+        feeTaker: "src/interfaces/IBalanceManager.sol",
         getBalance: "src/interfaces/IBalanceManager.sol",
+        getFeeUnit: "src/interfaces/IBalanceManager.sol",
         getLockedBalance: "src/interfaces/IBalanceManager.sol",
         lock: "src/interfaces/IBalanceManager.sol",
         setAuthorizedOperator: "src/interfaces/IBalanceManager.sol",
@@ -4908,6 +5118,46 @@ export const deployedContracts: DeployedContracts = {
           stateMutability: "nonpayable",
         },
         {
+          type: "function",
+          name: "updatePoolTradingRules",
+          inputs: [
+            {
+              name: "_poolId",
+              type: "bytes32",
+              internalType: "PoolId",
+            },
+            {
+              name: "_newRules",
+              type: "tuple",
+              internalType: "struct IOrderBook.TradingRules",
+              components: [
+                {
+                  name: "minTradeAmount",
+                  type: "uint128",
+                  internalType: "uint128",
+                },
+                {
+                  name: "minAmountMovement",
+                  type: "uint128",
+                  internalType: "uint128",
+                },
+                {
+                  name: "minPriceMovement",
+                  type: "uint128",
+                  internalType: "uint128",
+                },
+                {
+                  name: "minOrderSize",
+                  type: "uint128",
+                  internalType: "uint128",
+                },
+              ],
+            },
+          ],
+          outputs: [],
+          stateMutability: "nonpayable",
+        },
+        {
           type: "event",
           name: "CurrencyAdded",
           inputs: [
@@ -5029,6 +5279,47 @@ export const deployedContracts: DeployedContracts = {
           anonymous: false,
         },
         {
+          type: "event",
+          name: "TradingRulesUpdated",
+          inputs: [
+            {
+              name: "poolId",
+              type: "bytes32",
+              indexed: true,
+              internalType: "PoolId",
+            },
+            {
+              name: "newRules",
+              type: "tuple",
+              indexed: false,
+              internalType: "struct IOrderBook.TradingRules",
+              components: [
+                {
+                  name: "minTradeAmount",
+                  type: "uint128",
+                  internalType: "uint128",
+                },
+                {
+                  name: "minAmountMovement",
+                  type: "uint128",
+                  internalType: "uint128",
+                },
+                {
+                  name: "minPriceMovement",
+                  type: "uint128",
+                  internalType: "uint128",
+                },
+                {
+                  name: "minOrderSize",
+                  type: "uint128",
+                  internalType: "uint128",
+                },
+              ],
+            },
+          ],
+          anonymous: false,
+        },
+        {
           type: "error",
           name: "InvalidInitialization",
           inputs: [],
@@ -5037,6 +5328,17 @@ export const deployedContracts: DeployedContracts = {
           type: "error",
           name: "InvalidRouter",
           inputs: [],
+        },
+        {
+          type: "error",
+          name: "InvalidTradingRule",
+          inputs: [
+            {
+              name: "reason",
+              type: "string",
+              internalType: "string",
+            },
+          ],
         },
         {
           type: "error",
@@ -5062,6 +5364,17 @@ export const deployedContracts: DeployedContracts = {
               name: "account",
               type: "address",
               internalType: "address",
+            },
+          ],
+        },
+        {
+          type: "error",
+          name: "PoolAlreadyExists",
+          inputs: [
+            {
+              name: "id",
+              type: "bytes32",
+              internalType: "PoolId",
             },
           ],
         },
@@ -5426,17 +5739,17 @@ export const deployedContracts: DeployedContracts = {
               type: "uint8",
               internalType: "enum IOrderBook.Side",
             },
-            {
-              name: "_user",
-              type: "address",
-              internalType: "address",
-            },
           ],
           outputs: [
             {
               name: "orderId",
               type: "uint48",
               internalType: "uint48",
+            },
+            {
+              name: "filled",
+              type: "uint128",
+              internalType: "uint128",
             },
           ],
           stateMutability: "nonpayable",
@@ -5477,17 +5790,17 @@ export const deployedContracts: DeployedContracts = {
               type: "uint8",
               internalType: "enum IOrderBook.Side",
             },
-            {
-              name: "_user",
-              type: "address",
-              internalType: "address",
-            },
           ],
           outputs: [
             {
               name: "orderId",
               type: "uint48",
               internalType: "uint48",
+            },
+            {
+              name: "filled",
+              type: "uint128",
+              internalType: "uint128",
             },
           ],
           stateMutability: "nonpayable",
@@ -5534,9 +5847,9 @@ export const deployedContracts: DeployedContracts = {
               internalType: "enum IOrderBook.Side",
             },
             {
-              name: "_user",
-              type: "address",
-              internalType: "address",
+              name: "_timeInForce",
+              type: "uint8",
+              internalType: "enum IOrderBook.TimeInForce",
             },
           ],
           outputs: [
@@ -5590,9 +5903,9 @@ export const deployedContracts: DeployedContracts = {
               internalType: "enum IOrderBook.Side",
             },
             {
-              name: "_user",
-              type: "address",
-              internalType: "address",
+              name: "_timeInForce",
+              type: "uint8",
+              internalType: "enum IOrderBook.TimeInForce",
             },
           ],
           outputs: [
@@ -5767,6 +6080,17 @@ export const deployedContracts: DeployedContracts = {
           type: "error",
           name: "InvalidQuantityIncrement",
           inputs: [],
+        },
+        {
+          type: "error",
+          name: "InvalidTradingRule",
+          inputs: [
+            {
+              name: "reason",
+              type: "string",
+              internalType: "string",
+            },
+          ],
         },
         {
           type: "error",
@@ -6270,6 +6594,11 @@ export const deployedContracts: DeployedContracts = {
               type: "uint48",
               internalType: "uint48",
             },
+            {
+              name: "receivedAmount",
+              type: "uint128",
+              internalType: "uint128",
+            },
           ],
           stateMutability: "nonpayable",
         },
@@ -6375,6 +6704,41 @@ export const deployedContracts: DeployedContracts = {
               name: "newOwner",
               type: "address",
               internalType: "address",
+            },
+          ],
+          outputs: [],
+          stateMutability: "nonpayable",
+        },
+        {
+          type: "function",
+          name: "updateTradingRules",
+          inputs: [
+            {
+              name: "_newRules",
+              type: "tuple",
+              internalType: "struct IOrderBook.TradingRules",
+              components: [
+                {
+                  name: "minTradeAmount",
+                  type: "uint128",
+                  internalType: "uint128",
+                },
+                {
+                  name: "minAmountMovement",
+                  type: "uint128",
+                  internalType: "uint128",
+                },
+                {
+                  name: "minPriceMovement",
+                  type: "uint128",
+                  internalType: "uint128",
+                },
+                {
+                  name: "minOrderSize",
+                  type: "uint128",
+                  internalType: "uint128",
+                },
+              ],
             },
           ],
           outputs: [],
@@ -6549,6 +6913,47 @@ export const deployedContracts: DeployedContracts = {
         },
         {
           type: "event",
+          name: "TradingRulesUpdated",
+          inputs: [
+            {
+              name: "poolId",
+              type: "bytes32",
+              indexed: true,
+              internalType: "PoolId",
+            },
+            {
+              name: "newRules",
+              type: "tuple",
+              indexed: false,
+              internalType: "struct IOrderBook.TradingRules",
+              components: [
+                {
+                  name: "minTradeAmount",
+                  type: "uint128",
+                  internalType: "uint128",
+                },
+                {
+                  name: "minAmountMovement",
+                  type: "uint128",
+                  internalType: "uint128",
+                },
+                {
+                  name: "minPriceMovement",
+                  type: "uint128",
+                  internalType: "uint128",
+                },
+                {
+                  name: "minOrderSize",
+                  type: "uint128",
+                  internalType: "uint128",
+                },
+              ],
+            },
+          ],
+          anonymous: false,
+        },
+        {
+          type: "event",
           name: "UpdateOrder",
           inputs: [
             {
@@ -6644,6 +7049,22 @@ export const deployedContracts: DeployedContracts = {
         {
           type: "error",
           name: "InvalidQuantityIncrement",
+          inputs: [],
+        },
+        {
+          type: "error",
+          name: "InvalidTradingRule",
+          inputs: [
+            {
+              name: "reason",
+              type: "string",
+              internalType: "string",
+            },
+          ],
+        },
+        {
+          type: "error",
+          name: "NotAuthorized",
           inputs: [],
         },
         {
@@ -6813,6 +7234,7 @@ export const deployedContracts: DeployedContracts = {
         placeOrder: "src/interfaces/IOrderBook.sol",
         setRouter: "src/interfaces/IOrderBook.sol",
         setTradingRules: "src/interfaces/IOrderBook.sol",
+        updateTradingRules: "src/interfaces/IOrderBook.sol",
       },
     },
     PoolManagerResolver: {
@@ -7031,7 +7453,7 @@ export const deployedContracts: DeployedContracts = {
             },
           ],
           outputs: [],
-          stateMutability: "nonpayable",
+          stateMutability: "payable",
         },
         {
           type: "function",
@@ -7764,11 +8186,6 @@ export const deployedContracts: DeployedContracts = {
         },
         {
           type: "error",
-          name: "NativeTransferFailed",
-          inputs: [],
-        },
-        {
-          type: "error",
           name: "NotInitializing",
           inputs: [],
         },
@@ -7851,7 +8268,11 @@ export const deployedContracts: DeployedContracts = {
       inheritedFunctions: {
         deposit: "src/interfaces/IBalanceManager.sol",
         depositAndLock: "src/interfaces/IBalanceManager.sol",
+        feeMaker: "src/interfaces/IBalanceManager.sol",
+        feeReceiver: "src/interfaces/IBalanceManager.sol",
+        feeTaker: "src/interfaces/IBalanceManager.sol",
         getBalance: "src/interfaces/IBalanceManager.sol",
+        getFeeUnit: "src/interfaces/IBalanceManager.sol",
         getLockedBalance: "src/interfaces/IBalanceManager.sol",
         lock: "src/interfaces/IBalanceManager.sol",
         setAuthorizedOperator: "src/interfaces/IBalanceManager.sol",
@@ -8398,6 +8819,46 @@ export const deployedContracts: DeployedContracts = {
           stateMutability: "nonpayable",
         },
         {
+          type: "function",
+          name: "updatePoolTradingRules",
+          inputs: [
+            {
+              name: "_poolId",
+              type: "bytes32",
+              internalType: "PoolId",
+            },
+            {
+              name: "_newRules",
+              type: "tuple",
+              internalType: "struct IOrderBook.TradingRules",
+              components: [
+                {
+                  name: "minTradeAmount",
+                  type: "uint128",
+                  internalType: "uint128",
+                },
+                {
+                  name: "minAmountMovement",
+                  type: "uint128",
+                  internalType: "uint128",
+                },
+                {
+                  name: "minPriceMovement",
+                  type: "uint128",
+                  internalType: "uint128",
+                },
+                {
+                  name: "minOrderSize",
+                  type: "uint128",
+                  internalType: "uint128",
+                },
+              ],
+            },
+          ],
+          outputs: [],
+          stateMutability: "nonpayable",
+        },
+        {
           type: "event",
           name: "CurrencyAdded",
           inputs: [
@@ -8519,6 +8980,47 @@ export const deployedContracts: DeployedContracts = {
           anonymous: false,
         },
         {
+          type: "event",
+          name: "TradingRulesUpdated",
+          inputs: [
+            {
+              name: "poolId",
+              type: "bytes32",
+              indexed: true,
+              internalType: "PoolId",
+            },
+            {
+              name: "newRules",
+              type: "tuple",
+              indexed: false,
+              internalType: "struct IOrderBook.TradingRules",
+              components: [
+                {
+                  name: "minTradeAmount",
+                  type: "uint128",
+                  internalType: "uint128",
+                },
+                {
+                  name: "minAmountMovement",
+                  type: "uint128",
+                  internalType: "uint128",
+                },
+                {
+                  name: "minPriceMovement",
+                  type: "uint128",
+                  internalType: "uint128",
+                },
+                {
+                  name: "minOrderSize",
+                  type: "uint128",
+                  internalType: "uint128",
+                },
+              ],
+            },
+          ],
+          anonymous: false,
+        },
+        {
           type: "error",
           name: "InvalidInitialization",
           inputs: [],
@@ -8527,6 +9029,17 @@ export const deployedContracts: DeployedContracts = {
           type: "error",
           name: "InvalidRouter",
           inputs: [],
+        },
+        {
+          type: "error",
+          name: "InvalidTradingRule",
+          inputs: [
+            {
+              name: "reason",
+              type: "string",
+              internalType: "string",
+            },
+          ],
         },
         {
           type: "error",
@@ -8552,6 +9065,17 @@ export const deployedContracts: DeployedContracts = {
               name: "account",
               type: "address",
               internalType: "address",
+            },
+          ],
+        },
+        {
+          type: "error",
+          name: "PoolAlreadyExists",
+          inputs: [
+            {
+              name: "id",
+              type: "bytes32",
+              internalType: "PoolId",
             },
           ],
         },
@@ -8916,17 +9440,17 @@ export const deployedContracts: DeployedContracts = {
               type: "uint8",
               internalType: "enum IOrderBook.Side",
             },
-            {
-              name: "_user",
-              type: "address",
-              internalType: "address",
-            },
           ],
           outputs: [
             {
               name: "orderId",
               type: "uint48",
               internalType: "uint48",
+            },
+            {
+              name: "filled",
+              type: "uint128",
+              internalType: "uint128",
             },
           ],
           stateMutability: "nonpayable",
@@ -8967,17 +9491,17 @@ export const deployedContracts: DeployedContracts = {
               type: "uint8",
               internalType: "enum IOrderBook.Side",
             },
-            {
-              name: "_user",
-              type: "address",
-              internalType: "address",
-            },
           ],
           outputs: [
             {
               name: "orderId",
               type: "uint48",
               internalType: "uint48",
+            },
+            {
+              name: "filled",
+              type: "uint128",
+              internalType: "uint128",
             },
           ],
           stateMutability: "nonpayable",
@@ -9024,9 +9548,9 @@ export const deployedContracts: DeployedContracts = {
               internalType: "enum IOrderBook.Side",
             },
             {
-              name: "_user",
-              type: "address",
-              internalType: "address",
+              name: "_timeInForce",
+              type: "uint8",
+              internalType: "enum IOrderBook.TimeInForce",
             },
           ],
           outputs: [
@@ -9080,9 +9604,9 @@ export const deployedContracts: DeployedContracts = {
               internalType: "enum IOrderBook.Side",
             },
             {
-              name: "_user",
-              type: "address",
-              internalType: "address",
+              name: "_timeInForce",
+              type: "uint8",
+              internalType: "enum IOrderBook.TimeInForce",
             },
           ],
           outputs: [
@@ -9257,6 +9781,17 @@ export const deployedContracts: DeployedContracts = {
           type: "error",
           name: "InvalidQuantityIncrement",
           inputs: [],
+        },
+        {
+          type: "error",
+          name: "InvalidTradingRule",
+          inputs: [
+            {
+              name: "reason",
+              type: "string",
+              internalType: "string",
+            },
+          ],
         },
         {
           type: "error",
@@ -9760,6 +10295,11 @@ export const deployedContracts: DeployedContracts = {
               type: "uint48",
               internalType: "uint48",
             },
+            {
+              name: "receivedAmount",
+              type: "uint128",
+              internalType: "uint128",
+            },
           ],
           stateMutability: "nonpayable",
         },
@@ -9865,6 +10405,41 @@ export const deployedContracts: DeployedContracts = {
               name: "newOwner",
               type: "address",
               internalType: "address",
+            },
+          ],
+          outputs: [],
+          stateMutability: "nonpayable",
+        },
+        {
+          type: "function",
+          name: "updateTradingRules",
+          inputs: [
+            {
+              name: "_newRules",
+              type: "tuple",
+              internalType: "struct IOrderBook.TradingRules",
+              components: [
+                {
+                  name: "minTradeAmount",
+                  type: "uint128",
+                  internalType: "uint128",
+                },
+                {
+                  name: "minAmountMovement",
+                  type: "uint128",
+                  internalType: "uint128",
+                },
+                {
+                  name: "minPriceMovement",
+                  type: "uint128",
+                  internalType: "uint128",
+                },
+                {
+                  name: "minOrderSize",
+                  type: "uint128",
+                  internalType: "uint128",
+                },
+              ],
             },
           ],
           outputs: [],
@@ -10039,6 +10614,47 @@ export const deployedContracts: DeployedContracts = {
         },
         {
           type: "event",
+          name: "TradingRulesUpdated",
+          inputs: [
+            {
+              name: "poolId",
+              type: "bytes32",
+              indexed: true,
+              internalType: "PoolId",
+            },
+            {
+              name: "newRules",
+              type: "tuple",
+              indexed: false,
+              internalType: "struct IOrderBook.TradingRules",
+              components: [
+                {
+                  name: "minTradeAmount",
+                  type: "uint128",
+                  internalType: "uint128",
+                },
+                {
+                  name: "minAmountMovement",
+                  type: "uint128",
+                  internalType: "uint128",
+                },
+                {
+                  name: "minPriceMovement",
+                  type: "uint128",
+                  internalType: "uint128",
+                },
+                {
+                  name: "minOrderSize",
+                  type: "uint128",
+                  internalType: "uint128",
+                },
+              ],
+            },
+          ],
+          anonymous: false,
+        },
+        {
+          type: "event",
           name: "UpdateOrder",
           inputs: [
             {
@@ -10134,6 +10750,22 @@ export const deployedContracts: DeployedContracts = {
         {
           type: "error",
           name: "InvalidQuantityIncrement",
+          inputs: [],
+        },
+        {
+          type: "error",
+          name: "InvalidTradingRule",
+          inputs: [
+            {
+              name: "reason",
+              type: "string",
+              internalType: "string",
+            },
+          ],
+        },
+        {
+          type: "error",
+          name: "NotAuthorized",
           inputs: [],
         },
         {
@@ -10303,6 +10935,7 @@ export const deployedContracts: DeployedContracts = {
         placeOrder: "src/interfaces/IOrderBook.sol",
         setRouter: "src/interfaces/IOrderBook.sol",
         setTradingRules: "src/interfaces/IOrderBook.sol",
+        updateTradingRules: "src/interfaces/IOrderBook.sol",
       },
     },
     PoolManagerResolver: {
@@ -10488,7 +11121,7 @@ export const deployedContracts: DeployedContracts = {
   },
   11155931: {
     BalanceManager: {
-      address: "0x59a03834153ca800d02f6c7bbdb681981b81e398",
+      address: "0x51e83837be9d169c7b4e1b327772c3b4baf74580",
       abi: [
         {
           type: "constructor",
@@ -10521,7 +11154,7 @@ export const deployedContracts: DeployedContracts = {
             },
           ],
           outputs: [],
-          stateMutability: "nonpayable",
+          stateMutability: "payable",
         },
         {
           type: "function",
@@ -11254,11 +11887,6 @@ export const deployedContracts: DeployedContracts = {
         },
         {
           type: "error",
-          name: "NativeTransferFailed",
-          inputs: [],
-        },
-        {
-          type: "error",
           name: "NotInitializing",
           inputs: [],
         },
@@ -11341,7 +11969,11 @@ export const deployedContracts: DeployedContracts = {
       inheritedFunctions: {
         deposit: "src/interfaces/IBalanceManager.sol",
         depositAndLock: "src/interfaces/IBalanceManager.sol",
+        feeMaker: "src/interfaces/IBalanceManager.sol",
+        feeReceiver: "src/interfaces/IBalanceManager.sol",
+        feeTaker: "src/interfaces/IBalanceManager.sol",
         getBalance: "src/interfaces/IBalanceManager.sol",
+        getFeeUnit: "src/interfaces/IBalanceManager.sol",
         getLockedBalance: "src/interfaces/IBalanceManager.sol",
         lock: "src/interfaces/IBalanceManager.sol",
         setAuthorizedOperator: "src/interfaces/IBalanceManager.sol",
@@ -11360,7 +11992,7 @@ export const deployedContracts: DeployedContracts = {
       },
     },
     UpgradeableBeacon: {
-      address: "0x997a04cc9ddf63ef0e9b19549e97d6dbf805ad55",
+      address: "0x106a85c8b95560697493c06eb34a13a5c6b5ee71",
       abi: [
         {
           type: "constructor",
@@ -11515,7 +12147,7 @@ export const deployedContracts: DeployedContracts = {
       },
     },
     PoolManager: {
-      address: "0x6a4040fccf33dea401a7d85c8bd7ddb132ce2985",
+      address: "0x40eb6f194a1104ad1a5495f737f799c9716f4fc4",
       abi: [
         {
           type: "constructor",
@@ -11888,6 +12520,46 @@ export const deployedContracts: DeployedContracts = {
           stateMutability: "nonpayable",
         },
         {
+          type: "function",
+          name: "updatePoolTradingRules",
+          inputs: [
+            {
+              name: "_poolId",
+              type: "bytes32",
+              internalType: "PoolId",
+            },
+            {
+              name: "_newRules",
+              type: "tuple",
+              internalType: "struct IOrderBook.TradingRules",
+              components: [
+                {
+                  name: "minTradeAmount",
+                  type: "uint128",
+                  internalType: "uint128",
+                },
+                {
+                  name: "minAmountMovement",
+                  type: "uint128",
+                  internalType: "uint128",
+                },
+                {
+                  name: "minPriceMovement",
+                  type: "uint128",
+                  internalType: "uint128",
+                },
+                {
+                  name: "minOrderSize",
+                  type: "uint128",
+                  internalType: "uint128",
+                },
+              ],
+            },
+          ],
+          outputs: [],
+          stateMutability: "nonpayable",
+        },
+        {
           type: "event",
           name: "CurrencyAdded",
           inputs: [
@@ -12009,6 +12681,47 @@ export const deployedContracts: DeployedContracts = {
           anonymous: false,
         },
         {
+          type: "event",
+          name: "TradingRulesUpdated",
+          inputs: [
+            {
+              name: "poolId",
+              type: "bytes32",
+              indexed: true,
+              internalType: "PoolId",
+            },
+            {
+              name: "newRules",
+              type: "tuple",
+              indexed: false,
+              internalType: "struct IOrderBook.TradingRules",
+              components: [
+                {
+                  name: "minTradeAmount",
+                  type: "uint128",
+                  internalType: "uint128",
+                },
+                {
+                  name: "minAmountMovement",
+                  type: "uint128",
+                  internalType: "uint128",
+                },
+                {
+                  name: "minPriceMovement",
+                  type: "uint128",
+                  internalType: "uint128",
+                },
+                {
+                  name: "minOrderSize",
+                  type: "uint128",
+                  internalType: "uint128",
+                },
+              ],
+            },
+          ],
+          anonymous: false,
+        },
+        {
           type: "error",
           name: "InvalidInitialization",
           inputs: [],
@@ -12017,6 +12730,17 @@ export const deployedContracts: DeployedContracts = {
           type: "error",
           name: "InvalidRouter",
           inputs: [],
+        },
+        {
+          type: "error",
+          name: "InvalidTradingRule",
+          inputs: [
+            {
+              name: "reason",
+              type: "string",
+              internalType: "string",
+            },
+          ],
         },
         {
           type: "error",
@@ -12045,6 +12769,17 @@ export const deployedContracts: DeployedContracts = {
             },
           ],
         },
+        {
+          type: "error",
+          name: "PoolAlreadyExists",
+          inputs: [
+            {
+              name: "id",
+              type: "bytes32",
+              internalType: "PoolId",
+            },
+          ],
+        },
       ],
       inheritedFunctions: {
         owner:
@@ -12068,7 +12803,7 @@ export const deployedContracts: DeployedContracts = {
       },
     },
     GTXRouter: {
-      address: "0xde79cbb69501ea08d1e13e5c052d2bd9b6397dd4",
+      address: "0x8d1b71e71d60ccf3352a4e0034542bc505c417e4",
       abi: [
         {
           type: "constructor",
@@ -12406,17 +13141,17 @@ export const deployedContracts: DeployedContracts = {
               type: "uint8",
               internalType: "enum IOrderBook.Side",
             },
-            {
-              name: "_user",
-              type: "address",
-              internalType: "address",
-            },
           ],
           outputs: [
             {
               name: "orderId",
               type: "uint48",
               internalType: "uint48",
+            },
+            {
+              name: "filled",
+              type: "uint128",
+              internalType: "uint128",
             },
           ],
           stateMutability: "nonpayable",
@@ -12457,17 +13192,17 @@ export const deployedContracts: DeployedContracts = {
               type: "uint8",
               internalType: "enum IOrderBook.Side",
             },
-            {
-              name: "_user",
-              type: "address",
-              internalType: "address",
-            },
           ],
           outputs: [
             {
               name: "orderId",
               type: "uint48",
               internalType: "uint48",
+            },
+            {
+              name: "filled",
+              type: "uint128",
+              internalType: "uint128",
             },
           ],
           stateMutability: "nonpayable",
@@ -12514,9 +13249,9 @@ export const deployedContracts: DeployedContracts = {
               internalType: "enum IOrderBook.Side",
             },
             {
-              name: "_user",
-              type: "address",
-              internalType: "address",
+              name: "_timeInForce",
+              type: "uint8",
+              internalType: "enum IOrderBook.TimeInForce",
             },
           ],
           outputs: [
@@ -12570,9 +13305,9 @@ export const deployedContracts: DeployedContracts = {
               internalType: "enum IOrderBook.Side",
             },
             {
-              name: "_user",
-              type: "address",
-              internalType: "address",
+              name: "_timeInForce",
+              type: "uint8",
+              internalType: "enum IOrderBook.TimeInForce",
             },
           ],
           outputs: [
@@ -12750,6 +13485,17 @@ export const deployedContracts: DeployedContracts = {
         },
         {
           type: "error",
+          name: "InvalidTradingRule",
+          inputs: [
+            {
+              name: "reason",
+              type: "string",
+              internalType: "string",
+            },
+          ],
+        },
+        {
+          type: "error",
           name: "NotInitializing",
           inputs: [],
         },
@@ -12912,7 +13658,7 @@ export const deployedContracts: DeployedContracts = {
       },
     },
     OrderBook: {
-      address: "0xbbd96bfd1beae0732a2e2d70026e1b1a8f3dc324",
+      address: "0xdb6c4afe890e06c5cf24db71301b701977ba97c8",
       abi: [
         {
           type: "constructor",
@@ -13250,6 +13996,11 @@ export const deployedContracts: DeployedContracts = {
               type: "uint48",
               internalType: "uint48",
             },
+            {
+              name: "receivedAmount",
+              type: "uint128",
+              internalType: "uint128",
+            },
           ],
           stateMutability: "nonpayable",
         },
@@ -13355,6 +14106,41 @@ export const deployedContracts: DeployedContracts = {
               name: "newOwner",
               type: "address",
               internalType: "address",
+            },
+          ],
+          outputs: [],
+          stateMutability: "nonpayable",
+        },
+        {
+          type: "function",
+          name: "updateTradingRules",
+          inputs: [
+            {
+              name: "_newRules",
+              type: "tuple",
+              internalType: "struct IOrderBook.TradingRules",
+              components: [
+                {
+                  name: "minTradeAmount",
+                  type: "uint128",
+                  internalType: "uint128",
+                },
+                {
+                  name: "minAmountMovement",
+                  type: "uint128",
+                  internalType: "uint128",
+                },
+                {
+                  name: "minPriceMovement",
+                  type: "uint128",
+                  internalType: "uint128",
+                },
+                {
+                  name: "minOrderSize",
+                  type: "uint128",
+                  internalType: "uint128",
+                },
+              ],
             },
           ],
           outputs: [],
@@ -13529,6 +14315,47 @@ export const deployedContracts: DeployedContracts = {
         },
         {
           type: "event",
+          name: "TradingRulesUpdated",
+          inputs: [
+            {
+              name: "poolId",
+              type: "bytes32",
+              indexed: true,
+              internalType: "PoolId",
+            },
+            {
+              name: "newRules",
+              type: "tuple",
+              indexed: false,
+              internalType: "struct IOrderBook.TradingRules",
+              components: [
+                {
+                  name: "minTradeAmount",
+                  type: "uint128",
+                  internalType: "uint128",
+                },
+                {
+                  name: "minAmountMovement",
+                  type: "uint128",
+                  internalType: "uint128",
+                },
+                {
+                  name: "minPriceMovement",
+                  type: "uint128",
+                  internalType: "uint128",
+                },
+                {
+                  name: "minOrderSize",
+                  type: "uint128",
+                  internalType: "uint128",
+                },
+              ],
+            },
+          ],
+          anonymous: false,
+        },
+        {
+          type: "event",
           name: "UpdateOrder",
           inputs: [
             {
@@ -13624,6 +14451,22 @@ export const deployedContracts: DeployedContracts = {
         {
           type: "error",
           name: "InvalidQuantityIncrement",
+          inputs: [],
+        },
+        {
+          type: "error",
+          name: "InvalidTradingRule",
+          inputs: [
+            {
+              name: "reason",
+              type: "string",
+              internalType: "string",
+            },
+          ],
+        },
+        {
+          type: "error",
+          name: "NotAuthorized",
           inputs: [],
         },
         {
@@ -13793,10 +14636,11 @@ export const deployedContracts: DeployedContracts = {
         placeOrder: "src/interfaces/IOrderBook.sol",
         setRouter: "src/interfaces/IOrderBook.sol",
         setTradingRules: "src/interfaces/IOrderBook.sol",
+        updateTradingRules: "src/interfaces/IOrderBook.sol",
       },
     },
     PoolManagerResolver: {
-      address: "0x8d4c37be6b815f30e81f2ece5febaa333029ace2",
+      address: "0x88f77ec2871e0df34092ea93e24803647993672b",
       abi: [
         {
           type: "constructor",
@@ -13894,7 +14738,7 @@ export const deployedContracts: DeployedContracts = {
       inheritedFunctions: {},
     },
     BeaconProxy: {
-      address: "0x830b83bab367a9f3ada7f23ea03a36f8ab3970e2",
+      address: "0x565b699b466e7b3c8811fff2a975febfc73265dc",
       abi: [
         {
           type: "constructor",
