@@ -40,6 +40,10 @@ define forge_swap
 	forge script script/Swap.s.sol:Swap --rpc-url $(network) --broadcast $(flag)
 endef
 
+define forge_mint_tokens
+	forge script script/MintTokens.s.sol:MintTokens --rpc-url $(network) --broadcast $(flag)
+endef
+
 # Define a target to deploy using the specified network
 deploy:
 	$(call forge_script,)
@@ -79,6 +83,10 @@ market-orderbook:
 # Define a target to execute swaps
 swap:
 	$(call forge_swap,)
+
+# Define a target to mint tokens
+mint-tokens:
+	$(call forge_mint_tokens,)
 
 # Define a target to run full integration (deploy everything and test)
 full-integration:
@@ -144,6 +152,7 @@ help:
 	@echo "  fill-orderbook  - Fill mock order book"
 	@echo "  market-orderbook - Place market orders in mock order book"
 	@echo "  swap            - Execute token swaps"
+	@echo "  mint-tokens     - Mint tokens to specified recipient"
 	@echo "  full-integration - Run full deployment and testing sequence"
 	@echo "  upgrade         - Upgrade contracts using the specified network"
 	@echo "  upgrade-verify  - Upgrade and verify contracts using the specified network"
