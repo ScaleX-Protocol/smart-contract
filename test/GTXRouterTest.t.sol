@@ -120,7 +120,7 @@ contract GTXRouterTest is Test {
         return _poolManager.getPool(key);
     }
 
-    function testPlaceLimitOrder() public {
+ function testPlaceLimitOrder() public {
         vm.startPrank(alice);
         uint128 price = 2000e6;
         uint128 quantity = 1e18; // 1 ETH
@@ -286,7 +286,8 @@ contract GTXRouterTest is Test {
 
         // Successful market buy
         uint128 buyMarketQty = 5 * 10 ** 17; // 0.5 ETH
-        (uint48 marketBuyId, uint128 filled) = gtxRouter.placeMarketOrder(pool, buyMarketQty, IOrderBook.Side.BUY);
+        (uint48 marketBuyId, uint128 filled) =
+            gtxRouter.placeMarketOrder(pool, buyMarketQty, IOrderBook.Side.BUY, (buyMarketQty * 95) / 100);
         console.log("Market buy order executed with ID:", marketBuyId);
         vm.stopPrank();
 
@@ -300,7 +301,7 @@ contract GTXRouterTest is Test {
         // Successful market sell
         uint128 sellMarketQty = 5 * 10 ** 17; // 0.5 ETH
         (uint48 marketSellId, uint128 filledSell) =
-            gtxRouter.placeMarketOrder(pool, sellMarketQty, IOrderBook.Side.SELL);
+            gtxRouter.placeMarketOrder(pool, sellMarketQty, IOrderBook.Side.SELL, (sellMarketQty * 95) / 100);
         console.log("Market sell order executed with ID:", marketSellId);
         vm.stopPrank();
 
@@ -316,7 +317,7 @@ contract GTXRouterTest is Test {
         vm.expectRevert(
             abi.encodeWithSelector(IOrderBookErrors.InsufficientBalance.selector, 5 * 10 ** 17, 1 * 10 ** 17)
         );
-        gtxRouter.placeMarketOrder(pool, sellMarketQty, IOrderBook.Side.SELL);
+        gtxRouter.placeMarketOrder(pool, sellMarketQty, IOrderBook.Side.SELL, (sellMarketQty * 95) / 100);
 
         vm.stopPrank();
     }
@@ -400,9 +401,13 @@ contract GTXRouterTest is Test {
         uint256 expectedUsdcCost = (buyMarketQty * bestSellPrice.price) / 10 ** 18;
         console.log("Expected USDC cost for market buy:", expectedUsdcCost);
 
+        // Calculate minOutAmount with 5% slippage on expected WETH quantity
+        uint128 minOutAmountBuy = (buyMarketQty * 95) / 100;
+
         // This should automatically deposit USDC and execute the market order
-        (uint48 buyDepositOrderId, uint128 filled) =
-            gtxRouter.placeMarketOrderWithDeposit(pool, buyMarketQty, IOrderBook.Side.BUY);
+        (uint48 buyDepositOrderId, uint128 filled) = gtxRouter.placeMarketOrderWithDeposit(
+            pool, buyMarketQty, IOrderBook.Side.BUY, minOutAmountBuy, uint128(expectedUsdcCost), (buyMarketQty * 95) / 100
+        );
 
         console.log("Market buy with deposit executed with ID:", buyDepositOrderId);
 
@@ -438,9 +443,14 @@ contract GTXRouterTest is Test {
         uint256 expectedUsdcReceived = (sellMarketQty * bestBuyPrice.price) / 10 ** 18;
         console.log("Expected USDC received for market sell:", expectedUsdcReceived);
 
+        // Calculate minOutAmount with 5% slippage on expected USDC received, minus 0.5% taker fee
+        uint128 minOutAmountSell = uint128((expectedUsdcReceived * 95) / 100);
+        minOutAmountSell = uint128(uint256(minOutAmountSell) * (FEE_UNIT - feeTaker) / FEE_UNIT);
+
         // This should automatically deposit ETH and execute the market order
-        (uint48 sellDepositOrderId, uint128 filledSell) =
-            gtxRouter.placeMarketOrderWithDeposit(pool, sellMarketQty, IOrderBook.Side.SELL);
+        (uint48 sellDepositOrderId, uint128 filledSell) = gtxRouter.placeMarketOrderWithDeposit(
+            pool, sellMarketQty, IOrderBook.Side.SELL, minOutAmountSell, sellMarketQty, sellMarketQty
+        );
 
         console.log("Market sell with deposit executed with ID:", sellDepositOrderId);
 
@@ -479,7 +489,9 @@ contract GTXRouterTest is Test {
         vm.expectRevert(
             abi.encodeWithSelector(IOrderBookErrors.InsufficientBalance.selector, expectedUsdcCost, poorBuyerUsdcAmount)
         );
-        gtxRouter.placeMarketOrderWithDeposit(pool, buyMarketQty, IOrderBook.Side.BUY);
+        gtxRouter.placeMarketOrderWithDeposit(
+            pool, buyMarketQty, IOrderBook.Side.BUY, 0, uint128(expectedUsdcCost), 0
+        );
 
         vm.stopPrank();
 
@@ -498,7 +510,9 @@ contract GTXRouterTest is Test {
         vm.expectRevert(
             abi.encodeWithSelector(IOrderBookErrors.InsufficientBalance.selector, sellMarketQty, poorSellerEthAmount)
         );
-        gtxRouter.placeMarketOrderWithDeposit(pool, sellMarketQty, IOrderBook.Side.SELL);
+        gtxRouter.placeMarketOrderWithDeposit(
+            pool, sellMarketQty, IOrderBook.Side.SELL, 0, sellMarketQty, sellMarketQty
+        );
 
         vm.stopPrank();
     }
@@ -866,7 +880,9 @@ contract GTXRouterTest is Test {
 
         // Buy 6 ETH (base quantity)
         uint128 buyQty = 6e18; // 6 ETH
-        gtxRouter.placeMarketOrderWithDeposit(pool, buyQty, IOrderBook.Side.BUY);
+        gtxRouter.placeMarketOrderWithDeposit(
+            pool, buyQty, IOrderBook.Side.BUY, (buyQty * 95) / 100, 0, (buyQty * 95) / 100
+        );
         vm.stopPrank();
 
         // Verify partial fill
@@ -888,7 +904,9 @@ contract GTXRouterTest is Test {
         IPoolManager.Pool memory pool = _getPool(weth, usdc);
 
         vm.expectRevert();
-        gtxRouter.placeMarketOrderWithDeposit(pool, uint128(10e18), IOrderBook.Side.BUY);
+        gtxRouter.placeMarketOrderWithDeposit(
+            pool, uint128(10e18), IOrderBook.Side.BUY, (uint128(10e18) * 95) / 100, 0, (uint128(10e18) * 95) / 100
+        );
 
         vm.stopPrank();
     }
@@ -971,7 +989,9 @@ contract GTXRouterTest is Test {
         // Execute market buy that should match with lowest sell orders
         // Quantity is in base asset (ETH)
         uint128 marketBuyQty = 5e18; // Buy 5 ETH
-        gtxRouter.placeMarketOrderWithDeposit(pool, marketBuyQty, IOrderBook.Side.BUY);
+        gtxRouter.placeMarketOrderWithDeposit(
+            pool, marketBuyQty, IOrderBook.Side.BUY, (marketBuyQty * 95) / 100, 0, (marketBuyQty * 95) / 100
+        );
         vm.stopPrank();
 
         // Verify balances after trade for the first sell trader (index 10)
@@ -1204,5 +1224,42 @@ contract GTXRouterTest is Test {
         assertEq(buyCount, 0, "Buy order should be matched and removed");
         assertEq(sellVol, 0, "Sell volume should be zero");
         assertEq(buyVol, 0, "Buy volume should be zero");
+    }
+
+
+
+    function testSlippagePlaceMarketOrderWithDepositBuyOrder() public {
+        vm.startPrank(alice);
+        mockWETH.mint(alice, 5e18);
+        IERC20(Currency.unwrap(weth)).approve(address(balanceManager), 5e18);
+        balanceManager.deposit(weth, 5e18, alice, alice);
+        IPoolManager.Pool memory pool = _getPool(weth, usdc);
+
+        gtxRouter.placeOrder(pool, 3000e6, 1e18, IOrderBook.Side.SELL, IOrderBook.TimeInForce.GTC);
+        gtxRouter.placeOrder(pool, 3500e6, 1e18, IOrderBook.Side.SELL, IOrderBook.TimeInForce.GTC);
+        gtxRouter.placeOrder(pool, 4000e6, 3e18, IOrderBook.Side.SELL, IOrderBook.TimeInForce.GTC);
+        vm.stopPrank();
+
+        address slippageBuyer = address(0x10);
+        vm.startPrank(slippageBuyer);
+
+        mockUSDC.mint(slippageBuyer, 4000e6);
+        IERC20(Currency.unwrap(usdc)).approve(address(balanceManager), 4000e6);
+        balanceManager.deposit(usdc, 4000e6, slippageBuyer, slippageBuyer);
+
+        uint128 depositAmount = 10000e6;
+
+        mockUSDC.mint(slippageBuyer, depositAmount);
+        IERC20(Currency.unwrap(usdc)).approve(address(balanceManager), depositAmount);
+
+        uint128 minOutAmount = 2875000000000000000; // 5% slippage tolerance
+        minOutAmount = minOutAmount - ((minOutAmount * 5) / 1000); // Fee tolerance
+        console.log("Min out amount:", minOutAmount);
+
+        gtxRouter.placeMarketOrderWithDeposit(
+            pool, type(uint128).max, IOrderBook.Side.BUY, minOutAmount, 10000e6, depositAmount
+        );
+
+        vm.stopPrank();
     }
 }

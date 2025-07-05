@@ -12,6 +12,7 @@ import {BalanceManagerStorage} from "./storages/BalanceManagerStorage.sol";
 
 import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {Test, console} from "forge-std/Test.sol";
 
 contract BalanceManager is IBalanceManager, BalanceManagerStorage, OwnableUpgradeable, ReentrancyGuardUpgradeable {
     /// @custom:oz-upgrades-unsafe-allow constructor
@@ -71,6 +72,7 @@ contract BalanceManager is IBalanceManager, BalanceManagerStorage, OwnableUpgrad
 
     function deposit(Currency currency, uint256 amount, address sender, address user) public payable nonReentrant {
         if (amount == 0) {
+            console.log("Deposit amount is zero for user:", user);
             revert ZeroAmount();
         }
 

@@ -21,6 +21,8 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 import {IGTXRouter} from "./interfaces/IGTXRouter.sol";
 import {GTXRouterStorage} from "./storages/GTXRouterStorage.sol";
+import {Test, console} from "forge-std/Test.sol";
+
 
 contract GTXRouter is IGTXRouter, GTXRouterStorage, Initializable, OwnableUpgradeable, IOrderBookErrors {
     /// @custom:oz-upgrades-unsafe-allow constructor
@@ -54,6 +56,7 @@ contract GTXRouter is IGTXRouter, GTXRouterStorage, Initializable, OwnableUpgrad
     ) external returns (uint48 orderId) {
         orderId = _placeLimitOrder(pool, _price, _quantity, _side, _timeInForce, true, msg.sender);
     }
+
 
     function _validateCallerBalance(
         IPoolManager.Pool memory pool,
@@ -136,7 +139,8 @@ contract GTXRouter is IGTXRouter, GTXRouterStorage, Initializable, OwnableUpgrad
     function placeMarketOrder(
         IPoolManager.Pool memory pool,
         uint128 _quantity,
-        IOrderBook.Side _side
+        IOrderBook.Side _side,
+        uint128 minOutAmount
     ) public returns (uint48 orderId, uint128 filled) {
         _validateCallerBalance(pool, msg.sender, _side, _quantity, 0, true, false);
         return _placeMarketOrder(pool, _quantity, _side, msg.sender);
@@ -154,7 +158,8 @@ contract GTXRouter is IGTXRouter, GTXRouterStorage, Initializable, OwnableUpgrad
         PoolKey memory key,
         uint256 amount,
         IOrderBook.Side side,
-        address user
+        address user,
+        uint128 minOutAmount
     ) internal returns (uint48 orderId, uint128 filled) {
         Storage storage $ = getStorage();
         IPoolManager poolManager = IPoolManager($.poolManager);
@@ -173,23 +178,40 @@ contract GTXRouter is IGTXRouter, GTXRouterStorage, Initializable, OwnableUpgrad
         if (quantity == 0) {
             revert InvalidQuantity();
         }
-        return placeMarketOrder(pool, quantity, side);
+        return placeMarketOrder(pool, quantity, side, minOutAmount);
     }
-
     function placeMarketOrderWithDeposit(
         IPoolManager.Pool memory pool,
         uint128 _quantity,
-        IOrderBook.Side _side
+        IOrderBook.Side _side,
+        uint128 minOutAmount,
+        uint128 depositAmount,
+        uint128 maxBalanceAllowed
     ) external returns (uint48 orderId, uint128 filled) {
-        (Currency depositCurrency, uint256 requiredBalance) =
-                        _validateCallerBalance(pool, msg.sender, _side, _quantity, 0, true, true);
+        Currency depositCurrency = (_side == IOrderBook.Side.BUY) ? pool.quoteCurrency : pool.baseCurrency;
 
         Storage storage $ = getStorage();
         IBalanceManager balanceManager = IBalanceManager($.balanceManager);
 
-        balanceManager.deposit(depositCurrency, requiredBalance, msg.sender, msg.sender);
-        //
-        return _placeMarketOrder(pool, _quantity, _side, msg.sender);
+        console.log("Deposit amount:", depositAmount);
+
+        balanceManager.deposit(depositCurrency, depositAmount, msg.sender, msg.sender);
+
+        uint256 userBalance = balanceManager.getBalance(msg.sender, depositCurrency);
+
+        if (userBalance > 0 && userBalance > maxBalanceAllowed) {
+            balanceManager.lock(msg.sender, depositCurrency, userBalance - maxBalanceAllowed);
+        }
+
+        (orderId, filled) = _placeMarketOrder(pool, _quantity, _side, msg.sender);
+
+        if (userBalance > 0 && userBalance > maxBalanceAllowed) {
+            balanceManager.unlock(msg.sender, depositCurrency, userBalance - maxBalanceAllowed);
+        }
+
+         if (filled < minOutAmount) {
+             revert SlippageTooHigh(filled, minOutAmount);
+         }
     }
 
     function cancelOrder(IPoolManager.Pool memory pool, uint48 orderId) external {
@@ -345,7 +367,7 @@ contract GTXRouter is IGTXRouter, GTXRouterStorage, Initializable, OwnableUpgrad
         }
         // Deposit the source currency to the protocol
         balanceManager.deposit(srcCurrency, srcAmount, msg.sender, user);
-        (, uint128 receivedAmount) = _placeMarketOrderForSwap(key, srcAmount, side, user);
+        (, uint128 receivedAmount) = _placeMarketOrderForSwap(key, srcAmount, side, user, uint128(minDstAmount));
         // Ensure minimum destination amount is met
         if (receivedAmount < minDstAmount) {
             revert SlippageTooHigh(receivedAmount, minDstAmount);
@@ -420,7 +442,7 @@ contract GTXRouter is IGTXRouter, GTXRouterStorage, Initializable, OwnableUpgrad
         IPoolManager poolManager = IPoolManager($.poolManager);
         IBalanceManager balanceManager = IBalanceManager($.balanceManager);
         PoolKey memory key = poolManager.createPoolKey(baseCurrency, quoteCurrency);
-        (, uint128 receivedAmount) = _placeMarketOrderForSwap(key, srcAmount, side, user);
+        (, uint128 receivedAmount) = _placeMarketOrderForSwap(key, srcAmount, side, user, uint128(minDstAmount));
 
         if (receivedAmount < minDstAmount) {
             revert SlippageTooHigh(receivedAmount, minDstAmount);
@@ -466,7 +488,7 @@ contract GTXRouter is IGTXRouter, GTXRouterStorage, Initializable, OwnableUpgrad
         PoolKey memory reverseKey = poolManager.createPoolKey(dstCurrency, intermediary);
         // Record balance before swap
         uint256 balanceBefore = balanceManager.getBalance(user, dstCurrency);
-        _placeMarketOrderForSwap(reverseKey, intermediateAmount, IOrderBook.Side.BUY, user);
+        _placeMarketOrderForSwap(reverseKey, intermediateAmount, IOrderBook.Side.BUY, user, uint128(minDstAmount));
         // Calculate received amount
         uint256 balanceAfter = balanceManager.getBalance(user, dstCurrency);
         receivedAmount = balanceAfter - balanceBefore;
