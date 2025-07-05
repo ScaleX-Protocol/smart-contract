@@ -255,6 +255,93 @@ contract GTXRouter is IGTXRouter, GTXRouterStorage, Initializable, OwnableUpgrad
         return IOrderBook(pool.orderBook).getOrder(orderId);
     }
 
+    function calculateMinOutAmountForMarket(
+        IPoolManager.Pool memory pool,
+        uint256 inputAmount,
+        IOrderBook.Side side,
+        uint256 slippageToleranceBps
+    ) public view returns (uint128 minOutputAmount) {
+        if (slippageToleranceBps > 10000) {
+            revert InvalidSlippageTolerance(slippageToleranceBps);
+        }
+        
+        if (inputAmount == 0) {
+            return 0;
+        }
+
+        Storage storage $ = getStorage();
+        IBalanceManager balanceManager = IBalanceManager($.balanceManager);
+        
+        IOrderBook.Side oppositeSide = side == IOrderBook.Side.BUY ? IOrderBook.Side.SELL : IOrderBook.Side.BUY;
+        IOrderBook.PriceVolume[] memory oppositePrices = pool.orderBook.getNextBestPrices(oppositeSide, 0, 100);
+        
+        uint256 remainingInput = inputAmount;
+        uint256 totalOutputReceived = 0;
+        
+        for (uint256 i = 0; i < oppositePrices.length && remainingInput > 0; i++) {
+            IOrderBook.PriceVolume memory priceLevel = oppositePrices[i];
+            
+            if (priceLevel.price == 0 || priceLevel.volume == 0) {
+                break;
+            }
+
+            uint256 outputToReceive;
+            
+            if (side == IOrderBook.Side.BUY) {
+                uint256 quoteNeededForLevel = PoolIdLibrary.baseToQuote(
+                    priceLevel.volume, 
+                    priceLevel.price, 
+                    pool.baseCurrency.decimals()
+                );
+                
+                if (quoteNeededForLevel <= remainingInput) {
+                    outputToReceive = priceLevel.volume;
+                    remainingInput -= quoteNeededForLevel;
+                } else {
+                    outputToReceive = PoolIdLibrary.quoteToBase(
+                        remainingInput, 
+                        priceLevel.price, 
+                        pool.baseCurrency.decimals()
+                    );
+                    remainingInput = 0;
+                }
+            } else {
+                uint256 baseToSell;
+                
+                if (priceLevel.volume <= remainingInput) {
+                    baseToSell = priceLevel.volume;
+                    remainingInput -= priceLevel.volume;
+                } else {
+                    baseToSell = remainingInput;
+                    remainingInput = 0;
+                }
+                
+                outputToReceive = PoolIdLibrary.baseToQuote(
+                    baseToSell, 
+                    priceLevel.price, 
+                    pool.baseCurrency.decimals()
+                );
+            }
+            
+            totalOutputReceived += outputToReceive;
+        }
+
+        if (totalOutputReceived == 0) {
+            return 0;
+        }
+
+        uint256 feeTaker = balanceManager.feeTaker();
+        uint256 feeUnit = balanceManager.getFeeUnit();
+        uint256 feeAmount = (totalOutputReceived * feeTaker) / feeUnit;
+        
+        uint256 outputAfterFees = totalOutputReceived > feeAmount ? totalOutputReceived - feeAmount : 0;
+        
+        uint256 slippageAmount = (outputAfterFees * slippageToleranceBps) / 10000;
+        minOutputAmount = uint128(outputAfterFees - slippageAmount);
+        
+        return minOutputAmount;
+    }
+
     function getNextBestPrices(
         IPoolManager.Pool memory pool,
         IOrderBook.Side side,

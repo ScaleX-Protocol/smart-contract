@@ -9,6 +9,7 @@ import {IOrderBook} from "./IOrderBook.sol";
  */
 interface IOrderBookErrors {
     error SlippageTooHigh(uint256 received, uint256 minReceived);
+    error InvalidSlippageTolerance(uint256 slippageBps);
     error FillOrKillNotFulfilled(uint128 filledAmount, uint128 requestedAmount);
     error InvalidOrderType();
     error InvalidPrice(uint256 price);
