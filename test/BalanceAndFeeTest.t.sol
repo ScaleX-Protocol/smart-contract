@@ -83,7 +83,9 @@ contract BalanceAndFeeTest is Test, PoolHelper {
 
         BeaconDeployer beaconDeployer = new BeaconDeployer();
 
-        (BeaconProxy balanceManagerProxy, /*address balanceManagerBeacon*/ ) = beaconDeployer.deployUpgradeableContract(
+        (BeaconProxy balanceManagerProxy,
+address balanceManagerBeacon
+ ) = beaconDeployer.deployUpgradeableContract(
             address(new BalanceManager()),
             owner,
             abi.encodeCall(BalanceManager.initialize, (owner, feeCollector, feeMaker, feeTaker))
@@ -93,7 +95,9 @@ contract BalanceAndFeeTest is Test, PoolHelper {
         IBeacon orderBookBeacon = new UpgradeableBeacon(address(new OrderBook()), owner);
         address orderBookBeaconAddress = address(orderBookBeacon);
 
-        (BeaconProxy poolManagerProxy, /*address poolManagerBeacon*/ ) = beaconDeployer.deployUpgradeableContract(
+        (BeaconProxy poolManagerProxy,
+address poolManagerBeacon
+ ) = beaconDeployer.deployUpgradeableContract(
             address(new PoolManager()),
             owner,
             abi.encodeCall(PoolManager.initialize, (owner, address(balanceManager), address(orderBookBeaconAddress)))
@@ -123,7 +127,9 @@ contract BalanceAndFeeTest is Test, PoolHelper {
         console.log("Base decimals:", baseDecimals);
         console.log("Quote decimals:", quoteDecimals);
 
-        (BeaconProxy routerProxy, /*address gtxRouterBeacon*/ ) = beaconDeployer.deployUpgradeableContract(
+        (BeaconProxy routerProxy,
+address gtxRouterBeacon
+ ) = beaconDeployer.deployUpgradeableContract(
             address(new GTXRouter()),
             owner,
             abi.encodeCall(GTXRouter.initialize, (address(poolManager), address(balanceManager)))
@@ -289,7 +295,9 @@ contract BalanceAndFeeTest is Test, PoolHelper {
         vm.startPrank(bob);
         console.log("\n--- Bob places market sell order for 3 WETH ---");
         bool success = true;
-        try router.placeMarketOrderWithDeposit(pool, bobQuantity, IOrderBook.Side.SELL) {
+        try router.placeMarketOrderWithDeposit(
+            pool, bobQuantity, IOrderBook.Side.SELL, (bobQuantity * 95) / 100, 0, (bobQuantity * 95) / 100
+        ) {
             // Order placed successfully
         } catch {
             success = false;
@@ -488,19 +496,25 @@ contract BalanceAndFeeTest is Test, PoolHelper {
         // Bob's market buy order
         vm.startPrank(bob);
         console.log("\n--- Bob places market buy order for 1 WETH ---");
-        router.placeMarketOrderWithDeposit(pool, bobQuantity, IOrderBook.Side.BUY);
+        router.placeMarketOrderWithDeposit(
+            pool, bobQuantity, IOrderBook.Side.BUY, (bobQuantity * 95) / 100, 0, (bobQuantity * 95) / 100
+        );
         vm.stopPrank();
 
         // Charlie's market buy order
         vm.startPrank(charlie);
         console.log("--- Charlie places market buy order for 2 WETH ---");
-        router.placeMarketOrderWithDeposit(pool, charlieQuantity, IOrderBook.Side.BUY);
+        router.placeMarketOrderWithDeposit(
+            pool, charlieQuantity, IOrderBook.Side.BUY, (charlieQuantity * 95) / 100, 0, (charlieQuantity * 95) / 100
+        );
         vm.stopPrank();
 
         // David's market buy order
         vm.startPrank(david);
         console.log("--- David places market buy order for 1.5 WETH ---");
-        router.placeMarketOrderWithDeposit(pool, davidQuantity, IOrderBook.Side.BUY);
+        router.placeMarketOrderWithDeposit(
+            pool, davidQuantity, IOrderBook.Side.BUY, (davidQuantity * 95) / 100, 0, (davidQuantity * 95) / 100
+        );
         vm.stopPrank();
 
         // Log final balances for all users
@@ -633,7 +647,9 @@ contract BalanceAndFeeTest is Test, PoolHelper {
         uint256 aliceBaseDecrease = aliceInitialBaseBalance - aliceCurrentBaseBalance;
         uint256 aliceQuoteIncrease = aliceCurrentQuoteBalance - aliceInitialQuoteBalance;
 
-        assertApproxEqAbs(aliceBaseDecrease, totalFilledQuantity, 100, "Alice's base token decrease incorrect");
+        assertApproxEqAbs(
+            aliceBaseDecrease, totalFilledQuantity, 100, "Alice's base token decrease incorrect"
+        );
         assertApproxEqAbs(
             aliceQuoteIncrease,
             totalFilledQuantityInQuote - aliceMakerFee,
@@ -641,14 +657,14 @@ contract BalanceAndFeeTest is Test, PoolHelper {
             "Alice's quote token increase incorrect"
         );
 
-        // 6. Verify Alice's remaining locked base tokens
+        // 4. Verify Alice's remaining locked base tokens
         uint256 aliceRemainingLocked = balanceManager.getLockedBalance(alice, address(orderBook), baseCurrency);
 
         assertApproxEqAbs(
             aliceRemainingLocked, expectedRemainingQuantity, 100, "Alice's remaining locked balance incorrect"
         );
 
-        // 7. Verify the order book state after all market orders
+        // 5. Verify the order book state after all market orders
         (uint48 orderCountAfter, uint256 volumeAfter) = orderBook.getOrderQueue(IOrderBook.Side.SELL, alicePrice);
 
         if (expectedRemainingQuantity > 0) {
@@ -755,19 +771,25 @@ contract BalanceAndFeeTest is Test, PoolHelper {
         // Bob's market buy order
         vm.startPrank(bob);
         console.log("\n--- Bob places market buy order for 1 WETH ---");
-        router.placeMarketOrderWithDeposit(pool, bobQuantity, IOrderBook.Side.BUY);
+        router.placeMarketOrderWithDeposit(
+            pool, bobQuantity, IOrderBook.Side.BUY, (bobQuantity * 95) / 100, 0, (bobQuantity * 95) / 100
+        );
         vm.stopPrank();
 
         // Charlie's market buy order
         vm.startPrank(charlie);
         console.log("--- Charlie places market buy order for 2 WETH ---");
-        router.placeMarketOrderWithDeposit(pool, charlieQuantity, IOrderBook.Side.BUY);
+        router.placeMarketOrderWithDeposit(
+            pool, charlieQuantity, IOrderBook.Side.BUY, (charlieQuantity * 95) / 100, 0, (charlieQuantity * 95) / 100
+        );
         vm.stopPrank();
 
         // David's market buy order
         vm.startPrank(david);
         console.log("--- David places market buy order for 1.5 WETH ---");
-        router.placeMarketOrderWithDeposit(pool, davidQuantity, IOrderBook.Side.BUY);
+        router.placeMarketOrderWithDeposit(
+            pool, davidQuantity, IOrderBook.Side.BUY, (davidQuantity * 95) / 100, 0, (davidQuantity * 95) / 100
+        );
         vm.stopPrank();
 
         // Log final balances for all users
@@ -900,7 +922,9 @@ contract BalanceAndFeeTest is Test, PoolHelper {
         uint256 aliceBaseDecrease = aliceInitialBaseBalance - aliceCurrentBaseBalance;
         uint256 aliceQuoteIncrease = aliceCurrentQuoteBalance - aliceInitialQuoteBalance;
 
-        assertApproxEqAbs(aliceBaseDecrease, totalFilledQuantity, 100, "Alice's base token decrease incorrect");
+        assertApproxEqAbs(
+            aliceBaseDecrease, totalFilledQuantity, 100, "Alice's base token decrease incorrect"
+        );
         assertApproxEqAbs(
             aliceQuoteIncrease,
             totalFilledQuantityInQuote - aliceMakerFee,
@@ -908,14 +932,14 @@ contract BalanceAndFeeTest is Test, PoolHelper {
             "Alice's quote token increase incorrect"
         );
 
-        // 6. Verify Alice's remaining locked base tokens
+        // 4. Verify Alice's remaining locked base tokens
         uint256 aliceRemainingLocked = balanceManager.getLockedBalance(alice, address(orderBook), baseCurrency);
 
         assertApproxEqAbs(
             aliceRemainingLocked, expectedRemainingQuantity, 100, "Alice's remaining locked balance incorrect"
         );
 
-        // 7. Verify the order book state after all market orders
+        // 5. Verify the order book state after all market orders
         (uint48 orderCountAfter, uint256 volumeAfter) = orderBook.getOrderQueue(IOrderBook.Side.SELL, alicePrice);
 
         if (expectedRemainingQuantity > 0) {
@@ -1022,19 +1046,25 @@ contract BalanceAndFeeTest is Test, PoolHelper {
         // Bob's market buy order
         vm.startPrank(bob);
         console.log("\n--- Bob places market buy order for 1 WETH ---");
-        router.placeMarketOrderWithDeposit(pool, bobQuantity, IOrderBook.Side.BUY);
+        router.placeMarketOrderWithDeposit(
+            pool, bobQuantity, IOrderBook.Side.BUY, (bobQuantity * 95) / 100, 0, (bobQuantity * 95) / 100
+        );
         vm.stopPrank();
 
         // Charlie's market buy order
         vm.startPrank(charlie);
         console.log("--- Charlie places market buy order for 2 WETH ---");
-        router.placeMarketOrderWithDeposit(pool, charlieQuantity, IOrderBook.Side.BUY);
+        router.placeMarketOrderWithDeposit(
+            pool, charlieQuantity, IOrderBook.Side.BUY, (charlieQuantity * 95) / 100, 0, (charlieQuantity * 95) / 100
+        );
         vm.stopPrank();
 
         // David's market buy order
         vm.startPrank(david);
         console.log("--- David places market buy order for 1.5 WETH ---");
-        router.placeMarketOrderWithDeposit(pool, davidQuantity, IOrderBook.Side.BUY);
+        router.placeMarketOrderWithDeposit(
+            pool, davidQuantity, IOrderBook.Side.BUY, (davidQuantity * 95) / 100, 0, (davidQuantity * 95) / 100
+        );
         vm.stopPrank();
 
         // Log final balances for all users
@@ -1167,7 +1197,9 @@ contract BalanceAndFeeTest is Test, PoolHelper {
         uint256 aliceBaseDecrease = aliceInitialBaseBalance - aliceCurrentBaseBalance;
         uint256 aliceQuoteIncrease = aliceCurrentQuoteBalance - aliceInitialQuoteBalance;
 
-        assertApproxEqAbs(aliceBaseDecrease, totalFilledQuantity, 100, "Alice's base token decrease incorrect");
+        assertApproxEqAbs(
+            aliceBaseDecrease, totalFilledQuantity, 100, "Alice's base token decrease incorrect"
+        );
         assertApproxEqAbs(
             aliceQuoteIncrease,
             totalFilledQuantityInQuote - aliceMakerFee,
@@ -1257,7 +1289,9 @@ contract BalanceAndFeeTest is Test, PoolHelper {
         vm.startPrank(bob);
         bool success = true;
         IPoolManager.Pool memory _poolDetails = _getPool(poolManager, baseCurrency, quoteCurrency);
-        try router.placeMarketOrderWithDeposit(_poolDetails, bobQuantity, IOrderBook.Side.SELL) {
+        try router.placeMarketOrderWithDeposit(
+            _poolDetails, bobQuantity, IOrderBook.Side.SELL, (bobQuantity * 95) / 100, 0, (bobQuantity * 95) / 100
+        ) {
             // Order placed successfully
         } catch {
             success = false;

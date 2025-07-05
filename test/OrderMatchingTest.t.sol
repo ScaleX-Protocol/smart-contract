@@ -170,7 +170,7 @@ contract OrderMatchingTest is Test {
         uint128 quantity = 2e18;
         IOrderBook.Side side = IOrderBook.Side.SELL;
 
-        router.placeMarketOrderWithDeposit(pool, quantity, side);
+        router.placeMarketOrderWithDeposit(pool, quantity, side, (quantity * 95) / 100, 0, (quantity * 95) / 100);
 
         (uint48 orderCount, uint256 totalVolume) = orderBook.getOrderQueue(limitSide, limitPrice);
 

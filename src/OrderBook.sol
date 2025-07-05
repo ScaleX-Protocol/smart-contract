@@ -15,6 +15,7 @@ import {OrderBookStorage} from "./storages/OrderBookStorage.sol";
 import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
 import {RedBlackTreeLib} from "@solady/utils/RedBlackTreeLib.sol";
+import {Test, console} from "forge-std/Test.sol";
 
 contract OrderBook is
     Initializable,
@@ -84,7 +85,10 @@ contract OrderBook is
         TimeInForce timeInForce
     ) private view {
         Storage storage $ = getStorage();
-        validateBasicOrderParameters(price, quantity, orderType);
+
+        if (side == Side.BUY && orderType == IOrderBook.OrderType.MARKET) {
+            return;
+        }
 
         (uint256 orderAmount, uint256 quoteAmount) = calculateOrderAmounts(price, quantity, side, orderType);
 
@@ -393,6 +397,35 @@ contract OrderBook is
     ) private returns (uint128, uint128) {
         uint128 matchingRemaining = matchingOrder.quantity - matchingOrder.filled;
         uint128 executedQuantity = remaining < matchingRemaining ? remaining : matchingRemaining;
+
+        if (isMarketOrder) {
+            Storage storage $ = getStorage();
+            IBalanceManager bm = IBalanceManager($.balanceManager);
+            uint256 requiredAmount = side == IOrderBook.Side.BUY
+                ? PoolIdLibrary.baseToQuote(executedQuantity, bestPrice, $.poolKey.baseCurrency.decimals())
+                : executedQuantity;
+            Currency currency = side == IOrderBook.Side.BUY ? $.poolKey.quoteCurrency : $.poolKey.baseCurrency;
+            uint256 userBalance = bm.getBalance(user, currency);
+
+            if (userBalance < requiredAmount) {
+                uint128 affordableQuantity;
+                if (side == IOrderBook.Side.BUY) {
+                    affordableQuantity = uint128(PoolIdLibrary.quoteToBase(
+                        userBalance,
+                        bestPrice,
+                        $.poolKey.baseCurrency.decimals()
+                    ));
+                } else {
+                    affordableQuantity = uint128(userBalance);
+                }
+
+                if (affordableQuantity == 0) {
+                    return (0, filled);
+                }
+
+                executedQuantity = affordableQuantity < executedQuantity ? affordableQuantity : executedQuantity;
+            }
+        }
 
         remaining -= executedQuantity;
         filled += executedQuantity;

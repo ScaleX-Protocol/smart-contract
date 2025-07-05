@@ -145,8 +145,11 @@ contract PlaceMarketMockOrderBook is Script, DeployHelpers {
             // Market orders typically use 0 for price
             (uint48 orderId, uint128 filled) = gtxRouter.placeMarketOrderWithDeposit(
                 pool,
-                quantities[i % 5], 
-                IOrderBook.Side.BUY
+                quantities[i % 5],
+                IOrderBook.Side.BUY,
+                (quantities[i % 5] * 95) / 100,
+                0,
+                (quantities[i % 5] * 95) / 100
             );
             
             console.log("Placed market BUY order ID:", orderId);
@@ -173,8 +176,11 @@ contract PlaceMarketMockOrderBook is Script, DeployHelpers {
             // Market orders typically use 0 for price
             (uint48 orderId, uint128 filled) = gtxRouter.placeMarketOrderWithDeposit(
                 pool,
-                quantities[i % 5], 
-                IOrderBook.Side.SELL
+                quantities[i % 5],
+                IOrderBook.Side.SELL,
+                (quantities[i % 5] * 95) / 100,
+                0,
+                (quantities[i % 5] * 95) / 100
             );
             
             console.log("Placed market SELL order ID:", orderId);
