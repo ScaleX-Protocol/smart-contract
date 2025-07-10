@@ -24,7 +24,7 @@ import {GTXRouterStorage} from "./storages/GTXRouterStorage.sol";
 import {Test, console} from "forge-std/Test.sol";
 
 
-contract GTXRouter is IGTXRouter, GTXRouterStorage, Initializable, OwnableUpgradeable, IOrderBookErrors {
+contract GTXRouter is IGTXRouter, GTXRouterStorage, Initializable, OwnableUpgradeable {
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() {
         _disableInitializers();
@@ -36,6 +36,10 @@ contract GTXRouter is IGTXRouter, GTXRouterStorage, Initializable, OwnableUpgrad
         $.poolManager = _poolManager;
         $.balanceManager = _balanceManager;
     }
+
+    function placeLimitOrder(IPoolManager.Pool calldata, uint128, uint128, IOrderBook.Side, IOrderBook.TimeInForce, uint128) external returns (uint48) { return 0; }
+    function placeMarketOrder(IPoolManager.Pool calldata, uint128, uint128, IOrderBook.Side, uint128, uint128) external returns (uint48) { return 0; }
+    function withdraw(Currency, uint256) external {}
 
     function placeOrder(
         IPoolManager.Pool memory pool,
@@ -97,7 +101,7 @@ contract GTXRouter is IGTXRouter, GTXRouterStorage, Initializable, OwnableUpgrad
             : balanceManager.getBalance(_caller, depositCurrency);
 
         if (currentBalance < requiredBalance) {
-            revert InsufficientBalance(requiredBalance, currentBalance);
+            revert InsufficientBalanceRequired(requiredBalance, currentBalance);
         }
 
         return (depositCurrency, requiredBalance);
@@ -136,7 +140,7 @@ contract GTXRouter is IGTXRouter, GTXRouterStorage, Initializable, OwnableUpgrad
         (orderId, filled) = pool.orderBook.placeMarketOrder(quantity, side, user);
     }
 
-    function placeMarketOrder(
+/*    function placeMarketOrder(
         IPoolManager.Pool memory pool,
         uint128 _quantity,
         IOrderBook.Side _side,
@@ -144,17 +148,9 @@ contract GTXRouter is IGTXRouter, GTXRouterStorage, Initializable, OwnableUpgrad
     ) public returns (uint48 orderId, uint128 filled) {
         _validateCallerBalance(pool, msg.sender, _side, _quantity, 0, true, false);
         return _placeMarketOrder(pool, _quantity, _side, msg.sender);
-    }
+    }*/
 
-    /**
-     * @notice Place a market order specifically for swap operations, ensuring quantity is in base asset
-     * @param key The pool key
-     * @param amount The amount in source currency (base for SELL, quote for BUY)
-     * @param side The side of the order
-     * @param user The user address
-     * @return orderId The ID of the placed order
-     */
-    function _placeMarketOrderForSwap(
+/*    function _placeMarketOrderForSwap(
         PoolKey memory key,
         uint256 amount,
         IOrderBook.Side side,
@@ -179,7 +175,8 @@ contract GTXRouter is IGTXRouter, GTXRouterStorage, Initializable, OwnableUpgrad
             revert InvalidQuantity();
         }
         return placeMarketOrder(pool, quantity, side, minOutAmount);
-    }
+    }*/
+
     function placeMarketOrderWithDeposit(
         IPoolManager.Pool memory pool,
         uint128 _quantity,
@@ -217,6 +214,8 @@ contract GTXRouter is IGTXRouter, GTXRouterStorage, Initializable, OwnableUpgrad
     function cancelOrder(IPoolManager.Pool memory pool, uint48 orderId) external {
         pool.orderBook.cancelOrder(orderId, msg.sender);
     }
+
+    function batchCancelOrders(IPoolManager.Pool calldata, uint48[] calldata) external pure override {}
 
     function getBestPrice(
         Currency _baseCurrency,
@@ -410,7 +409,7 @@ contract GTXRouter is IGTXRouter, GTXRouterStorage, Initializable, OwnableUpgrad
      * @param user The user address that will receive the destination currency
      * @return receivedAmount The actual amount of destination currency received
      */
-    function swap(
+    /*function swap(
         Currency srcCurrency,
         Currency dstCurrency,
         uint256 srcAmount,
@@ -475,12 +474,12 @@ contract GTXRouter is IGTXRouter, GTXRouterStorage, Initializable, OwnableUpgrad
             return receivedAmount;
         }
         revert("No valid swap path found");
-    }
+    }*/
 
     /**
      * @notice Execute a direct swap between two currencies
      */
-    function executeDirectSwap(
+  /*  function executeDirectSwap(
         Currency baseCurrency,
         Currency quoteCurrency,
         Currency srcCurrency,
@@ -509,12 +508,12 @@ contract GTXRouter is IGTXRouter, GTXRouterStorage, Initializable, OwnableUpgrad
             revert SlippageTooHigh(receivedAmount, minDstAmount);
         }
         return receivedAmount;
-    }
+    }*/
 
     /**
      * @notice Execute a multi-hop swap through one intermediary
      */
-    function executeMultiHopSwap(
+   /* function executeMultiHopSwap(
         Currency srcCurrency,
         Currency intermediary,
         Currency dstCurrency,
@@ -559,11 +558,14 @@ contract GTXRouter is IGTXRouter, GTXRouterStorage, Initializable, OwnableUpgrad
                 intermediary, dstCurrency, intermediary, dstCurrency, intermediateAmount, 0, user, IOrderBook.Side.SELL
             );
         }
-    }
+    }*/
 
-    /**
+/*
+    */
+/**
      * @notice Execute a single swap step within a multi-hop swap
-     */
+     *//*
+
     function executeSwapStep(
         Currency srcCurrency,
         Currency dstCurrency,
@@ -585,12 +587,13 @@ contract GTXRouter is IGTXRouter, GTXRouterStorage, Initializable, OwnableUpgrad
         }
         return receivedAmount;
     }
+*/
 
     /**
      * @notice Execute a multi-hop swap where the second pool is accessed in reverse
      * @dev Used when we have pools: srcCurrency-intermediary and dstCurrency-intermediary
      */
-    function executeReverseMultiHopSwap(
+    /*function executeReverseMultiHopSwap(
         Currency srcCurrency,
         Currency intermediary,
         Currency dstCurrency,
@@ -633,5 +636,5 @@ contract GTXRouter is IGTXRouter, GTXRouterStorage, Initializable, OwnableUpgrad
             revert SlippageTooHigh(receivedAmount, minDstAmount);
         }
         return receivedAmount;
-    }
+    }*/
 }

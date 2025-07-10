@@ -2,8 +2,9 @@
 pragma solidity ^0.8.26;
 
 import {PoolKey, PoolId} from "../libraries/Pool.sol";
+import {IOrderBookErrors} from "./IOrderBookErrors.sol";
 
-interface IOrderBook {
+interface IOrderBook is IOrderBookErrors {
     enum Side {
         BUY,
         SELL

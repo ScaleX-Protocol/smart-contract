@@ -4,17 +4,15 @@ pragma solidity ^0.8.26;
 import {Currency} from "../libraries/Currency.sol";
 import {PoolId, PoolKey} from "../libraries/Pool.sol";
 import {IOrderBook} from "./IOrderBook.sol";
+import {IPoolManagerErrors} from "./IPoolManagerErrors.sol";
 
-interface IPoolManager {
+interface IPoolManager is IPoolManagerErrors {
     struct Pool {
         Currency baseCurrency;
         Currency quoteCurrency;
         IOrderBook orderBook;
     }
 
-    error InvalidRouter();
-    error PoolAlreadyExists(PoolId id);
-    error InvalidTradingRule(string reason);
     event TradingRulesUpdated(PoolId indexed poolId, IOrderBook.TradingRules newRules);
     event PoolCreated(PoolId indexed poolId, address orderBook, Currency baseCurrency, Currency quoteCurrency);
     event CurrencyAdded(Currency currency);

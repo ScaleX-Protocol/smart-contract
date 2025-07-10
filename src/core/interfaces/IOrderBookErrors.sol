@@ -1,12 +1,9 @@
-// SPDX-License-Identifier: UNLICENSED
+// SPDX-License-Identifier: BUSL-1.1
 pragma solidity ^0.8.26;
 
 import {IOrderBook} from "./IOrderBook.sol";
 
-/**
- * @title IOrderBookErrors
- * @notice Interface defining all custom errors used by the OrderBook system
- */
+
 interface IOrderBookErrors {
     error SlippageTooHigh(uint256 received, uint256 minReceived);
     error InvalidSlippageTolerance(uint256 slippageBps);
@@ -24,9 +21,8 @@ interface IOrderBookErrors {
     error TradingPaused();
     error UnauthorizedCancellation();
     error UnauthorizedRouter(address reouter);
-    error InsufficientBalance(uint256 requiredDeposit, uint256 userBalance);
+    error InsufficientBalanceRequired(uint256 requiredDeposit, uint256 userBalance);
     error OrderNotFound();
     error QueueEmpty();
     error OrderIsNotOpenOrder(IOrderBook.Status status);
-    error InvalidTradingRule(string reason);
 }

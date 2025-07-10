@@ -22,7 +22,6 @@ contract OrderBook is
     OwnableUpgradeable,
     ReentrancyGuardUpgradeable,
     IOrderBook,
-    IOrderBookErrors,
     OrderBookStorage
 {
     using RedBlackTreeLib for RedBlackTreeLib.Tree;

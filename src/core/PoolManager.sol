@@ -67,7 +67,7 @@ contract PoolManager is Initializable, OwnableUpgradeable, PoolManagerStorage, I
         PoolId id = key.toId();
 
         if (address($.pools[id].orderBook) != address(0)) {
-            revert PoolAlreadyExists(id);
+            revert PoolAlreadyExists(PoolId.unwrap(id));
         }
 
         bytes memory initData =

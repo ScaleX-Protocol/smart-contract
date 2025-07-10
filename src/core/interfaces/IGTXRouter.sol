@@ -5,8 +5,36 @@ import {Currency} from "../libraries/Currency.sol";
 import {PoolKey} from "../libraries/Pool.sol";
 import {IOrderBook} from "./IOrderBook.sol";
 import {IPoolManager} from "./IPoolManager.sol";
+import {IGTXRouterErrors} from "./IGTXRouterErrors.sol";
 
-interface IGTXRouter {
+interface IGTXRouter is IGTXRouterErrors {
+    function placeLimitOrder(
+        IPoolManager.Pool calldata pool,
+        uint128 _price,
+        uint128 _quantity,
+        IOrderBook.Side _side,
+        IOrderBook.TimeInForce _timeInForce,
+        uint128 depositAmount
+    ) external returns (uint48 orderId);
+
+    function placeMarketOrder(
+        IPoolManager.Pool calldata pool,
+        uint128 _price,
+        uint128 _quantity,
+        IOrderBook.Side _side,
+        uint128 depositAmount,
+        uint128 minOutAmount
+    ) external returns (uint48 orderId);
+
+    function cancelOrder(IPoolManager.Pool memory pool, uint48 orderId) external;
+
+    function withdraw(Currency currency, uint256 amount) external;
+
+    function batchCancelOrders(
+        IPoolManager.Pool calldata pool,
+        uint48[] calldata orderIds
+    ) external;
+
     function placeOrder(
         IPoolManager.Pool memory pool,
         uint128 _price,
@@ -23,13 +51,6 @@ interface IGTXRouter {
         IOrderBook.TimeInForce _timeInForce
     ) external returns (uint48 orderId);
 
-    function placeMarketOrder(
-        IPoolManager.Pool memory pool,
-        uint128 _quantity,
-        IOrderBook.Side _side,
-        uint128 minOutAmount
-    ) external returns (uint48 orderId, uint128 filled);
-
     function placeMarketOrderWithDeposit(
         IPoolManager.Pool memory pool,
         uint128 _quantity,
@@ -39,7 +60,6 @@ interface IGTXRouter {
         uint128 maxBalanceAllowed
     ) external returns (uint48 orderId, uint128 filled);
 
-    function cancelOrder(IPoolManager.Pool memory pool, uint48 orderId) external;
 
     function getBestPrice(
         Currency _baseCurrency,
@@ -67,12 +87,12 @@ interface IGTXRouter {
         uint8 count
     ) external view returns (IOrderBook.PriceVolume[] memory);
 
-    function swap(
+/*    function swap(
         Currency srcCurrency,
         Currency dstCurrency,
         uint256 srcAmount,
         uint256 minDstAmount,
         uint8 maxHops,
         address user
-    ) external returns (uint256 receivedAmount);
+    ) external returns (uint256 receivedAmount);*/
 }

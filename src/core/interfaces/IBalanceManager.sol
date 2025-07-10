@@ -2,8 +2,9 @@
 pragma solidity ^0.8.26;
 
 import {Currency} from "../libraries/Currency.sol";
+import {IBalanceManagerErrors} from "./IBalanceManagerErrors.sol";
 
-interface IBalanceManager {
+interface IBalanceManager is IBalanceManagerErrors {
     event Deposit(address indexed user, uint256 indexed id, uint256 amount);
     event Withdrawal(address indexed user, uint256 indexed id, uint256 amount);
     event Lock(address indexed user, uint256 indexed id, uint256 amount);
@@ -26,12 +27,6 @@ interface IBalanceManager {
         uint256 amount,
         uint256 feeAmount
     );
-
-    error InsufficientBalance(address user, uint256 id, uint256 want, uint256 have);
-    error TransferError(address user, Currency currency, uint256 amount);
-    error ZeroAmount();
-    error UnauthorizedOperator(address operator);
-    error UnauthorizedCaller(address caller);
 
     function getBalance(address user, Currency currency) external view returns (uint256);
 
