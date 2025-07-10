@@ -1,27 +1,24 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.26;
 
-import "../src/interfaces/IOrderBook.sol";
+import "../interfaces/IOrderBook.sol";
 import "@openzeppelin/contracts/proxy/beacon/BeaconProxy.sol";
 import "@openzeppelin/contracts/proxy/beacon/UpgradeableBeacon.sol";
-import {BalanceManager} from "../src/BalanceManager.sol";
+import {BalanceManager} from "../BalanceManager.sol";
 import {BeaconDeployer} from "./helpers/BeaconDeployer.t.sol";
 
-import {BeaconDeployer} from "./helpers/BeaconDeployer.t.sol";
-import {Currency} from "../src/libraries/Currency.sol";
+import {Currency} from "../libraries/Currency.sol";
 import {ERC20Mock} from "@openzeppelin/contracts/mocks/token/ERC20Mock.sol";
 
-import {GTXRouter} from "../src/GTXRouter.sol";
-import {IOrderBook} from "../src/interfaces/IOrderBook.sol";
-import {IPoolManager} from "../src/interfaces/IPoolManager.sol";
-import {MockToken} from "../src/mocks/MockToken.sol";
-import {OrderBook} from "../src/OrderBook.sol";
+import {GTXRouter} from "../GTXRouter.sol";
+import {IPoolManager} from "../interfaces/IPoolManager.sol";
+import {MockToken} from "../../mocks/MockToken.sol";
+import {OrderBook} from "../OrderBook.sol";
 
-import {PoolKey} from "../src/libraries/Pool.sol";
+import {PoolKey} from "../libraries/Pool.sol";
 
-import {PoolManager} from "../src/PoolManager.sol";
+import {PoolManager} from "../PoolManager.sol";
 import {Test, console} from "forge-std/Test.sol";
-import {Test} from "forge-std/Test.sol";
 import {Upgrades} from "openzeppelin-foundry-upgrades/Upgrades.sol";
 
 contract OrderMatchingTest is Test {

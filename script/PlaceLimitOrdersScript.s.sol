@@ -2,9 +2,9 @@
 pragma solidity ^0.8.26;
 
 import "../script/DeployHelpers.s.sol";
-import "../src/BalanceManager.sol";
-import "../src/GTXRouter.sol";
-import "../src/PoolManager.sol";
+import "../src/core/BalanceManager.sol";
+import "../src/core/GTXRouter.sol";
+import "../src/core/PoolManager.sol";
 import "../src/mocks/MockToken.sol";
 import "../src/mocks/MockUSDC.sol";
 import "../src/mocks/MockWETH.sol";

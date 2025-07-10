@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.26;
 
-import "../BalanceManager.sol";
+import "../core/BalanceManager.sol";
 
 /// @custom:oz-upgrades-from BalanceManager
 contract BalanceManagerV2 is BalanceManager {

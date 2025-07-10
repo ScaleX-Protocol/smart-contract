@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.26;
 
-import {OwnableUpgradeable} from "../lib/openzeppelin-contracts-upgradeable/contracts/access/OwnableUpgradeable.sol";
+import {OwnableUpgradeable} from "../../lib/openzeppelin-contracts-upgradeable/contracts/access/OwnableUpgradeable.sol";
 import {IBalanceManager} from "./interfaces/IBalanceManager.sol";
 import "./interfaces/IOrderBook.sol";
 
@@ -264,82 +264,131 @@ contract GTXRouter is IGTXRouter, GTXRouterStorage, Initializable, OwnableUpgrad
         if (slippageToleranceBps > 10000) {
             revert InvalidSlippageTolerance(slippageToleranceBps);
         }
-        
+
         if (inputAmount == 0) {
             return 0;
         }
 
         Storage storage $ = getStorage();
         IBalanceManager balanceManager = IBalanceManager($.balanceManager);
-        
+
         IOrderBook.Side oppositeSide = side == IOrderBook.Side.BUY ? IOrderBook.Side.SELL : IOrderBook.Side.BUY;
         IOrderBook.PriceVolume[] memory oppositePrices = pool.orderBook.getNextBestPrices(oppositeSide, 0, 100);
-        
-        uint256 remainingInput = inputAmount;
-        uint256 totalOutputReceived = 0;
-        
-        for (uint256 i = 0; i < oppositePrices.length && remainingInput > 0; i++) {
-            IOrderBook.PriceVolume memory priceLevel = oppositePrices[i];
-            
-            if (priceLevel.price == 0 || priceLevel.volume == 0) {
-                break;
-            }
 
-            uint256 outputToReceive;
-            
-            if (side == IOrderBook.Side.BUY) {
-                uint256 quoteNeededForLevel = PoolIdLibrary.baseToQuote(
-                    priceLevel.volume, 
-                    priceLevel.price, 
-                    pool.baseCurrency.decimals()
-                );
-                
-                if (quoteNeededForLevel <= remainingInput) {
-                    outputToReceive = priceLevel.volume;
-                    remainingInput -= quoteNeededForLevel;
-                } else {
-                    outputToReceive = PoolIdLibrary.quoteToBase(
-                        remainingInput, 
-                        priceLevel.price, 
-                        pool.baseCurrency.decimals()
-                    );
-                    remainingInput = 0;
-                }
-            } else {
-                uint256 baseToSell;
-                
-                if (priceLevel.volume <= remainingInput) {
-                    baseToSell = priceLevel.volume;
-                    remainingInput -= priceLevel.volume;
-                } else {
-                    baseToSell = remainingInput;
-                    remainingInput = 0;
-                }
-                
-                outputToReceive = PoolIdLibrary.baseToQuote(
-                    baseToSell, 
-                    priceLevel.price, 
-                    pool.baseCurrency.decimals()
-                );
-            }
-            
-            totalOutputReceived += outputToReceive;
-        }
+        uint256 totalOutputReceived = _calculateOutputFromPrices(
+            pool,
+            oppositePrices,
+            inputAmount,
+            side
+        );
 
         if (totalOutputReceived == 0) {
             return 0;
         }
 
+        return _calculateMinOutputWithFeesAndSlippage(
+            balanceManager,
+            totalOutputReceived,
+            slippageToleranceBps
+        );
+    }
+
+    function _calculateOutputFromPrices(
+        IPoolManager.Pool memory pool,
+        IOrderBook.PriceVolume[] memory oppositePrices,
+        uint256 inputAmount,
+        IOrderBook.Side side
+    ) internal view returns (uint256 totalOutputReceived) {
+        uint256 remainingInput = inputAmount;
+
+        for (uint256 i = 0; i < oppositePrices.length && remainingInput > 0; i++) {
+            IOrderBook.PriceVolume memory priceLevel = oppositePrices[i];
+
+            if (priceLevel.price == 0 || priceLevel.volume == 0) {
+                break;
+            }
+
+            uint256 outputToReceive = _calculateOutputForPriceLevel(
+                pool,
+                priceLevel,
+                remainingInput,
+                side
+            );
+
+            totalOutputReceived += outputToReceive;
+            remainingInput = _updateRemainingInput(pool, priceLevel, remainingInput, side);
+        }
+    }
+
+    function _calculateOutputForPriceLevel(
+        IPoolManager.Pool memory pool,
+        IOrderBook.PriceVolume memory priceLevel,
+        uint256 remainingInput,
+        IOrderBook.Side side
+    ) internal view returns (uint256 outputToReceive) {
+        if (side == IOrderBook.Side.BUY) {
+            uint256 quoteNeededForLevel = PoolIdLibrary.baseToQuote(
+                priceLevel.volume,
+                priceLevel.price,
+                pool.baseCurrency.decimals()
+            );
+
+            if (quoteNeededForLevel <= remainingInput) {
+                outputToReceive = priceLevel.volume;
+            } else {
+                outputToReceive = PoolIdLibrary.quoteToBase(
+                    remainingInput,
+                    priceLevel.price,
+                    pool.baseCurrency.decimals()
+                );
+            }
+        } else {
+            uint256 baseToSell = priceLevel.volume <= remainingInput ?
+                priceLevel.volume : remainingInput;
+
+            outputToReceive = PoolIdLibrary.baseToQuote(
+                baseToSell,
+                priceLevel.price,
+                pool.baseCurrency.decimals()
+            );
+        }
+    }
+
+    function _updateRemainingInput(
+        IPoolManager.Pool memory pool,
+        IOrderBook.PriceVolume memory priceLevel,
+        uint256 remainingInput,
+        IOrderBook.Side side
+    ) internal view returns (uint256) {
+        if (side == IOrderBook.Side.BUY) {
+            uint256 quoteNeededForLevel = PoolIdLibrary.baseToQuote(
+                priceLevel.volume,
+                priceLevel.price,
+                pool.baseCurrency.decimals()
+            );
+
+            return quoteNeededForLevel <= remainingInput ?
+                remainingInput - quoteNeededForLevel : 0;
+        } else {
+            return priceLevel.volume <= remainingInput ?
+                remainingInput - priceLevel.volume : 0;
+        }
+    }
+
+    function _calculateMinOutputWithFeesAndSlippage(
+        IBalanceManager balanceManager,
+        uint256 totalOutputReceived,
+        uint256 slippageToleranceBps
+    ) internal view returns (uint128) {
         uint256 feeTaker = balanceManager.feeTaker();
         uint256 feeUnit = balanceManager.getFeeUnit();
         uint256 feeAmount = (totalOutputReceived * feeTaker) / feeUnit;
-        
-        uint256 outputAfterFees = totalOutputReceived > feeAmount ? totalOutputReceived - feeAmount : 0;
-        
+
+        uint256 outputAfterFees = totalOutputReceived > feeAmount ?
+            totalOutputReceived - feeAmount : 0;
+
         uint256 slippageAmount = (outputAfterFees * slippageToleranceBps) / 10000;
-        minOutputAmount = uint128(outputAfterFees - slippageAmount);
-        
-        return minOutputAmount;
+        return uint128(outputAfterFees - slippageAmount);
     }
 
     function getNextBestPrices(

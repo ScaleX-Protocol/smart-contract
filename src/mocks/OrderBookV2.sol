@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.26;
 
-import "../OrderBook.sol";
+import "../core/OrderBook.sol";
 
 /// @custom:oz-upgrades-from OrderBook
 contract OrderBookV2 is OrderBook {

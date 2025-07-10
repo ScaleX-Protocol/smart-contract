@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.26;
 
-import {IPoolManager} from "../../src/interfaces/IPoolManager.sol";
+import {IPoolManager} from "../../interfaces/IPoolManager.sol";
 
-import {Currency} from "../../src/libraries/Currency.sol";
-import {PoolKey} from "../../src/libraries/Pool.sol";
+import {Currency} from "../../libraries/Currency.sol";
+import {PoolKey} from "../../libraries/Pool.sol";
 
 /**
  * @title PoolHelper

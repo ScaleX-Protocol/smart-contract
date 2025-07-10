@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.26;
 
-import {OwnableUpgradeable} from "../lib/openzeppelin-contracts-upgradeable/contracts/access/OwnableUpgradeable.sol";
+import {OwnableUpgradeable} from "../../lib/openzeppelin-contracts-upgradeable/contracts/access/OwnableUpgradeable.sol";
 import {ReentrancyGuardUpgradeable} from
-    "../lib/openzeppelin-contracts-upgradeable/contracts/utils/ReentrancyGuardUpgradeable.sol";
+    "../../lib/openzeppelin-contracts-upgradeable/contracts/utils/ReentrancyGuardUpgradeable.sol";
 import {IBalanceManager} from "./interfaces/IBalanceManager.sol";
 import {IOrderBook} from "./interfaces/IOrderBook.sol";
 import {IOrderBookErrors} from "./interfaces/IOrderBookErrors.sol";
@@ -41,6 +41,7 @@ contract OrderBook is
         _;
     }
 
+
     function initialize(
         address _poolManager,
         address _balanceManager,
@@ -56,6 +57,12 @@ contract OrderBook is
         $.poolKey = _poolKey;
         $.nextOrderId = 1;
         $.expiryDays = 90 days;
+
+        RedBlackTreeLib.Tree storage priceTree = $.priceTrees[IOrderBook.Side.SELL];
+
+        if (!RedBlackTreeLib.exists(priceTree, uint256(0))) {
+//            RedBlackTreeLib.insert(priceTree, (0));
+        }
     }
 
     function getTradingRules() external view returns (TradingRules memory) {
@@ -202,19 +209,19 @@ contract OrderBook is
             side: side
         });
 
-        _lockOrderAmount(user, side, price, quantity);
-
-        _addOrderToQueue(newOrder);
-
-        emit OrderPlaced(orderId, user, side, price, quantity, newOrder.expiry, false, Status.OPEN);
-
-        _handleTimeInForce(newOrder, side, user, timeInForce);
-
-        unchecked {
-            $.nextOrderId++;
-        }
-
-        return orderId;
+//        _lockOrderAmount(user, side, price, quantity);
+//
+//        _addOrderToQueue(newOrder);
+//
+//        emit OrderPlaced(orderId, user, side, price, quantity, newOrder.expiry, false, Status.OPEN);
+//
+//        _handleTimeInForce(newOrder, side, user, timeInForce);
+//
+//        unchecked {
+//            $.nextOrderId++;
+//        }
+//
+//        return orderId;
     }
 
     function _lockOrderAmount(address user, Side side, uint128 price, uint128 quantity) private {
@@ -350,10 +357,10 @@ contract OrderBook is
         IBalanceManager($.balanceManager).unlock(
             user, order.side == Side.BUY ? $.poolKey.quoteCurrency : $.poolKey.baseCurrency, amountToUnlock
         );
-
-        if (isQueueEmpty(order.side, order.price)) {
-            RedBlackTreeLib.remove($.priceTrees[order.side], order.price);
-        }
+//
+//        if (isQueueEmpty(order.side, order.price)) {
+//            RedBlackTreeLib.remove($.priceTrees[order.side], order.price);
+//        }
     }
 
     function getBestPrice(
@@ -473,59 +480,59 @@ contract OrderBook is
         address user,
         bool isMarketOrder
     ) private returns (uint128 filled) {
-        Storage storage $ = getStorage();
-        Side oppositeSide = side == Side.BUY ? Side.SELL : Side.BUY;
-        RedBlackTreeLib.Tree storage priceTree = $.priceTrees[oppositeSide];
-
-        uint128 remaining = order.quantity - order.filled;
-        uint128 orderPrice = order.price;
-        uint128 latestBestPrice = 0;
-        uint128 previousRemaining = 0;
-        filled = 0;
-
-        while (remaining > 0) {
-            uint128 bestPrice = _getBestMatchingPrice(orderPrice, oppositeSide, isMarketOrder);
-
-            if (bestPrice == 0) {
-                break;
-            }
-
-            if (bestPrice == latestBestPrice && previousRemaining == remaining) {
-                bytes32 bestPricePtr = priceTree.find(bestPrice);
-                bestPrice = side == Side.BUY
-                    ? uint128(RedBlackTreeLib.value(RedBlackTreeLib.next(bestPricePtr)))
-                    : uint128(RedBlackTreeLib.value(RedBlackTreeLib.prev(bestPricePtr)));
-
-                if (bestPrice == 0) {
-                    break;
-                }
-            }
-
-            latestBestPrice = bestPrice;
-            previousRemaining = remaining;
-            OrderQueue storage queue = $.orderQueues[oppositeSide][bestPrice];
-            uint48 currentOrderId = queue.head;
-
-            while (currentOrderId != 0 && remaining > 0) {
-                Order storage matchingOrder = $.orders[currentOrderId];
-                uint48 nextOrderId = matchingOrder.next;
-
-                if (matchingOrder.expiry < block.timestamp) {
-                    _handleExpiredOrder(queue, matchingOrder);
-                } else if (matchingOrder.user == user) {
-                    _cancelOrder(currentOrderId, user);
-                } else {
-                    (remaining, filled) = _processMatchingOrder(
-                        order, matchingOrder, queue, bestPrice, remaining, filled, side, user, isMarketOrder
-                    );
-                }
-                currentOrderId = nextOrderId;
-            }
-
-            _updatePriceLevel(bestPrice, queue, priceTree);
-        }
-
-        return filled;
+//        Storage storage $ = getStorage();
+//        Side oppositeSide = side == Side.BUY ? Side.SELL : Side.BUY;
+//        RedBlackTreeLib.Tree storage priceTree = $.priceTrees[oppositeSide];
+//
+//        uint128 remaining = order.quantity - order.filled;
+//        uint128 orderPrice = order.price;
+//        uint128 latestBestPrice = 0;
+//        uint128 previousRemaining = 0;
+//        filled = 0;
+//
+//        while (remaining > 0) {
+//            uint128 bestPrice = _getBestMatchingPrice(orderPrice, oppositeSide, isMarketOrder);
+//
+//            if (bestPrice == 0) {
+//                break;
+//            }
+//
+//            if (bestPrice == latestBestPrice && previousRemaining == remaining) {
+//                bytes32 bestPricePtr = priceTree.find(bestPrice);
+//                bestPrice = side == Side.BUY
+//                    ? uint128(RedBlackTreeLib.value(RedBlackTreeLib.next(bestPricePtr)))
+//                    : uint128(RedBlackTreeLib.value(RedBlackTreeLib.prev(bestPricePtr)));
+//
+//                if (bestPrice == 0) {
+//                    break;
+//                }
+//            }
+//
+//            latestBestPrice = bestPrice;
+//            previousRemaining = remaining;
+//            OrderQueue storage queue = $.orderQueues[oppositeSide][bestPrice];
+//            uint48 currentOrderId = queue.head;
+//
+//            while (currentOrderId != 0 && remaining > 0) {
+//                Order storage matchingOrder = $.orders[currentOrderId];
+//                uint48 nextOrderId = matchingOrder.next;
+//
+//                if (matchingOrder.expiry < block.timestamp) {
+//                    _handleExpiredOrder(queue, matchingOrder);
+//                } else if (matchingOrder.user == user) {
+//                    _cancelOrder(currentOrderId, user);
+//                } else {
+//                    (remaining, filled) = _processMatchingOrder(
+//                        order, matchingOrder, queue, bestPrice, remaining, filled, side, user, isMarketOrder
+//                    );
+//                }
+//                currentOrderId = nextOrderId;
+//            }
+//
+//            _updatePriceLevel(bestPrice, queue, priceTree);
+//        }
+//
+//        return filled;
     }
 
     function getNextBestPrices(

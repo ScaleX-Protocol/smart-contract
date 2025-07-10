@@ -1,12 +1,16 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.26;
 
-import "../src/BalanceManager.sol";
+import "../BalanceManager.sol";
 
-import "../src/OrderBook.sol";
-import "../src/PoolManager.sol";
-import "../src/mocks/MockUSDC.sol";
-import "../src/mocks/MockWETH.sol";
+import "../OrderBook.sol";
+import "../PoolManager.sol";
+import {IOrderBook} from "../interfaces/IOrderBook.sol";
+import {IPoolManager} from "../interfaces/IPoolManager.sol";
+import {Currency} from "../libraries/Currency.sol";
+import {PoolId, PoolKey} from "../libraries/Pool.sol";
+import "../../mocks/MockUSDC.sol";
+import "../../mocks/MockWETH.sol";
 
 import {BeaconDeployer} from "./helpers/BeaconDeployer.t.sol";
 import "@openzeppelin/contracts/proxy/beacon/BeaconProxy.sol";

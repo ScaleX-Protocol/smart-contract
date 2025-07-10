@@ -3,9 +3,9 @@ pragma solidity ^0.8.26;
 
 import "../script/DeployHelpers.s.sol";
 import {MockToken} from "../src/mocks/MockToken.sol";
-import {GTXRouter} from "../src/GTXRouter.sol";
-import {BalanceManager} from "../src/BalanceManager.sol";
-import {PoolManager} from "../src/PoolManager.sol";
+import {GTXRouter} from "../src/core/GTXRouter.sol";
+import {BalanceManager} from "../src/core/BalanceManager.sol";
+import {PoolManager} from "../src/core/PoolManager.sol";
 import {IPoolManager} from "../src/interfaces/IPoolManager.sol";
 import {IOrderBook} from "../src/interfaces/IOrderBook.sol";
 import {Currency} from "../src/libraries/Currency.sol";

@@ -1,14 +1,19 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.26;
 
-import "../src/BalanceManager.sol";
-import "../src/GTXRouter.sol";
-import "../src/OrderBook.sol";
-import "../src/PoolManager.sol";
-import {IOrderBookErrors} from "../src/interfaces/IOrderBookErrors.sol";
-import "../src/mocks/MockToken.sol";
-import "../src/mocks/MockUSDC.sol";
-import "../src/mocks/MockWETH.sol";
+import "../BalanceManager.sol";
+import "../GTXRouter.sol";
+import "../OrderBook.sol";
+import "../PoolManager.sol";
+import {IOrderBook} from "../interfaces/IOrderBook.sol";
+import {IOrderBookErrors} from "../interfaces/IOrderBookErrors.sol";
+import {IPoolManager} from "../interfaces/IPoolManager.sol";
+import {Currency} from "../libraries/Currency.sol";
+import {PoolKey} from "../libraries/Pool.sol";
+import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import "../../mocks/MockToken.sol";
+import "../../mocks/MockUSDC.sol";
+import "../../mocks/MockWETH.sol";
 
 import {BeaconDeployer} from "./helpers/BeaconDeployer.t.sol";
 import "@openzeppelin/contracts/proxy/beacon/BeaconProxy.sol";

@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.26;
 
-import "../src/BalanceManager.sol";
-import "../src/GTXRouter.sol";
-import "../src/PoolManager.sol";
+import "../src/core/BalanceManager.sol";
+import "../src/core/GTXRouter.sol";
+import "../src/core/PoolManager.sol";
 import "./DeployHelpers.s.sol";
 
 import {PoolManagerResolver} from "../src/resolvers/PoolManagerResolver.sol";

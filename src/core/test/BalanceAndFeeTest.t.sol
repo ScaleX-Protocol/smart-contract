@@ -1,16 +1,16 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.26;
 
-import {BalanceManager} from "../src/BalanceManager.sol";
-import {GTXRouter} from "../src/GTXRouter.sol";
-import {OrderBook} from "../src/OrderBook.sol";
-import {PoolManager} from "../src/PoolManager.sol";
-import {IOrderBook} from "../src/interfaces/IOrderBook.sol";
-import {IPoolManager} from "../src/interfaces/IPoolManager.sol";
+import {BalanceManager} from "../BalanceManager.sol";
+import {GTXRouter} from "../GTXRouter.sol";
+import {OrderBook} from "../OrderBook.sol";
+import {PoolManager} from "../PoolManager.sol";
+import {IOrderBook} from "../interfaces/IOrderBook.sol";
+import {IPoolManager} from "../interfaces/IPoolManager.sol";
 
-import {Currency} from "../src/libraries/Currency.sol";
-import {PoolKey} from "../src/libraries/Pool.sol";
-import {MockToken} from "../src/mocks/MockToken.sol";
+import {Currency} from "../libraries/Currency.sol";
+import {PoolKey} from "../libraries/Pool.sol";
+import {MockToken} from "../../mocks/MockToken.sol";
 
 import {ERC20Mock} from "@openzeppelin/contracts/mocks/token/ERC20Mock.sol";
 import {Test, console} from "forge-std/Test.sol";
@@ -208,8 +208,9 @@ address gtxRouterBeacon
         assertEq(aliceLockedAfterOrder, aliceExpectedLocked, "Alice's locked amount incorrect");
 
         // Verify Alice's wallet balance decreased
+        uint256 aliceQuoteBalanceAfter = quoteToken.balanceOf(alice);
         assertApproxEqAbs(
-            aliceInitialQuoteBalance - quoteToken.balanceOf(alice),
+            aliceInitialQuoteBalance - aliceQuoteBalanceAfter,
             aliceExpectedLocked,
             100,
             "Alice's wallet balance should have decreased by locked amount"
@@ -932,14 +933,14 @@ address gtxRouterBeacon
             "Alice's quote token increase incorrect"
         );
 
-        // 4. Verify Alice's remaining locked base tokens
+        // 6. Verify Alice's remaining locked base tokens
         uint256 aliceRemainingLocked = balanceManager.getLockedBalance(alice, address(orderBook), baseCurrency);
 
         assertApproxEqAbs(
             aliceRemainingLocked, expectedRemainingQuantity, 100, "Alice's remaining locked balance incorrect"
         );
 
-        // 5. Verify the order book state after all market orders
+        // 7. Verify the order book state after all market orders
         (uint48 orderCountAfter, uint256 volumeAfter) = orderBook.getOrderQueue(IOrderBook.Side.SELL, alicePrice);
 
         if (expectedRemainingQuantity > 0) {

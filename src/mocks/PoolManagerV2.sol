@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.26;
 
-import "../PoolManager.sol";
+import "../core/PoolManager.sol";
 
 /// @custom:oz-upgrades-from PoolManager
 contract PoolManagerV2 is PoolManager {

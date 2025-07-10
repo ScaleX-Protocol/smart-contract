@@ -1,9 +1,11 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.26;
 
-import "../src/BalanceManager.sol";
-import "../src/mocks/MockUSDC.sol";
-import "../src/mocks/MockWETH.sol";
+import "../BalanceManager.sol";
+import {Currency} from "../libraries/Currency.sol";
+import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import "../../mocks/MockUSDC.sol";
+import "../../mocks/MockWETH.sol";
 import {Test, console} from "forge-std/Test.sol";
 
 import {BeaconDeployer} from "./helpers/BeaconDeployer.t.sol";

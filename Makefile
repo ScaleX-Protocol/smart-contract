@@ -121,6 +121,12 @@ full-integration:
 verify:
 	forge script script/VerifyAll.s.sol --ffi --rpc-url $(network)
 
+compile-watch-core:
+	forge build src/core --watch src/core
+
+test-core:
+	forge test src/core --watch src/core
+
 # Define a target to compile the contracts
 compile:
 	forge compile
