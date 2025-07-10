@@ -57,12 +57,6 @@ contract OrderBook is
         $.poolKey = _poolKey;
         $.nextOrderId = 1;
         $.expiryDays = 90 days;
-
-        RedBlackTreeLib.Tree storage priceTree = $.priceTrees[IOrderBook.Side.SELL];
-
-        if (!RedBlackTreeLib.exists(priceTree, uint256(0))) {
-//            RedBlackTreeLib.insert(priceTree, (0));
-        }
     }
 
     function getTradingRules() external view returns (TradingRules memory) {
