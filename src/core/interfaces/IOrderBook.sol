@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.26;
 
-import {PoolKey, PoolId} from "../libraries/Pool.sol";
+import {PoolId, PoolKey} from "../libraries/Pool.sol";
 import {IOrderBookErrors} from "./IOrderBookErrors.sol";
 
 interface IOrderBook is IOrderBookErrors {
@@ -30,7 +30,6 @@ interface IOrderBook is IOrderBookErrors {
         FOK,
         PO
     }
-
 
     struct Order {
         // Slot 1
@@ -144,5 +143,7 @@ interface IOrderBook is IOrderBookErrors {
 
     function getTradingRules() external view returns (TradingRules memory);
 
-    function updateTradingRules(TradingRules memory _newRules) external;
+    function updateTradingRules(
+        TradingRules memory _newRules
+    ) external;
 }

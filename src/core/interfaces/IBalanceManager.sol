@@ -32,7 +32,7 @@ interface IBalanceManager is IBalanceManagerErrors {
 
     function getLockedBalance(address user, address operator, Currency currency) external view returns (uint256);
 
-    function deposit(Currency currency, uint256 amount, address sender, address user) payable external;
+    function deposit(Currency currency, uint256 amount, address sender, address user) external payable;
 
     function depositAndLock(
         Currency currency,

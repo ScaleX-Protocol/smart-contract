@@ -1,16 +1,16 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.26;
 
-import {BalanceManager} from "../BalanceManager.sol";
-import {GTXRouter} from "../GTXRouter.sol";
-import {OrderBook} from "../OrderBook.sol";
-import {PoolManager} from "../PoolManager.sol";
-import {IOrderBook} from "../interfaces/IOrderBook.sol";
-import {IPoolManager} from "../interfaces/IPoolManager.sol";
+import {BalanceManager} from "@gtxcore/BalanceManager.sol";
+import {GTXRouter} from "@gtxcore/GTXRouter.sol";
+import {OrderBook} from "@gtxcore/OrderBook.sol";
+import {PoolManager} from "@gtxcore/PoolManager.sol";
+import {IOrderBook} from "@gtxcore/interfaces/IOrderBook.sol";
+import {IPoolManager} from "@gtxcore/interfaces/IPoolManager.sol";
 
-import {Currency} from "../libraries/Currency.sol";
-import {PoolKey} from "../libraries/Pool.sol";
-import {MockToken} from "../../mocks/MockToken.sol";
+import {MockToken} from "@gtx/mocks/MockToken.sol";
+import {Currency} from "@gtxcore/libraries/Currency.sol";
+import {PoolKey} from "@gtxcore/libraries/Pool.sol";
 
 import {ERC20Mock} from "@openzeppelin/contracts/mocks/token/ERC20Mock.sol";
 import {Test, console} from "forge-std/Test.sol";
@@ -83,9 +83,7 @@ contract BalanceAndFeeTest is Test, PoolHelper {
 
         BeaconDeployer beaconDeployer = new BeaconDeployer();
 
-        (BeaconProxy balanceManagerProxy,
-address balanceManagerBeacon
- ) = beaconDeployer.deployUpgradeableContract(
+        (BeaconProxy balanceManagerProxy, address balanceManagerBeacon) = beaconDeployer.deployUpgradeableContract(
             address(new BalanceManager()),
             owner,
             abi.encodeCall(BalanceManager.initialize, (owner, feeCollector, feeMaker, feeTaker))
@@ -95,9 +93,7 @@ address balanceManagerBeacon
         IBeacon orderBookBeacon = new UpgradeableBeacon(address(new OrderBook()), owner);
         address orderBookBeaconAddress = address(orderBookBeacon);
 
-        (BeaconProxy poolManagerProxy,
-address poolManagerBeacon
- ) = beaconDeployer.deployUpgradeableContract(
+        (BeaconProxy poolManagerProxy, address poolManagerBeacon) = beaconDeployer.deployUpgradeableContract(
             address(new PoolManager()),
             owner,
             abi.encodeCall(PoolManager.initialize, (owner, address(balanceManager), address(orderBookBeaconAddress)))
@@ -127,9 +123,7 @@ address poolManagerBeacon
         console.log("Base decimals:", baseDecimals);
         console.log("Quote decimals:", quoteDecimals);
 
-        (BeaconProxy routerProxy,
-address gtxRouterBeacon
- ) = beaconDeployer.deployUpgradeableContract(
+        (BeaconProxy routerProxy, address gtxRouterBeacon) = beaconDeployer.deployUpgradeableContract(
             address(new GTXRouter()),
             owner,
             abi.encodeCall(GTXRouter.initialize, (address(poolManager), address(balanceManager)))
@@ -166,8 +160,8 @@ address gtxRouterBeacon
         orderBook = OrderBook(address(pool.orderBook));
     }
 
- /*   //TODO: fix stack too depth
- function testMultipleMakersSingleTakerFullOrderMatching() public {
+    /*   //TODO: fix stack too depth
+    function testMultipleMakersSingleTakerFullOrderMatching() public {
         console.log("\n=== MULTIPLE MAKERS FULL ORDER MATCHING TEST ===");
 
         // Get initial balances for all participants
@@ -435,7 +429,7 @@ address gtxRouterBeacon
         console.log("Total trade value:", totalTradeValue);
     }*/
 
-   /* function testSingleMakerMultipleTakersPartialOrderMatchingWithHigherMakerQuantity() public {
+    /* function testSingleMakerMultipleTakersPartialOrderMatchingWithHigherMakerQuantity() public {
         console.log("\n=== SIGLE MARKER MULTIPLE TAKERS PARTIAL ORDER MATCHING WITH HIGHER MAKER QUANTITY TEST ===");
 
         // Get initial balances for all participants
@@ -710,8 +704,8 @@ address gtxRouterBeacon
         console.log("Total trade value:", totalTradeValue, "USDC");
     }*/
 
-/*
-//TODO: fix stack too depth
+    /*
+    //TODO: fix stack too depth
     function testMultipleMakersSingleTakerPartialOrderMatchingWithHigherMakerQuantity() public {
         console.log("\n=== MULTIPLE MAKERS SINGLE TAKER PARTIAL ORDER MATCHING WITH HIGHER MAKER QUANTITY TEST ===");
 
@@ -986,9 +980,9 @@ address gtxRouterBeacon
 
         console.log("Total trade value:", totalTradeValue, "USDC");
     }
-*/
+    */
 
-/* //TODO: fix stack too depth
+    /* //TODO: fix stack too depth
     function testMultipleMakersSingleTakerPartialOrderMatchingWithHigherTakerQuantity() public {
         console.log("\n=== MULTIPLE MAKERS SINGLE TAKER PARTIAL ORDER MATCHING WITH HIGHER TAKER QUANTITY TEST ===");
 
@@ -1263,7 +1257,7 @@ address gtxRouterBeacon
 
         console.log("Total trade value:", totalTradeValue, "USDC");
     }
-*/
+    */
 
     function testMarketOrderWithNoLiquidity() public {
         console.log("\n=== MARKET ORDER WITH NO LIQUIDITY TEST ===");

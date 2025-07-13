@@ -3,9 +3,10 @@ pragma solidity ^0.8.26;
 
 import {Currency} from "../libraries/Currency.sol";
 import {PoolKey} from "../libraries/Pool.sol";
+
+import {IGTXRouterErrors} from "./IGTXRouterErrors.sol";
 import {IOrderBook} from "./IOrderBook.sol";
 import {IPoolManager} from "./IPoolManager.sol";
-import {IGTXRouterErrors} from "./IGTXRouterErrors.sol";
 
 interface IGTXRouter is IGTXRouterErrors {
     function placeLimitOrder(
@@ -19,21 +20,17 @@ interface IGTXRouter is IGTXRouterErrors {
 
     function placeMarketOrder(
         IPoolManager.Pool calldata pool,
-        uint128 _price,
         uint128 _quantity,
         IOrderBook.Side _side,
         uint128 depositAmount,
         uint128 minOutAmount
-    ) external returns (uint48 orderId);
+    ) external returns (uint48 orderId, uint128 filled);
 
     function cancelOrder(IPoolManager.Pool memory pool, uint48 orderId) external;
 
     function withdraw(Currency currency, uint256 amount) external;
 
-    function batchCancelOrders(
-        IPoolManager.Pool calldata pool,
-        uint48[] calldata orderIds
-    ) external;
+    function batchCancelOrders(IPoolManager.Pool calldata pool, uint48[] calldata orderIds) external;
 
     function placeOrder(
         IPoolManager.Pool memory pool,
@@ -59,7 +56,6 @@ interface IGTXRouter is IGTXRouterErrors {
         uint128 depositAmount,
         uint128 maxBalanceAllowed
     ) external returns (uint48 orderId, uint128 filled);
-
 
     function getBestPrice(
         Currency _baseCurrency,
@@ -87,7 +83,7 @@ interface IGTXRouter is IGTXRouterErrors {
         uint8 count
     ) external view returns (IOrderBook.PriceVolume[] memory);
 
-/*    function swap(
+    /*    function swap(
         Currency srcCurrency,
         Currency dstCurrency,
         uint256 srcAmount,

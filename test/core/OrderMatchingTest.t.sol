@@ -1,23 +1,23 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.26;
 
-import "../interfaces/IOrderBook.sol";
+import {BalanceManager} from "@gtxcore/BalanceManager.sol";
+import "@gtxcore/interfaces/IOrderBook.sol";
+import {BeaconDeployer} from "./helpers/BeaconDeployer.t.sol";
 import "@openzeppelin/contracts/proxy/beacon/BeaconProxy.sol";
 import "@openzeppelin/contracts/proxy/beacon/UpgradeableBeacon.sol";
-import {BalanceManager} from "../BalanceManager.sol";
-import {BeaconDeployer} from "./helpers/BeaconDeployer.t.sol";
 
-import {Currency} from "../libraries/Currency.sol";
+import {Currency} from "@gtxcore/libraries/Currency.sol";
 import {ERC20Mock} from "@openzeppelin/contracts/mocks/token/ERC20Mock.sol";
 
-import {GTXRouter} from "../GTXRouter.sol";
-import {IPoolManager} from "../interfaces/IPoolManager.sol";
-import {MockToken} from "../../mocks/MockToken.sol";
-import {OrderBook} from "../OrderBook.sol";
+import {MockToken} from "@gtx/mocks/MockToken.sol";
+import {GTXRouter} from "@gtxcore/GTXRouter.sol";
+import {OrderBook} from "@gtxcore/OrderBook.sol";
+import {IPoolManager} from "@gtxcore/interfaces/IPoolManager.sol";
 
-import {PoolKey} from "../libraries/Pool.sol";
+import {PoolKey} from "@gtxcore/libraries/Pool.sol";
 
-import {PoolManager} from "../PoolManager.sol";
+import {PoolManager} from "@gtxcore/PoolManager.sol";
 import {Test, console} from "forge-std/Test.sol";
 import {Upgrades} from "openzeppelin-foundry-upgrades/Upgrades.sol";
 
@@ -160,7 +160,7 @@ contract OrderMatchingTest is Test {
         IOrderBook.Side limitSide = IOrderBook.Side.BUY;
 
         IPoolManager.Pool memory pool = _getPool(baseCurrency, quoteCurrency);
-        router.placeOrderWithDeposit(pool, limitPrice, limitQuantity, limitSide,IOrderBook.TimeInForce.GTC);
+        router.placeOrderWithDeposit(pool, limitPrice, limitQuantity, limitSide, IOrderBook.TimeInForce.GTC);
         vm.stopPrank();
 
         vm.startPrank(alice);

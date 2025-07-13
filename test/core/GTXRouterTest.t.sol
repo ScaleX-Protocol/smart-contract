@@ -1,20 +1,20 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.26;
 
-import "../BalanceManager.sol";
-import "../GTXRouter.sol";
+import "@gtxcore/BalanceManager.sol";
+import "@gtxcore/GTXRouter.sol";
 
-import "../OrderBook.sol";
-import "../PoolManager.sol";
-import {IOrderBook} from "../interfaces/IOrderBook.sol";
-import {IOrderBookErrors} from "../interfaces/IOrderBookErrors.sol";
-import {IPoolManager} from "../interfaces/IPoolManager.sol";
-import {Currency} from "../libraries/Currency.sol";
-import {PoolKey} from "../libraries/Pool.sol";
+import "@gtx/mocks/MockToken.sol";
+import "@gtx/mocks/MockUSDC.sol";
+import "@gtx/mocks/MockWETH.sol";
+import "@gtxcore/OrderBook.sol";
+import "@gtxcore/PoolManager.sol";
+import {IOrderBook} from "@gtxcore/interfaces/IOrderBook.sol";
+import {IOrderBookErrors} from "@gtxcore/interfaces/IOrderBookErrors.sol";
+import {IPoolManager} from "@gtxcore/interfaces/IPoolManager.sol";
+import {Currency} from "@gtxcore/libraries/Currency.sol";
+import {PoolKey} from "@gtxcore/libraries/Pool.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import "../../mocks/MockToken.sol";
-import "../../mocks/MockUSDC.sol";
-import "../../mocks/MockWETH.sol";
 
 import {BeaconDeployer} from "./helpers/BeaconDeployer.t.sol";
 import "@openzeppelin/contracts/proxy/beacon/BeaconProxy.sol";
@@ -125,7 +125,7 @@ contract GTXRouterTest is Test {
         return _poolManager.getPool(key);
     }
 
- function testPlaceLimitOrder() public {
+    function testPlaceLimitOrder() public {
         vm.startPrank(alice);
         uint128 price = 2000e6;
         uint128 quantity = 1e18; // 1 ETH
@@ -236,9 +236,8 @@ contract GTXRouterTest is Test {
         uint128 sellQty = 5e17; // 0.5 ETH for sell order
         uint128 sellPrice = 2900e6; // 2900e6 USDC per ETH
 
-        try gtxRouter.placeOrderWithDeposit(pool, sellPrice, sellQty, IOrderBook.Side.SELL, IOrderBook.TimeInForce.GTC) returns (
-            uint48 orderId
-        ) {
+        try gtxRouter.placeOrderWithDeposit(pool, sellPrice, sellQty, IOrderBook.Side.SELL, IOrderBook.TimeInForce.GTC)
+        returns (uint48 orderId) {
             console.log("Sell order placed successfully with ID:", orderId);
             // For a sell order, locked balance is computed based on the matched buy price.
             uint256 expectedLocked = ((buyPrice * sellQty) / 1e18 * (FEE_UNIT - feeTaker)) / FEE_UNIT;
@@ -260,7 +259,7 @@ contract GTXRouterTest is Test {
         vm.stopPrank();
     }
 
-/*    function testMarketOrderValidation() public {
+    /*    function testMarketOrderValidation() public {
         IPoolManager.Pool memory pool = _getPool(weth, usdc);
 
         // Setup a proper order book with liquidity on both sides
@@ -327,7 +326,7 @@ contract GTXRouterTest is Test {
         vm.stopPrank();
     }*/
 
-/*
+    /*
     //TODO: fix stack too depth
     function testPlaceMarketOrderWithDeposit() public {
         // First, we need to ensure there's adequate liquidity on both sides of the order book
@@ -523,7 +522,7 @@ contract GTXRouterTest is Test {
 
         vm.stopPrank();
     }
-*/
+    */
 
     function testPlaceOrderWithDeposit() public {
         uint256 depositAmount = 10 ether;
@@ -539,8 +538,7 @@ contract GTXRouterTest is Test {
 
         console.log(Currency.unwrap(pool.quoteCurrency));
 
-        uint48 orderId =
-            gtxRouter.placeOrderWithDeposit(pool, price, quantity, side, IOrderBook.TimeInForce.GTC);
+        uint48 orderId = gtxRouter.placeOrderWithDeposit(pool, price, quantity, side, IOrderBook.TimeInForce.GTC);
         console.log("Order with deposit placed with ID:", orderId);
 
         (uint48 orderCount, uint256 totalVolume) = gtxRouter.getOrderQueue(weth, usdc, side, price);
@@ -1028,133 +1026,133 @@ contract GTXRouterTest is Test {
         );
     }
 
-//    function testDirectSwap() public {
-//        // Setup a sell order for WETH-USDC
-//        vm.startPrank(alice);
-//        mockWETH.mint(alice, 10e18);
-//        IERC20(Currency.unwrap(weth)).approve(address(balanceManager), 10e18);
-//
-//        // Record Alice's initial balances (track balance in the BalanceManager)
-//        balanceManager.getBalance(alice, weth);
-//        uint256 aliceUsdcBefore = balanceManager.getBalance(alice, usdc);
-//
-//        uint128 sellPrice = 1000e6; // 1000 USDC per ETH
-//        uint128 sellQty = 10e18; // 10 ETH
-//        IPoolManager.Pool memory pool = _getPool(weth, usdc);
-//
-//        gtxRouter.placeOrderWithDeposit(pool, sellPrice, sellQty, IOrderBook.Side.SELL, IOrderBook.TimeInForce.GTC);
-//        vm.stopPrank();
-//
-//        // Bob will perform the swap: USDC -> WETH
-//        vm.startPrank(bob);
-//        // Calculate USDC needed: 5 ETH * 1000 USDC/ETH = 5000 USDC
-//        mockUSDC.mint(bob, 5000e6); // 5000 USDC
-//        IERC20(Currency.unwrap(usdc)).approve(address(balanceManager), 5000e6);
-//
-//        // Quantity in base units (ETH) - we want to buy 5 ETH
-//        uint256 minReceived = 4.95e18; // Expect at least 4.95 ETH (with 0.5% taker fee)
-//
-//        // Execute the swap - note we're passing ETH amount as the quantity
-//        uint256 received = gtxRouter.swap(
-//            usdc, // Source is USDC
-//            weth, // Target is WETH
-//            5000e6, // Amount of USDC to swap (5000 USDC)
-//            minReceived,
-//            2, // Max hops
-//            bob
-//        );
-//
-//        vm.stopPrank();
-//
-//        // Record final balances
-//        uint256 bobWethAfter = balanceManager.getBalance(bob, weth);
-//        uint256 bobUsdcAfter = balanceManager.getBalance(bob, usdc);
-//
-//        assertEq(bobWethAfter, 0, "Bob should receive the returned amount");
-//        assertEq(bobUsdcAfter, 0, "Bob should have spent all USDC");
-//        assertEq(mockUSDC.balanceOf(bob), 0, "Bob should have spent all USDC");
-//        uint256 expectedReceived = 5e18 - ((5e18 * 5) / 1000); // 5 ETH minus 0.5% taker fee
-//        assertEq(received, expectedReceived, "Swap should return correct ETH amount after fee");
-//        assertEq(mockWETH.balanceOf(bob), expectedReceived, "Bob should have received WETH");
-//
-//        uint256 aliceUsdcAfter = balanceManager.getBalance(alice, usdc);
-//        uint256 expectedUsdcIncrease = 5000e6 - ((5000e6 * 1) / 1000); // 5000 USDC minus 0.1% maker fee
-//
-//        // Alice's ETH should decrease by 5 ETH (locked in order) - may need to check in balanceManager
-//        address orderBookAddress = address(poolManager.getPool(PoolKey(weth, usdc)).orderBook);
-//        uint256 aliceLockedWeth = balanceManager.getLockedBalance(alice, orderBookAddress, weth);
-//        assertEq(aliceLockedWeth, 5e18, "Alice should still have 5 ETH locked in remaining orders");
-//
-//        // Alice's USDC should increase by expected amount (5000 USDC - 0.1% maker fee)
-//        assertEq(aliceUsdcAfter - aliceUsdcBefore, expectedUsdcIncrease, "Alice should receive USDC minus maker fee");
-//    }
+    //    function testDirectSwap() public {
+    //        // Setup a sell order for WETH-USDC
+    //        vm.startPrank(alice);
+    //        mockWETH.mint(alice, 10e18);
+    //        IERC20(Currency.unwrap(weth)).approve(address(balanceManager), 10e18);
+    //
+    //        // Record Alice's initial balances (track balance in the BalanceManager)
+    //        balanceManager.getBalance(alice, weth);
+    //        uint256 aliceUsdcBefore = balanceManager.getBalance(alice, usdc);
+    //
+    //        uint128 sellPrice = 1000e6; // 1000 USDC per ETH
+    //        uint128 sellQty = 10e18; // 10 ETH
+    //        IPoolManager.Pool memory pool = _getPool(weth, usdc);
+    //
+    //        gtxRouter.placeOrderWithDeposit(pool, sellPrice, sellQty, IOrderBook.Side.SELL, IOrderBook.TimeInForce.GTC);
+    //        vm.stopPrank();
+    //
+    //        // Bob will perform the swap: USDC -> WETH
+    //        vm.startPrank(bob);
+    //        // Calculate USDC needed: 5 ETH * 1000 USDC/ETH = 5000 USDC
+    //        mockUSDC.mint(bob, 5000e6); // 5000 USDC
+    //        IERC20(Currency.unwrap(usdc)).approve(address(balanceManager), 5000e6);
+    //
+    //        // Quantity in base units (ETH) - we want to buy 5 ETH
+    //        uint256 minReceived = 4.95e18; // Expect at least 4.95 ETH (with 0.5% taker fee)
+    //
+    //        // Execute the swap - note we're passing ETH amount as the quantity
+    //        uint256 received = gtxRouter.swap(
+    //            usdc, // Source is USDC
+    //            weth, // Target is WETH
+    //            5000e6, // Amount of USDC to swap (5000 USDC)
+    //            minReceived,
+    //            2, // Max hops
+    //            bob
+    //        );
+    //
+    //        vm.stopPrank();
+    //
+    //        // Record final balances
+    //        uint256 bobWethAfter = balanceManager.getBalance(bob, weth);
+    //        uint256 bobUsdcAfter = balanceManager.getBalance(bob, usdc);
+    //
+    //        assertEq(bobWethAfter, 0, "Bob should receive the returned amount");
+    //        assertEq(bobUsdcAfter, 0, "Bob should have spent all USDC");
+    //        assertEq(mockUSDC.balanceOf(bob), 0, "Bob should have spent all USDC");
+    //        uint256 expectedReceived = 5e18 - ((5e18 * 5) / 1000); // 5 ETH minus 0.5% taker fee
+    //        assertEq(received, expectedReceived, "Swap should return correct ETH amount after fee");
+    //        assertEq(mockWETH.balanceOf(bob), expectedReceived, "Bob should have received WETH");
+    //
+    //        uint256 aliceUsdcAfter = balanceManager.getBalance(alice, usdc);
+    //        uint256 expectedUsdcIncrease = 5000e6 - ((5000e6 * 1) / 1000); // 5000 USDC minus 0.1% maker fee
+    //
+    //        // Alice's ETH should decrease by 5 ETH (locked in order) - may need to check in balanceManager
+    //        address orderBookAddress = address(poolManager.getPool(PoolKey(weth, usdc)).orderBook);
+    //        uint256 aliceLockedWeth = balanceManager.getLockedBalance(alice, orderBookAddress, weth);
+    //        assertEq(aliceLockedWeth, 5e18, "Alice should still have 5 ETH locked in remaining orders");
+    //
+    //        // Alice's USDC should increase by expected amount (5000 USDC - 0.1% maker fee)
+    //        assertEq(aliceUsdcAfter - aliceUsdcBefore, expectedUsdcIncrease, "Alice should receive USDC minus maker fee");
+    //    }
 
-//    function testMultiHopSwap() public {
-//        // Setup three pools: WETH/USDC, WBTC/USDC, and a direct WETH/WBTC pool
-//
-//        // Setup WETH/USDC liquidity
-//        vm.startPrank(alice);
-//        mockWETH.mint(alice, 20e18);
-//        mockUSDC.mint(alice, 40_000e6);
-//
-//        IERC20(Currency.unwrap(weth)).approve(address(balanceManager), 20e18);
-//        IERC20(Currency.unwrap(usdc)).approve(address(balanceManager), 40_000e6);
-//
-//        IPoolManager.Pool memory pool = _getPool(weth, usdc);
-//        gtxRouter.placeOrderWithDeposit(pool, 2000e6, 1e18, IOrderBook.Side.BUY, IOrderBook.TimeInForce.GTC);
-//
-//        // Check order was placed
-//        (uint48 orderCount, uint256 totalVolume) = gtxRouter.getOrderQueue(weth, usdc, IOrderBook.Side.BUY, 2000e6);
-//        assertEq(orderCount, 1, "WETH/USDC BUY order should be placed");
-//        assertEq(totalVolume, 1e18, "WETH/USDC BUY volume should be 1 ETH");
-//
-//        mockWBTC.mint(alice, 1e8);
-//        IERC20(Currency.unwrap(wbtc)).approve(address(balanceManager), 1e8);
-//
-//        IPoolManager.Pool memory btcUsdcPool = _getPool(wbtc, usdc);
-//        gtxRouter.placeOrderWithDeposit(btcUsdcPool, 30_000e6, 1e8, IOrderBook.Side.SELL, IOrderBook.TimeInForce.GTC);
-//
-//        // Check order was placed
-//        (orderCount, totalVolume) = gtxRouter.getOrderQueue(wbtc, usdc, IOrderBook.Side.SELL, 30_000e6);
-//        assertEq(orderCount, 1, "WBTC/USDC SELL order should be placed");
-//        assertEq(totalVolume, 1e8, "WBTC/USDC SELL volume should be 1 BTC");
-//
-//        // Bob will now perform swaps to test both paths
-//        vm.startPrank(bob);
-//        mockWETH.mint(bob, 1e18); // Bob has 1 ETH to swap
-//        IERC20(Currency.unwrap(weth)).approve(address(balanceManager), 1e18);
-//
-//        // Multi-hop through USDC
-//        uint256 amountToSwap = 1e18; // 1 ETH
-//        uint256 minReceived = 6e6; // 0.06 BTC (lower than expected to account for fees)
-//
-//        uint256 received = gtxRouter.swap(
-//            weth,
-//            wbtc,
-//            amountToSwap,
-//            minReceived,
-//            2, // Max 2 hops - allows multi-hop
-//            bob
-//        );
+    //    function testMultiHopSwap() public {
+    //        // Setup three pools: WETH/USDC, WBTC/USDC, and a direct WETH/WBTC pool
+    //
+    //        // Setup WETH/USDC liquidity
+    //        vm.startPrank(alice);
+    //        mockWETH.mint(alice, 20e18);
+    //        mockUSDC.mint(alice, 40_000e6);
+    //
+    //        IERC20(Currency.unwrap(weth)).approve(address(balanceManager), 20e18);
+    //        IERC20(Currency.unwrap(usdc)).approve(address(balanceManager), 40_000e6);
+    //
+    //        IPoolManager.Pool memory pool = _getPool(weth, usdc);
+    //        gtxRouter.placeOrderWithDeposit(pool, 2000e6, 1e18, IOrderBook.Side.BUY, IOrderBook.TimeInForce.GTC);
+    //
+    //        // Check order was placed
+    //        (uint48 orderCount, uint256 totalVolume) = gtxRouter.getOrderQueue(weth, usdc, IOrderBook.Side.BUY, 2000e6);
+    //        assertEq(orderCount, 1, "WETH/USDC BUY order should be placed");
+    //        assertEq(totalVolume, 1e18, "WETH/USDC BUY volume should be 1 ETH");
+    //
+    //        mockWBTC.mint(alice, 1e8);
+    //        IERC20(Currency.unwrap(wbtc)).approve(address(balanceManager), 1e8);
+    //
+    //        IPoolManager.Pool memory btcUsdcPool = _getPool(wbtc, usdc);
+    //        gtxRouter.placeOrderWithDeposit(btcUsdcPool, 30_000e6, 1e8, IOrderBook.Side.SELL, IOrderBook.TimeInForce.GTC);
+    //
+    //        // Check order was placed
+    //        (orderCount, totalVolume) = gtxRouter.getOrderQueue(wbtc, usdc, IOrderBook.Side.SELL, 30_000e6);
+    //        assertEq(orderCount, 1, "WBTC/USDC SELL order should be placed");
+    //        assertEq(totalVolume, 1e8, "WBTC/USDC SELL volume should be 1 BTC");
+    //
+    //        // Bob will now perform swaps to test both paths
+    //        vm.startPrank(bob);
+    //        mockWETH.mint(bob, 1e18); // Bob has 1 ETH to swap
+    //        IERC20(Currency.unwrap(weth)).approve(address(balanceManager), 1e18);
+    //
+    //        // Multi-hop through USDC
+    //        uint256 amountToSwap = 1e18; // 1 ETH
+    //        uint256 minReceived = 6e6; // 0.06 BTC (lower than expected to account for fees)
+    //
+    //        uint256 received = gtxRouter.swap(
+    //            weth,
+    //            wbtc,
+    //            amountToSwap,
+    //            minReceived,
+    //            2, // Max 2 hops - allows multi-hop
+    //            bob
+    //        );
 
-//        console.log("WBTC received from first swap (should use multi-hop):", received);
-//        assertGt(received, 0, "Bob should receive WBTC from multi-hop swap");
+    //        console.log("WBTC received from first swap (should use multi-hop):", received);
+    //        assertGt(received, 0, "Bob should receive WBTC from multi-hop swap");
 
-        // Calculate the expected amount:
-        // Step 1: ETH → USDC: 1 ETH at 2000 USDC/ETH minus 0.5% taker fee
-        // 1 ETH * 2000 USDC/ETH = 2000 USDC
-        // 2000 USDC - (2000 * 0.5%) = 2000 - 10 = 1990 USDC
-        //
-        // Step 2: USDC → WBTC: 1990 USDC at 30,000 USDC/WBTC minus 0.5% taker fee
-        // 1990 USDC / 30,000 USDC/WBTC = 0.06633... WBTC
-        // 0.06633... WBTC - (0.06633... * 0.5%) = 0.06600167 WBTC
-        //
-        // Final result: 0.06600167 WBTC (in WBTC's 8 decimal format = 6600167)
-//        uint256 expectedWbtc = 6_600_167; // 0.066 WBTC with 8 decimals
-//        assertEq(received, expectedWbtc, "WBTC amount should match the calculated value");
-//
-//        vm.stopPrank();
-//    }
+    // Calculate the expected amount:
+    // Step 1: ETH → USDC: 1 ETH at 2000 USDC/ETH minus 0.5% taker fee
+    // 1 ETH * 2000 USDC/ETH = 2000 USDC
+    // 2000 USDC - (2000 * 0.5%) = 2000 - 10 = 1990 USDC
+    //
+    // Step 2: USDC → WBTC: 1990 USDC at 30,000 USDC/WBTC minus 0.5% taker fee
+    // 1990 USDC / 30,000 USDC/WBTC = 0.06633... WBTC
+    // 0.06633... WBTC - (0.06633... * 0.5%) = 0.06600167 WBTC
+    //
+    // Final result: 0.06600167 WBTC (in WBTC's 8 decimal format = 6600167)
+    //        uint256 expectedWbtc = 6_600_167; // 0.066 WBTC with 8 decimals
+    //        assertEq(received, expectedWbtc, "WBTC amount should match the calculated value");
+    //
+    //        vm.stopPrank();
+    //    }
 
     function testCancelOrderOnlyOnce() public {
         address trader = makeAddr("traderOnce");
@@ -1234,8 +1232,6 @@ contract GTXRouterTest is Test {
         assertEq(buyVol, 0, "Buy volume should be zero");
     }
 
-
-
     function testSlippagePlaceMarketOrderWithDepositBuyOrder() public {
         vm.startPrank(alice);
         mockWETH.mint(alice, 5e18);
@@ -1255,17 +1251,17 @@ contract GTXRouterTest is Test {
         IERC20(Currency.unwrap(usdc)).approve(address(balanceManager), 4000e6);
         balanceManager.deposit(usdc, 4000e6, slippageBuyer, slippageBuyer);
 
-        uint128 depositAmount = 10000e6;
+        uint128 depositAmount = 10_000e6;
 
         mockUSDC.mint(slippageBuyer, depositAmount);
         IERC20(Currency.unwrap(usdc)).approve(address(balanceManager), depositAmount);
 
-        uint128 minOutAmount = 2875000000000000000; // 5% slippage tolerance
+        uint128 minOutAmount = 2_875_000_000_000_000_000; // 5% slippage tolerance
         minOutAmount = minOutAmount - ((minOutAmount * 5) / 1000); // Fee tolerance
         console.log("Min out amount:", minOutAmount);
 
         gtxRouter.placeMarketOrderWithDeposit(
-            pool, type(uint128).max, IOrderBook.Side.BUY, minOutAmount, 10000e6, depositAmount
+            pool, type(uint128).max, IOrderBook.Side.BUY, minOutAmount, 10_000e6, depositAmount
         );
 
         vm.stopPrank();

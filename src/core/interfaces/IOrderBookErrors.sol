@@ -3,7 +3,6 @@ pragma solidity ^0.8.26;
 
 import {IOrderBook} from "./IOrderBook.sol";
 
-
 interface IOrderBookErrors {
     error SlippageTooHigh(uint256 received, uint256 minReceived);
     error InvalidSlippageTolerance(uint256 slippageBps);

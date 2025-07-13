@@ -23,7 +23,6 @@ import {IGTXRouter} from "./interfaces/IGTXRouter.sol";
 import {GTXRouterStorage} from "./storages/GTXRouterStorage.sol";
 import {Test, console} from "forge-std/Test.sol";
 
-
 contract GTXRouter is IGTXRouter, GTXRouterStorage, Initializable, OwnableUpgradeable {
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() {
@@ -37,10 +36,64 @@ contract GTXRouter is IGTXRouter, GTXRouterStorage, Initializable, OwnableUpgrad
         $.balanceManager = _balanceManager;
     }
 
-    function placeLimitOrder(IPoolManager.Pool calldata, uint128, uint128, IOrderBook.Side, IOrderBook.TimeInForce, uint128) external returns (uint48) { return 0; }
-    function placeMarketOrder(IPoolManager.Pool calldata, uint128, uint128, IOrderBook.Side, uint128, uint128) external returns (uint48) { return 0; }
+    function placeLimitOrder(
+        IPoolManager.Pool calldata pool,
+        uint128 _price,
+        uint128 _quantity,
+        IOrderBook.Side _side,
+        IOrderBook.TimeInForce _timeInForce,
+        uint128 depositAmount
+    ) external returns (uint48 orderId) {
+        Storage storage $ = getStorage();
+        IBalanceManager balanceManager = IBalanceManager($.balanceManager);
+        Currency depositCurrency = (_side == IOrderBook.Side.BUY) ? pool.quoteCurrency : pool.baseCurrency;
+
+        if (depositAmount > 0) {
+            balanceManager.deposit(depositCurrency, depositAmount, msg.sender, msg.sender);
+        }
+
+        orderId = pool.orderBook.placeOrder(_price, _quantity, _side, msg.sender, _timeInForce);
+    }
+
+    function placeMarketOrder(
+        IPoolManager.Pool calldata pool,
+        uint128 _quantity,
+        IOrderBook.Side _side,
+        uint128 depositAmount,
+        uint128 minOutAmount
+    ) external returns (uint48 orderId, uint128 filled) {
+        Storage storage $ = getStorage();
+        IBalanceManager balanceManager = IBalanceManager($.balanceManager);
+        Currency depositCurrency = (_side == IOrderBook.Side.BUY) ? pool.quoteCurrency : pool.baseCurrency;
+
+        if (depositAmount > 0) {
+            balanceManager.deposit(depositCurrency, depositAmount, msg.sender, msg.sender);
+        }
+
+        uint256 userBalance = balanceManager.getBalance(msg.sender, depositCurrency);
+
+        if (userBalance > 0 && userBalance > _quantity) {
+            balanceManager.lock(msg.sender, depositCurrency, userBalance - _quantity);
+        }
+
+        (orderId, filled) = pool.orderBook.placeMarketOrder(_quantity, _side, msg.sender);
+
+        if (userBalance > 0 && userBalance > _quantity) {
+            balanceManager.unlock(msg.sender, depositCurrency, userBalance - _quantity);
+        }
+
+        if (filled < minOutAmount) {
+            revert SlippageTooHigh(filled, minOutAmount);
+        }
+    }
+
+    function cancelOrder(IPoolManager.Pool memory pool, uint48 orderId) external {
+        pool.orderBook.cancelOrder(orderId, msg.sender);
+    }
+
     function withdraw(Currency, uint256) external {}
 
+    //TODO: Remove old function
     function placeOrder(
         IPoolManager.Pool memory pool,
         uint128 _price,
@@ -51,6 +104,7 @@ contract GTXRouter is IGTXRouter, GTXRouterStorage, Initializable, OwnableUpgrad
         orderId = _placeLimitOrder(pool, _price, _quantity, _side, _timeInForce, false, msg.sender);
     }
 
+    //TODO: Remove old function
     function placeOrderWithDeposit(
         IPoolManager.Pool memory pool,
         uint128 _price,
@@ -61,7 +115,7 @@ contract GTXRouter is IGTXRouter, GTXRouterStorage, Initializable, OwnableUpgrad
         orderId = _placeLimitOrder(pool, _price, _quantity, _side, _timeInForce, true, msg.sender);
     }
 
-
+    //TODO: Remove old function
     function _validateCallerBalance(
         IPoolManager.Pool memory pool,
         address _caller,
@@ -107,6 +161,7 @@ contract GTXRouter is IGTXRouter, GTXRouterStorage, Initializable, OwnableUpgrad
         return (depositCurrency, requiredBalance);
     }
 
+    //TODO: Remove old function
     function _placeLimitOrder(
         IPoolManager.Pool memory pool,
         uint128 _price,
@@ -119,7 +174,7 @@ contract GTXRouter is IGTXRouter, GTXRouterStorage, Initializable, OwnableUpgrad
         //TODO: Immediately deposit and lock balance for limit order
 
         (Currency depositCurrency, uint256 requiredBalance) =
-                        _validateCallerBalance(pool, _user, _side, _quantity, _price, false, depositTokens);
+            _validateCallerBalance(pool, _user, _side, _quantity, _price, false, depositTokens);
 
         Storage storage $ = getStorage();
         IBalanceManager balanceManager = IBalanceManager($.balanceManager);
@@ -131,6 +186,7 @@ contract GTXRouter is IGTXRouter, GTXRouterStorage, Initializable, OwnableUpgrad
         orderId = pool.orderBook.placeOrder(_price, _quantity, _side, _user, _timeInForce);
     }
 
+    //TODO: Remove old function
     function _placeMarketOrder(
         IPoolManager.Pool memory pool,
         uint128 quantity,
@@ -140,7 +196,7 @@ contract GTXRouter is IGTXRouter, GTXRouterStorage, Initializable, OwnableUpgrad
         (orderId, filled) = pool.orderBook.placeMarketOrder(quantity, side, user);
     }
 
-/*    function placeMarketOrder(
+    /*    function placeMarketOrder(
         IPoolManager.Pool memory pool,
         uint128 _quantity,
         IOrderBook.Side _side,
@@ -150,7 +206,7 @@ contract GTXRouter is IGTXRouter, GTXRouterStorage, Initializable, OwnableUpgrad
         return _placeMarketOrder(pool, _quantity, _side, msg.sender);
     }*/
 
-/*    function _placeMarketOrderForSwap(
+    /*    function _placeMarketOrderForSwap(
         PoolKey memory key,
         uint256 amount,
         IOrderBook.Side side,
@@ -177,6 +233,7 @@ contract GTXRouter is IGTXRouter, GTXRouterStorage, Initializable, OwnableUpgrad
         return placeMarketOrder(pool, quantity, side, minOutAmount);
     }*/
 
+    //TODO: Remove old function
     function placeMarketOrderWithDeposit(
         IPoolManager.Pool memory pool,
         uint128 _quantity,
@@ -206,13 +263,9 @@ contract GTXRouter is IGTXRouter, GTXRouterStorage, Initializable, OwnableUpgrad
             balanceManager.unlock(msg.sender, depositCurrency, userBalance - maxBalanceAllowed);
         }
 
-         if (filled < minOutAmount) {
-             revert SlippageTooHigh(filled, minOutAmount);
-         }
-    }
-
-    function cancelOrder(IPoolManager.Pool memory pool, uint48 orderId) external {
-        pool.orderBook.cancelOrder(orderId, msg.sender);
+        if (filled < minOutAmount) {
+            revert SlippageTooHigh(filled, minOutAmount);
+        }
     }
 
     function batchCancelOrders(IPoolManager.Pool calldata, uint48[] calldata) external pure override {}
@@ -260,7 +313,7 @@ contract GTXRouter is IGTXRouter, GTXRouterStorage, Initializable, OwnableUpgrad
         IOrderBook.Side side,
         uint256 slippageToleranceBps
     ) public view returns (uint128 minOutputAmount) {
-        if (slippageToleranceBps > 10000) {
+        if (slippageToleranceBps > 10_000) {
             revert InvalidSlippageTolerance(slippageToleranceBps);
         }
 
@@ -274,22 +327,13 @@ contract GTXRouter is IGTXRouter, GTXRouterStorage, Initializable, OwnableUpgrad
         IOrderBook.Side oppositeSide = side == IOrderBook.Side.BUY ? IOrderBook.Side.SELL : IOrderBook.Side.BUY;
         IOrderBook.PriceVolume[] memory oppositePrices = pool.orderBook.getNextBestPrices(oppositeSide, 0, 100);
 
-        uint256 totalOutputReceived = _calculateOutputFromPrices(
-            pool,
-            oppositePrices,
-            inputAmount,
-            side
-        );
+        uint256 totalOutputReceived = _calculateOutputFromPrices(pool, oppositePrices, inputAmount, side);
 
         if (totalOutputReceived == 0) {
             return 0;
         }
 
-        return _calculateMinOutputWithFeesAndSlippage(
-            balanceManager,
-            totalOutputReceived,
-            slippageToleranceBps
-        );
+        return _calculateMinOutputWithFeesAndSlippage(balanceManager, totalOutputReceived, slippageToleranceBps);
     }
 
     function _calculateOutputFromPrices(
@@ -307,12 +351,7 @@ contract GTXRouter is IGTXRouter, GTXRouterStorage, Initializable, OwnableUpgrad
                 break;
             }
 
-            uint256 outputToReceive = _calculateOutputForPriceLevel(
-                pool,
-                priceLevel,
-                remainingInput,
-                side
-            );
+            uint256 outputToReceive = _calculateOutputForPriceLevel(pool, priceLevel, remainingInput, side);
 
             totalOutputReceived += outputToReceive;
             remainingInput = _updateRemainingInput(pool, priceLevel, remainingInput, side);
@@ -326,30 +365,19 @@ contract GTXRouter is IGTXRouter, GTXRouterStorage, Initializable, OwnableUpgrad
         IOrderBook.Side side
     ) internal view returns (uint256 outputToReceive) {
         if (side == IOrderBook.Side.BUY) {
-            uint256 quoteNeededForLevel = PoolIdLibrary.baseToQuote(
-                priceLevel.volume,
-                priceLevel.price,
-                pool.baseCurrency.decimals()
-            );
+            uint256 quoteNeededForLevel =
+                PoolIdLibrary.baseToQuote(priceLevel.volume, priceLevel.price, pool.baseCurrency.decimals());
 
             if (quoteNeededForLevel <= remainingInput) {
                 outputToReceive = priceLevel.volume;
             } else {
-                outputToReceive = PoolIdLibrary.quoteToBase(
-                    remainingInput,
-                    priceLevel.price,
-                    pool.baseCurrency.decimals()
-                );
+                outputToReceive =
+                    PoolIdLibrary.quoteToBase(remainingInput, priceLevel.price, pool.baseCurrency.decimals());
             }
         } else {
-            uint256 baseToSell = priceLevel.volume <= remainingInput ?
-                priceLevel.volume : remainingInput;
+            uint256 baseToSell = priceLevel.volume <= remainingInput ? priceLevel.volume : remainingInput;
 
-            outputToReceive = PoolIdLibrary.baseToQuote(
-                baseToSell,
-                priceLevel.price,
-                pool.baseCurrency.decimals()
-            );
+            outputToReceive = PoolIdLibrary.baseToQuote(baseToSell, priceLevel.price, pool.baseCurrency.decimals());
         }
     }
 
@@ -360,17 +388,12 @@ contract GTXRouter is IGTXRouter, GTXRouterStorage, Initializable, OwnableUpgrad
         IOrderBook.Side side
     ) internal view returns (uint256) {
         if (side == IOrderBook.Side.BUY) {
-            uint256 quoteNeededForLevel = PoolIdLibrary.baseToQuote(
-                priceLevel.volume,
-                priceLevel.price,
-                pool.baseCurrency.decimals()
-            );
+            uint256 quoteNeededForLevel =
+                PoolIdLibrary.baseToQuote(priceLevel.volume, priceLevel.price, pool.baseCurrency.decimals());
 
-            return quoteNeededForLevel <= remainingInput ?
-                remainingInput - quoteNeededForLevel : 0;
+            return quoteNeededForLevel <= remainingInput ? remainingInput - quoteNeededForLevel : 0;
         } else {
-            return priceLevel.volume <= remainingInput ?
-                remainingInput - priceLevel.volume : 0;
+            return priceLevel.volume <= remainingInput ? remainingInput - priceLevel.volume : 0;
         }
     }
 
@@ -383,10 +406,9 @@ contract GTXRouter is IGTXRouter, GTXRouterStorage, Initializable, OwnableUpgrad
         uint256 feeUnit = balanceManager.getFeeUnit();
         uint256 feeAmount = (totalOutputReceived * feeTaker) / feeUnit;
 
-        uint256 outputAfterFees = totalOutputReceived > feeAmount ?
-            totalOutputReceived - feeAmount : 0;
+        uint256 outputAfterFees = totalOutputReceived > feeAmount ? totalOutputReceived - feeAmount : 0;
 
-        uint256 slippageAmount = (outputAfterFees * slippageToleranceBps) / 10000;
+        uint256 slippageAmount = (outputAfterFees * slippageToleranceBps) / 10_000;
         return uint128(outputAfterFees - slippageAmount);
     }
 
@@ -479,7 +501,7 @@ contract GTXRouter is IGTXRouter, GTXRouterStorage, Initializable, OwnableUpgrad
     /**
      * @notice Execute a direct swap between two currencies
      */
-  /*  function executeDirectSwap(
+    /*  function executeDirectSwap(
         Currency baseCurrency,
         Currency quoteCurrency,
         Currency srcCurrency,
@@ -513,7 +535,7 @@ contract GTXRouter is IGTXRouter, GTXRouterStorage, Initializable, OwnableUpgrad
     /**
      * @notice Execute a multi-hop swap through one intermediary
      */
-   /* function executeMultiHopSwap(
+    /* function executeMultiHopSwap(
         Currency srcCurrency,
         Currency intermediary,
         Currency dstCurrency,
@@ -560,11 +582,12 @@ contract GTXRouter is IGTXRouter, GTXRouterStorage, Initializable, OwnableUpgrad
         }
     }*/
 
-/*
+    /*
     */
-/**
+    /**
      * @notice Execute a single swap step within a multi-hop swap
-     *//*
+     */
+    /*
 
     function executeSwapStep(
         Currency srcCurrency,
@@ -587,7 +610,7 @@ contract GTXRouter is IGTXRouter, GTXRouterStorage, Initializable, OwnableUpgrad
         }
         return receivedAmount;
     }
-*/
+    */
 
     /**
      * @notice Execute a multi-hop swap where the second pool is accessed in reverse

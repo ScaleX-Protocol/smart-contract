@@ -9,8 +9,9 @@ import {IOrderBook} from "./interfaces/IOrderBook.sol";
 import {IPoolManager} from "./interfaces/IPoolManager.sol";
 import {Currency} from "./libraries/Currency.sol";
 import {PoolId, PoolKey} from "./libraries/Pool.sol";
-import {PoolManagerStorage} from "./storages/PoolManagerStorage.sol";
+
 import {TradingRulesValidator} from "./libraries/TradingRulesValidator.sol";
+import {PoolManagerStorage} from "./storages/PoolManagerStorage.sol";
 
 import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
@@ -105,10 +106,7 @@ contract PoolManager is Initializable, OwnableUpgradeable, PoolManagerStorage, I
         return id;
     }
 
-    function updatePoolTradingRules(
-        PoolId _poolId,
-        IOrderBook.TradingRules memory _newRules
-    ) external onlyOwner {
+    function updatePoolTradingRules(PoolId _poolId, IOrderBook.TradingRules memory _newRules) external onlyOwner {
         validateTradingRules(_newRules);
 
         Storage storage $ = getStorage();
@@ -120,7 +118,9 @@ contract PoolManager is Initializable, OwnableUpgradeable, PoolManagerStorage, I
         emit TradingRulesUpdated(_poolId, _newRules);
     }
 
-    function validateTradingRules(IOrderBook.TradingRules memory _rules) internal pure {
+    function validateTradingRules(
+        IOrderBook.TradingRules memory _rules
+    ) internal pure {
         TradingRulesValidator.validate(_rules);
     }
 
