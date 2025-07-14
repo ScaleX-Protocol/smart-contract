@@ -48,6 +48,24 @@ interface IOrderBook is IOrderBookErrors {
         Side side;
     }
 
+    struct MatchContext {
+        Order order;
+        Side side;
+        address user;
+        bool isMarketOrder;
+        uint128 bestPrice;
+        uint128 remaining;
+        uint128 filled;
+    }
+
+    struct MatchState {
+        uint128 remaining;
+        uint128 orderPrice;
+        uint128 latestBestPrice;
+        uint128 previousRemaining;
+        uint128 filled;
+    }
+
     struct OrderQueue {
         uint256 totalVolume;
         uint48 orderCount;

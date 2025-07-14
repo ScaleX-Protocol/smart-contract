@@ -32,31 +32,6 @@ interface IGTXRouter is IGTXRouterErrors {
 
     function batchCancelOrders(IPoolManager.Pool calldata pool, uint48[] calldata orderIds) external;
 
-    function placeOrder(
-        IPoolManager.Pool memory pool,
-        uint128 _price,
-        uint128 _quantity,
-        IOrderBook.Side _side,
-        IOrderBook.TimeInForce _timeInForce
-    ) external returns (uint48 orderId);
-
-    function placeOrderWithDeposit(
-        IPoolManager.Pool memory pool,
-        uint128 _price,
-        uint128 _quantity,
-        IOrderBook.Side _side,
-        IOrderBook.TimeInForce _timeInForce
-    ) external returns (uint48 orderId);
-
-    function placeMarketOrderWithDeposit(
-        IPoolManager.Pool memory pool,
-        uint128 _quantity,
-        IOrderBook.Side _side,
-        uint128 minOutAmount,
-        uint128 depositAmount,
-        uint128 maxBalanceAllowed
-    ) external returns (uint48 orderId, uint128 filled);
-
     function getBestPrice(
         Currency _baseCurrency,
         Currency _quoteCurrency,
@@ -82,6 +57,13 @@ interface IGTXRouter is IGTXRouterErrors {
         uint128 price,
         uint8 count
     ) external view returns (IOrderBook.PriceVolume[] memory);
+
+    function calculateMinOutAmountForMarket(
+        IPoolManager.Pool memory pool,
+        uint256 inputAmount,
+        IOrderBook.Side side,
+        uint256 slippageToleranceBps
+    ) external view returns (uint128 minOutputAmount);
 
     /*    function swap(
         Currency srcCurrency,

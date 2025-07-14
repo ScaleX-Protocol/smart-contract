@@ -82,8 +82,15 @@ contract GTXRouter is IGTXRouter, GTXRouterStorage, Initializable, OwnableUpgrad
             balanceManager.unlock(msg.sender, depositCurrency, userBalance - _quantity);
         }
 
-        if (filled < minOutAmount) {
-            revert SlippageTooHigh(filled, minOutAmount);
+        if (_side == IOrderBook.Side.BUY) {
+            if (filled < minOutAmount) {
+                revert SlippageTooHigh(filled, minOutAmount);
+            }
+        } else {
+            uint256 quoteReceived = balanceManager.getBalance(msg.sender, pool.quoteCurrency);
+            if (quoteReceived < minOutAmount) {
+                revert SlippageTooHigh(uint128(quoteReceived), minOutAmount);
+            }
         }
     }
 
@@ -92,181 +99,6 @@ contract GTXRouter is IGTXRouter, GTXRouterStorage, Initializable, OwnableUpgrad
     }
 
     function withdraw(Currency, uint256) external {}
-
-    //TODO: Remove old function
-    function placeOrder(
-        IPoolManager.Pool memory pool,
-        uint128 _price,
-        uint128 _quantity,
-        IOrderBook.Side _side,
-        IOrderBook.TimeInForce _timeInForce
-    ) public returns (uint48 orderId) {
-        orderId = _placeLimitOrder(pool, _price, _quantity, _side, _timeInForce, false, msg.sender);
-    }
-
-    //TODO: Remove old function
-    function placeOrderWithDeposit(
-        IPoolManager.Pool memory pool,
-        uint128 _price,
-        uint128 _quantity,
-        IOrderBook.Side _side,
-        IOrderBook.TimeInForce _timeInForce
-    ) external returns (uint48 orderId) {
-        orderId = _placeLimitOrder(pool, _price, _quantity, _side, _timeInForce, true, msg.sender);
-    }
-
-    //TODO: Remove old function
-    function _validateCallerBalance(
-        IPoolManager.Pool memory pool,
-        address _caller,
-        IOrderBook.Side _side,
-        uint128 _quantity,
-        uint128 _price,
-        bool _isMarketOrder,
-        bool _isWalletDeposit
-    ) internal view returns (Currency, uint256) {
-        Currency depositCurrency;
-        uint256 requiredBalance;
-
-        if (_side == IOrderBook.Side.BUY) {
-            depositCurrency = pool.quoteCurrency;
-            uint128 price;
-
-            if (_isMarketOrder) {
-                price = pool.orderBook.getBestPrice(IOrderBook.Side.SELL).price;
-            } else {
-                price = _price;
-            }
-
-            // Calculate required USDC based on ETH quantity and price
-            requiredBalance = PoolIdLibrary.baseToQuote(_quantity, price, pool.baseCurrency.decimals());
-        } else {
-            // For market SELL orders, user must deposit base currency (e.g., ETH)
-            depositCurrency = pool.baseCurrency;
-            requiredBalance = _quantity;
-        }
-
-        Storage storage $ = getStorage();
-        IBalanceManager balanceManager = IBalanceManager($.balanceManager);
-
-        // Check balance in the balance manager or wallet
-        uint256 currentBalance = _isWalletDeposit
-            ? IERC20(Currency.unwrap(depositCurrency)).balanceOf(_caller)
-            : balanceManager.getBalance(_caller, depositCurrency);
-
-        if (currentBalance < requiredBalance) {
-            revert InsufficientBalanceRequired(requiredBalance, currentBalance);
-        }
-
-        return (depositCurrency, requiredBalance);
-    }
-
-    //TODO: Remove old function
-    function _placeLimitOrder(
-        IPoolManager.Pool memory pool,
-        uint128 _price,
-        uint128 _quantity,
-        IOrderBook.Side _side,
-        IOrderBook.TimeInForce _timeInForce,
-        bool depositTokens,
-        address _user
-    ) internal returns (uint48 orderId) {
-        //TODO: Immediately deposit and lock balance for limit order
-
-        (Currency depositCurrency, uint256 requiredBalance) =
-            _validateCallerBalance(pool, _user, _side, _quantity, _price, false, depositTokens);
-
-        Storage storage $ = getStorage();
-        IBalanceManager balanceManager = IBalanceManager($.balanceManager);
-
-        if (depositTokens) {
-            balanceManager.deposit(depositCurrency, requiredBalance, _user, _user);
-        }
-
-        orderId = pool.orderBook.placeOrder(_price, _quantity, _side, _user, _timeInForce);
-    }
-
-    //TODO: Remove old function
-    function _placeMarketOrder(
-        IPoolManager.Pool memory pool,
-        uint128 quantity,
-        IOrderBook.Side side,
-        address user
-    ) internal returns (uint48 orderId, uint128 filled) {
-        (orderId, filled) = pool.orderBook.placeMarketOrder(quantity, side, user);
-    }
-
-    /*    function placeMarketOrder(
-        IPoolManager.Pool memory pool,
-        uint128 _quantity,
-        IOrderBook.Side _side,
-        uint128 minOutAmount
-    ) public returns (uint48 orderId, uint128 filled) {
-        _validateCallerBalance(pool, msg.sender, _side, _quantity, 0, true, false);
-        return _placeMarketOrder(pool, _quantity, _side, msg.sender);
-    }*/
-
-    /*    function _placeMarketOrderForSwap(
-        PoolKey memory key,
-        uint256 amount,
-        IOrderBook.Side side,
-        address user,
-        uint128 minOutAmount
-    ) internal returns (uint48 orderId, uint128 filled) {
-        Storage storage $ = getStorage();
-        IPoolManager poolManager = IPoolManager($.poolManager);
-        IPoolManager.Pool memory pool = poolManager.getPool(key);
-        uint128 quantity;
-        if (side == IOrderBook.Side.SELL) {
-            quantity = uint128(amount);
-        } else {
-            IOrderBook.PriceVolume memory bestPrice = pool.orderBook.getBestPrice(IOrderBook.Side.SELL);
-            if (bestPrice.price == 0) {
-                revert OrderHasNoLiquidity();
-            }
-            uint256 baseAmount = PoolIdLibrary.quoteToBase(amount, bestPrice.price, pool.baseCurrency.decimals());
-            quantity = uint128(baseAmount);
-        }
-        if (quantity == 0) {
-            revert InvalidQuantity();
-        }
-        return placeMarketOrder(pool, quantity, side, minOutAmount);
-    }*/
-
-    //TODO: Remove old function
-    function placeMarketOrderWithDeposit(
-        IPoolManager.Pool memory pool,
-        uint128 _quantity,
-        IOrderBook.Side _side,
-        uint128 minOutAmount,
-        uint128 depositAmount,
-        uint128 maxBalanceAllowed
-    ) external returns (uint48 orderId, uint128 filled) {
-        Currency depositCurrency = (_side == IOrderBook.Side.BUY) ? pool.quoteCurrency : pool.baseCurrency;
-
-        Storage storage $ = getStorage();
-        IBalanceManager balanceManager = IBalanceManager($.balanceManager);
-
-        console.log("Deposit amount:", depositAmount);
-
-        balanceManager.deposit(depositCurrency, depositAmount, msg.sender, msg.sender);
-
-        uint256 userBalance = balanceManager.getBalance(msg.sender, depositCurrency);
-
-        if (userBalance > 0 && userBalance > maxBalanceAllowed) {
-            balanceManager.lock(msg.sender, depositCurrency, userBalance - maxBalanceAllowed);
-        }
-
-        (orderId, filled) = _placeMarketOrder(pool, _quantity, _side, msg.sender);
-
-        if (userBalance > 0 && userBalance > maxBalanceAllowed) {
-            balanceManager.unlock(msg.sender, depositCurrency, userBalance - maxBalanceAllowed);
-        }
-
-        if (filled < minOutAmount) {
-            revert SlippageTooHigh(filled, minOutAmount);
-        }
-    }
 
     function batchCancelOrders(IPoolManager.Pool calldata, uint48[] calldata) external pure override {}
 
