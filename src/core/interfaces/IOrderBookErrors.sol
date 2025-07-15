@@ -24,4 +24,5 @@ interface IOrderBookErrors {
     error OrderNotFound();
     error QueueEmpty();
     error OrderIsNotOpenOrder(IOrderBook.Status status);
+    error InvalidSideForQuoteAmount();
 }

@@ -36,6 +36,17 @@ contract GTXRouter is IGTXRouter, GTXRouterStorage, Initializable, OwnableUpgrad
         $.balanceManager = _balanceManager;
     }
 
+    struct SlippageContext {
+        IBalanceManager balanceManager;
+        address user;
+        Currency baseCurrency;
+        Currency quoteCurrency;
+        uint256 baseBalanceBefore;
+        uint256 quoteBalanceBefore;
+        IOrderBook.Side side;
+        uint128 minOutAmount;
+    }
+
     function placeLimitOrder(
         IPoolManager.Pool calldata pool,
         uint128 _price,
@@ -70,26 +81,62 @@ contract GTXRouter is IGTXRouter, GTXRouterStorage, Initializable, OwnableUpgrad
             balanceManager.deposit(depositCurrency, depositAmount, msg.sender, msg.sender);
         }
 
-        uint256 userBalance = balanceManager.getBalance(msg.sender, depositCurrency);
-
-        if (userBalance > 0 && userBalance > _quantity) {
-            balanceManager.lock(msg.sender, depositCurrency, userBalance - _quantity);
+        if (_side == IOrderBook.Side.SELL) {
+            uint256 userBalance = balanceManager.getBalance(msg.sender, depositCurrency);
+            if (userBalance > 0 && userBalance > _quantity) {
+                balanceManager.lock(msg.sender, depositCurrency, userBalance - _quantity);
+            }
         }
+
+        SlippageContext memory ctx = _makeSlippageContext(
+            balanceManager,
+            msg.sender,
+            pool.baseCurrency,
+            pool.quoteCurrency,
+            _side,
+            minOutAmount
+        );
 
         (orderId, filled) = pool.orderBook.placeMarketOrder(_quantity, _side, msg.sender);
 
-        if (userBalance > 0 && userBalance > _quantity) {
-            balanceManager.unlock(msg.sender, depositCurrency, userBalance - _quantity);
+        if (_side == IOrderBook.Side.SELL) {
+            uint256 userBalance = balanceManager.getBalance(msg.sender, depositCurrency);
+            if (userBalance > 0 && userBalance > _quantity) {
+                balanceManager.unlock(msg.sender, depositCurrency, userBalance - _quantity);
+            }
         }
 
-        if (_side == IOrderBook.Side.BUY) {
-            if (filled < minOutAmount) {
-                revert SlippageTooHigh(filled, minOutAmount);
+        _checkSlippageDelta(ctx);
+    }
+
+    function _makeSlippageContext(
+        IBalanceManager balanceManager,
+        address user,
+        Currency baseCurrency,
+        Currency quoteCurrency,
+        IOrderBook.Side side,
+        uint128 minOutAmount
+    ) internal view returns (SlippageContext memory ctx) {
+        ctx.balanceManager = balanceManager;
+        ctx.user = user;
+        ctx.baseCurrency = baseCurrency;
+        ctx.quoteCurrency = quoteCurrency;
+        ctx.baseBalanceBefore = balanceManager.getBalance(user, baseCurrency);
+        ctx.quoteBalanceBefore = balanceManager.getBalance(user, quoteCurrency);
+        ctx.side = side;
+        ctx.minOutAmount = minOutAmount;
+    }
+
+    function _checkSlippageDelta(SlippageContext memory ctx) private view {
+        if (ctx.side == IOrderBook.Side.BUY) {
+            uint256 baseReceived = ctx.balanceManager.getBalance(ctx.user, ctx.baseCurrency) - ctx.baseBalanceBefore;
+            if (baseReceived < ctx.minOutAmount) {
+                revert SlippageTooHigh(uint128(baseReceived), ctx.minOutAmount);
             }
         } else {
-            uint256 quoteReceived = balanceManager.getBalance(msg.sender, pool.quoteCurrency);
-            if (quoteReceived < minOutAmount) {
-                revert SlippageTooHigh(uint128(quoteReceived), minOutAmount);
+            uint256 quoteReceived = ctx.balanceManager.getBalance(ctx.user, ctx.quoteCurrency) - ctx.quoteBalanceBefore;
+            if (quoteReceived < ctx.minOutAmount) {
+                revert SlippageTooHigh(uint128(quoteReceived), ctx.minOutAmount);
             }
         }
     }

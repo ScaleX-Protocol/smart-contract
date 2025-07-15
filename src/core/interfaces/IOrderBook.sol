@@ -55,6 +55,7 @@ interface IOrderBook is IOrderBookErrors {
         bool isMarketOrder;
         uint128 bestPrice;
         uint128 remaining;
+        uint128 previousRemaining;
         uint128 filled;
     }
 

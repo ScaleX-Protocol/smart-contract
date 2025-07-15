@@ -79,6 +79,10 @@ contract OrderBook is Initializable, OwnableUpgradeable, ReentrancyGuardUpgradea
     ) private view {
         Storage storage $ = getStorage();
 
+        if(side == Side.BUY && orderType == OrderType.MARKET) {
+            return;
+        }
+
         (uint256 orderAmount, uint256 quoteAmount) = calculateOrderAmounts(price, quantity, side, orderType);
 
         validateMinimumSizes(orderAmount, quoteAmount);
@@ -262,8 +266,12 @@ contract OrderBook is Initializable, OwnableUpgradeable, ReentrancyGuardUpgradea
         Side side,
         address user
     ) external onlyRouter nonReentrant returns (uint48 orderId, uint128 receivedAmount) {
+        if (side == Side.BUY) {
+            return _placeMarketOrderWithQuoteAmount(quantity, side, user);
+        }
+
         Storage storage $ = getStorage();
-        validateOrder(0, quantity, side, OrderType.MARKET, TimeInForce.GTC);
+        validateBasicOrderParameters(0, quantity, OrderType.MARKET);
 
         orderId = $.nextOrderId;
 
@@ -285,10 +293,6 @@ contract OrderBook is Initializable, OwnableUpgradeable, ReentrancyGuardUpgradea
 
         uint128 filled = _matchOrder(marketOrder, side, user, true);
 
-        if (filled == 0) {
-            revert OrderHasNoLiquidity();
-        }
-
         IBalanceManager bm = IBalanceManager($.balanceManager);
         uint256 feeTaker = bm.feeTaker();
         uint256 feeUnit = bm.getFeeUnit();
@@ -302,6 +306,181 @@ contract OrderBook is Initializable, OwnableUpgradeable, ReentrancyGuardUpgradea
         }
 
         return (orderId, receivedAmount);
+    }
+
+    function _placeMarketOrderWithQuoteAmount(
+        uint128 quoteAmount,
+        Side side,
+        address user
+    ) private returns (uint48 orderId, uint128 receivedAmount) {
+        Storage storage $ = getStorage();
+
+        if (side != Side.BUY) {
+            revert InvalidSideForQuoteAmount();
+        }
+
+        if (quoteAmount < $.tradingRules.minOrderSize) {
+            revert OrderTooSmall(quoteAmount, $.tradingRules.minOrderSize);
+        }
+
+        orderId = $.nextOrderId;
+
+        Order memory marketOrder = Order({
+            id: orderId,
+            user: user,
+            next: 0,
+            prev: 0,
+            price: 0,
+            quantity: quoteAmount,
+            filled: 0,
+            expiry: uint48(block.timestamp + $.expiryDays),
+            status: Status.OPEN,
+            orderType: OrderType.MARKET,
+            side: side
+        });
+
+        emit OrderPlaced(orderId, user, side, 0, quoteAmount, marketOrder.expiry, true, Status.OPEN);
+
+        uint128 baseAmountFilled = _matchOrderWithQuoteAmount(marketOrder, side, user, quoteAmount);
+
+        IBalanceManager bm = IBalanceManager($.balanceManager);
+        uint256 feeTaker = bm.feeTaker();
+        uint256 feeUnit = bm.getFeeUnit();
+
+        uint128 feeAmount = uint128(uint256(baseAmountFilled) * feeTaker / feeUnit);
+        receivedAmount = baseAmountFilled > feeAmount ? baseAmountFilled - feeAmount : 0;
+
+        unchecked {
+            $.nextOrderId++;
+        }
+
+        return (orderId, receivedAmount);
+    }
+
+    struct QuoteMatchContext {
+        uint128 bestPrice;
+        uint128 remainingQuoteAmount;
+        uint128 totalBaseAmountFilled;
+        address user;
+        uint8 baseDecimals;
+        Currency quoteCurrency;
+    }
+
+    function _matchOrderWithQuoteAmount(
+        Order memory order,
+        Side side,
+        address user,
+        uint128 quoteAmount
+    ) private returns (uint128) {
+        Storage storage $ = getStorage();
+        Side oppositeSide = Side.SELL;
+
+        QuoteMatchContext memory ctx = QuoteMatchContext({
+            bestPrice: 0,
+            remainingQuoteAmount: quoteAmount,
+            totalBaseAmountFilled: 0,
+            user: user,
+            baseDecimals: $.poolKey.baseCurrency.decimals(),
+            quoteCurrency: $.poolKey.quoteCurrency
+        });
+
+        while (ctx.remainingQuoteAmount > 0) {
+            uint128 prevRemaining = ctx.remainingQuoteAmount;
+
+            ctx.bestPrice = _getBestMatchingPrice(0, oppositeSide, true);
+            if (ctx.bestPrice == 0) {
+                break;
+            }
+
+            OrderQueue storage queue = $.orderQueues[oppositeSide][ctx.bestPrice];
+            ctx = _matchAtPriceLevelWithQuoteAmount(order, queue, ctx);
+            _updatePriceLevel(ctx.bestPrice, queue, $.priceTrees[oppositeSide]);
+
+            if (ctx.remainingQuoteAmount == prevRemaining) {
+                break;
+            }
+        }
+
+        return ctx.totalBaseAmountFilled;
+    }
+
+    function _matchAtPriceLevelWithQuoteAmount(
+        Order memory order,
+        OrderQueue storage queue,
+        QuoteMatchContext memory ctx
+    ) private returns (QuoteMatchContext memory) {
+        Storage storage $ = getStorage();
+        uint48 currentOrderId = queue.head;
+
+        while (currentOrderId != 0 && ctx.remainingQuoteAmount > 0) {
+            Order storage matchingOrder = $.orders[currentOrderId];
+
+            if (matchingOrder.expiry < block.timestamp) {
+                _handleExpiredOrder(queue, matchingOrder);
+                currentOrderId = matchingOrder.next;
+                continue;
+            }
+
+            if (matchingOrder.user == ctx.user) {
+                currentOrderId = matchingOrder.next;
+                continue;
+            }
+
+            uint128 maxBase = uint128(
+                PoolIdLibrary.quoteToBase(ctx.remainingQuoteAmount, ctx.bestPrice, ctx.baseDecimals)
+            );
+            uint128 available = matchingOrder.quantity - matchingOrder.filled;
+            uint128 baseAmount = available < maxBase ? available : maxBase;
+
+            if (baseAmount == 0) {
+                break;
+            }
+
+            uint128 quoteAmount = uint128(
+                PoolIdLibrary.baseToQuote(baseAmount, ctx.bestPrice, ctx.baseDecimals)
+            );
+
+            IBalanceManager bm = IBalanceManager($.balanceManager);
+            if (bm.getBalance(ctx.user, ctx.quoteCurrency) < quoteAmount) {
+                baseAmount = uint128(
+                    PoolIdLibrary.quoteToBase(bm.getBalance(ctx.user, ctx.quoteCurrency), ctx.bestPrice, ctx.baseDecimals)
+                );
+                if (baseAmount == 0) break;
+                quoteAmount = uint128(
+                    PoolIdLibrary.baseToQuote(baseAmount, ctx.bestPrice, ctx.baseDecimals)
+                );
+            }
+
+            ctx.remainingQuoteAmount -= quoteAmount;
+            ctx.totalBaseAmountFilled += baseAmount;
+            matchingOrder.filled += baseAmount;
+            queue.totalVolume -= baseAmount;
+
+            transferBalances(ctx.user, matchingOrder.user, ctx.bestPrice, baseAmount, Side.BUY, true);
+
+            if (matchingOrder.filled == matchingOrder.quantity) {
+                _removeOrderFromQueue(queue, matchingOrder);
+                matchingOrder.status = Status.FILLED;
+                emit UpdateOrder(matchingOrder.id, uint48(block.timestamp), matchingOrder.filled, Status.FILLED);
+            } else {
+                matchingOrder.status = Status.PARTIALLY_FILLED;
+                emit UpdateOrder(matchingOrder.id, uint48(block.timestamp), matchingOrder.filled, Status.PARTIALLY_FILLED);
+            }
+
+            emit OrderMatched(
+                ctx.user,
+                order.id,
+                matchingOrder.id,
+                Side.BUY,
+                uint48(block.timestamp),
+                ctx.bestPrice,
+                baseAmount
+            );
+
+            currentOrderId = matchingOrder.next;
+        }
+
+        return ctx;
     }
 
     function cancelOrder(uint48 orderId, address user) external onlyRouter {
@@ -404,7 +583,9 @@ contract OrderBook is Initializable, OwnableUpgradeable, ReentrancyGuardUpgradea
                     affordableQuantity = uint128(userBalance);
                 }
 
-                if (affordableQuantity == 0) {
+                ctx.previousRemaining = affordableQuantity;
+
+                if (affordableQuantity == 0 || ctx.previousRemaining == affordableQuantity) {
                     return (0, ctx.filled);
                 }
 
@@ -508,6 +689,7 @@ contract OrderBook is Initializable, OwnableUpgradeable, ReentrancyGuardUpgradea
             isMarketOrder: isMarketOrder,
             bestPrice: bestPrice,
             remaining: remaining,
+            previousRemaining: remaining,
             filled: filled
         });
 
@@ -526,6 +708,7 @@ contract OrderBook is Initializable, OwnableUpgradeable, ReentrancyGuardUpgradea
             if (matchingOrder.expiry < block.timestamp) {
                 _handleExpiredOrder(queue, matchingOrder);
             } else if (matchingOrder.user != ctx.user) {
+                ctx.previousRemaining = ctx.remaining;
                 (ctx.remaining, ctx.filled) = _processMatchingOrder(ctx, matchingOrder, queue);
             }
             currentOrderId = nextOrderId;
