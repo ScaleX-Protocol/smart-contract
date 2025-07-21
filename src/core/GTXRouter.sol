@@ -83,6 +83,10 @@ contract GTXRouter is IGTXRouter, GTXRouterStorage, Initializable, OwnableUpgrad
 
         if (_side == IOrderBook.Side.SELL) {
             uint256 userBalance = balanceManager.getBalance(msg.sender, depositCurrency);
+            if (userBalance < _quantity) {
+                revert("TransferFromFailed()");
+            }
+            
             if (userBalance > 0 && userBalance > _quantity) {
                 balanceManager.lock(msg.sender, depositCurrency, userBalance - _quantity);
             }

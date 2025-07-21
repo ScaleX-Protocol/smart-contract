@@ -1,4 +1,3 @@
-/*
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.26;
 
@@ -168,4 +167,4 @@ contract BalanceManagerTest is Test {
         assertEq(receiverBalance, transfer * (FEE_UNIT - feeMaker) / FEE_UNIT);
     }
 }
-*/
+

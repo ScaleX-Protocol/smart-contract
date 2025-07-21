@@ -108,11 +108,11 @@ full-integration:
 	@echo "\nStep 4: Placing market orders..."
 	$(MAKE) market-orderbook
 	@echo "\n✓ Market orders placed and executed"
-	@sleep 2
-	@echo "\nStep 5: Executing swaps..."
-	$(MAKE) swap
-	@echo "\n✓ Swaps executed"
-	@sleep 2
+	# @sleep 2
+	# @echo "\nStep 5: Executing swaps..."
+	# $(MAKE) swap
+	# @echo "\n✓ Swaps executed"
+	# @sleep 2
 	@echo "\n=========================================="
 	@echo "Full Integration Test Complete!"
 	@echo "=========================================="

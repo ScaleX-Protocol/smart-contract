@@ -1,4 +1,4 @@
-/*
+
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.26;
 
@@ -113,13 +113,13 @@ contract CalculateMinOutAmountTest is Test {
 
         // Place multiple sell orders at different prices to create a realistic order book
         // Order 1: 1 ETH at 2000 USDC
-        gtxRouter.placeOrderWithDeposit(pool, 2000e6, 1e18, IOrderBook.Side.SELL, IOrderBook.TimeInForce.GTC);
+        gtxRouter.placeLimitOrder(pool, 2000e6, 1e18, IOrderBook.Side.SELL, IOrderBook.TimeInForce.GTC, 1e18);
 
         // Order 2: 1 ETH at 2010 USDC
-        gtxRouter.placeOrderWithDeposit(pool, 2010e6, 1e18, IOrderBook.Side.SELL, IOrderBook.TimeInForce.GTC);
+        gtxRouter.placeLimitOrder(pool, 2010e6, 1e18, IOrderBook.Side.SELL, IOrderBook.TimeInForce.GTC, 1e18);
 
         // Order 3: 1 ETH at 2020 USDC
-        gtxRouter.placeOrderWithDeposit(pool, 2020e6, 1e18, IOrderBook.Side.SELL, IOrderBook.TimeInForce.GTC);
+        gtxRouter.placeLimitOrder(pool, 2020e6, 1e18, IOrderBook.Side.SELL, IOrderBook.TimeInForce.GTC, 1e18);
 
         vm.stopPrank();
     }
@@ -206,13 +206,12 @@ contract CalculateMinOutAmountTest is Test {
         console.log("Initial WETH balance:", initialWETHBalance);
 
         // Place market order with deposit using calculated min out amount
-        (uint48 orderId, uint128 filled) = gtxRouter.placeMarketOrderWithDeposit(
+        (uint48 orderId, uint128 filled) = gtxRouter.placeMarketOrder(
             pool,
-            type(uint128).max, // Maximum quantity to buy as much as possible
+            uint128(depositAmount), // Quote amount for BUY orders
             IOrderBook.Side.BUY,
-            minOutAmount,
-            uint128(depositAmount),
-            uint128(depositAmount) // maxBalanceAllowed = depositAmount
+            uint128(depositAmount), // Deposit amount
+            minOutAmount // Min out amount
         );
 
         vm.stopPrank();
@@ -284,26 +283,28 @@ contract CalculateMinOutAmountTest is Test {
         uint128 realisticMinOut = gtxRouter.calculateMinOutAmountForMarket(pool, depositAmount, IOrderBook.Side.BUY, 50); // 0.5%
 
         // This should succeed with realistic CLOB slippage
-        (uint48 orderId1, uint128 filled1) = gtxRouter.placeMarketOrderWithDeposit(
+        (uint48 orderId1, uint128 filled1) = gtxRouter.placeMarketOrder(
             pool,
-            type(uint128).max,
+            uint128(depositAmount), // Quote amount for BUY orders
             IOrderBook.Side.BUY,
-            realisticMinOut,
-            uint128(depositAmount),
-            uint128(depositAmount)
+            uint128(depositAmount), // Deposit amount
+            realisticMinOut // Min out amount
         );
 
         assertTrue(filled1 >= realisticMinOut, "Should succeed with realistic 0.5% slippage");
 
+        // Mint more USDC for second test
+        mockUSDC.mint(buyer, depositAmount);
+        IERC20(Currency.unwrap(usdc)).approve(address(balanceManager), depositAmount);
+        
         // Now try with an unrealistically high min out amount
         vm.expectRevert(); // Should revert due to SlippageTooHigh
-        gtxRouter.placeMarketOrderWithDeposit(
+        gtxRouter.placeMarketOrder(
             pool,
-            type(uint128).max,
+            uint128(depositAmount), // Quote amount for BUY orders
             IOrderBook.Side.BUY,
-            1e18, // Expecting 1 ETH but we can only get ~0.5 ETH with 1000 USDC
-            uint128(depositAmount),
-            uint128(depositAmount)
+            uint128(depositAmount), // Deposit amount
+            1e18 // Expecting 1 ETH but we can only get ~0.5 ETH with 1000 USDC
         );
 
         vm.stopPrank();
@@ -333,13 +334,12 @@ contract CalculateMinOutAmountTest is Test {
         assertTrue(minOut_05pct > minOut_1pct, "0.5% slippage should give higher min out than 1%");
 
         // Test that very low slippage (0.1%) still works in CLOB
-        (uint48 orderId, uint128 filled) = gtxRouter.placeMarketOrderWithDeposit(
+        (uint48 orderId, uint128 filled) = gtxRouter.placeMarketOrder(
             pool,
-            type(uint128).max,
+            uint128(depositAmount), // Quote amount for BUY orders
             IOrderBook.Side.BUY,
-            minOut_01pct, // Very tight 0.1% slippage tolerance
-            uint128(depositAmount),
-            uint128(depositAmount)
+            uint128(depositAmount), // Deposit amount
+            minOut_01pct // Very tight 0.1% slippage tolerance
         );
 
         assertTrue(filled >= minOut_01pct, "Should succeed even with very tight 0.1% slippage in CLOB");
@@ -360,9 +360,9 @@ contract CalculateMinOutAmountTest is Test {
         IERC20(Currency.unwrap(usdc)).approve(address(balanceManager), 10_000e6);
 
         // Place buy orders at different prices
-        gtxRouter.placeOrderWithDeposit(pool, 1990e6, 1e18, IOrderBook.Side.BUY, IOrderBook.TimeInForce.GTC);
-        gtxRouter.placeOrderWithDeposit(pool, 1980e6, 1e18, IOrderBook.Side.BUY, IOrderBook.TimeInForce.GTC);
-        gtxRouter.placeOrderWithDeposit(pool, 1970e6, 1e18, IOrderBook.Side.BUY, IOrderBook.TimeInForce.GTC);
+        gtxRouter.placeLimitOrder(pool, 1990e6, 1e18, IOrderBook.Side.BUY, IOrderBook.TimeInForce.GTC, 1990e6);
+        gtxRouter.placeLimitOrder(pool, 1980e6, 1e18, IOrderBook.Side.BUY, IOrderBook.TimeInForce.GTC, 1980e6);
+        gtxRouter.placeLimitOrder(pool, 1970e6, 1e18, IOrderBook.Side.BUY, IOrderBook.TimeInForce.GTC, 1970e6);
         vm.stopPrank();
 
         // Test selling 1 ETH
@@ -398,7 +398,7 @@ contract CalculateMinOutAmountTest is Test {
         vm.startPrank(buyer);
         mockUSDC.mint(buyer, 5000e6);
         IERC20(Currency.unwrap(usdc)).approve(address(balanceManager), 5000e6);
-        gtxRouter.placeOrderWithDeposit(pool, 1990e6, 2e18, IOrderBook.Side.BUY, IOrderBook.TimeInForce.GTC);
+        gtxRouter.placeLimitOrder(pool, 1990e6, 2e18, IOrderBook.Side.BUY, IOrderBook.TimeInForce.GTC, 3980e6); // 2 * 1990
         vm.stopPrank();
 
         // Test SELL side
@@ -433,4 +433,4 @@ contract CalculateMinOutAmountTest is Test {
         assertEq(result2, 0, "No liquidity should return zero output");
     }
 }
-*/
+

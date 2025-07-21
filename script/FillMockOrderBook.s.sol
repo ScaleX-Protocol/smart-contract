@@ -82,7 +82,7 @@ contract FillMockOrderBook is Script, DeployHelpers {
        _placeBuyOrders(pool, 1900e6, 1980e6, 10e6, 10, 5e17);
 
        // Place SELL orders (asks) - ascending price from 2000 to 2100
-    //    _placeSellOrders(pool, 2000e6, 2100e6, 10e6, 10, 4e17);
+       _placeSellOrders(pool, 2000e6, 2100e6, 10e6, 10, 4e17);
 
        // Print summary
        console.log("ETH/USDC order book filled with:");

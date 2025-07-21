@@ -266,11 +266,20 @@ contract OrderBook is Initializable, OwnableUpgradeable, ReentrancyGuardUpgradea
         Side side,
         address user
     ) external onlyRouter nonReentrant returns (uint48 orderId, uint128 receivedAmount) {
+        Storage storage $ = getStorage();
+        Side oppositeSide = side == Side.BUY ? Side.SELL : Side.BUY;
+        bytes32 bestPricePtr = oppositeSide == Side.BUY 
+            ? $.priceTrees[oppositeSide].last() 
+            : $.priceTrees[oppositeSide].first();
+        
+        if (RedBlackTreeLib.value(bestPricePtr) == 0) {
+            revert OrderHasNoLiquidity();
+        }
+        
         if (side == Side.BUY) {
             return _placeMarketOrderWithQuoteAmount(quantity, side, user);
         }
 
-        Storage storage $ = getStorage();
         validateBasicOrderParameters(0, quantity, OrderType.MARKET);
 
         orderId = $.nextOrderId;
@@ -364,6 +373,8 @@ contract OrderBook is Initializable, OwnableUpgradeable, ReentrancyGuardUpgradea
         address user;
         uint8 baseDecimals;
         Currency quoteCurrency;
+        bool encounteredNonSelfOrder;
+        uint128 lastSkippedPrice;
     }
 
     function _matchOrderWithQuoteAmount(
@@ -381,26 +392,41 @@ contract OrderBook is Initializable, OwnableUpgradeable, ReentrancyGuardUpgradea
             totalBaseAmountFilled: 0,
             user: user,
             baseDecimals: $.poolKey.baseCurrency.decimals(),
-            quoteCurrency: $.poolKey.quoteCurrency
+            quoteCurrency: $.poolKey.quoteCurrency,
+            encounteredNonSelfOrder: false,
+            lastSkippedPrice: 0
         });
 
+        uint256 loopCount = 0;
         while (ctx.remainingQuoteAmount > 0) {
+            loopCount++;
             uint128 prevRemaining = ctx.remainingQuoteAmount;
-
-            ctx.bestPrice = _getBestMatchingPrice(0, oppositeSide, true);
+            ctx.encounteredNonSelfOrder = false; 
+            
+            ctx.bestPrice = _getNextAvailablePrice(oppositeSide, ctx.lastSkippedPrice);
+            
             if (ctx.bestPrice == 0) {
                 break;
             }
 
             OrderQueue storage queue = $.orderQueues[oppositeSide][ctx.bestPrice];
+            
             ctx = _matchAtPriceLevelWithQuoteAmount(order, queue, ctx);
+            
             _updatePriceLevel(ctx.bestPrice, queue, $.priceTrees[oppositeSide]);
 
-            if (ctx.remainingQuoteAmount == prevRemaining) {
+            if (ctx.remainingQuoteAmount == prevRemaining && ctx.encounteredNonSelfOrder) {
+                break;
+            } else if (ctx.remainingQuoteAmount == prevRemaining && !ctx.encounteredNonSelfOrder) {
+                ctx.lastSkippedPrice = ctx.bestPrice;
+            }
+            
+            if (loopCount > 10) {
                 break;
             }
         }
 
+        console.log("Final result - total base filled:", ctx.totalBaseAmountFilled);
         return ctx.totalBaseAmountFilled;
     }
 
@@ -411,10 +437,8 @@ contract OrderBook is Initializable, OwnableUpgradeable, ReentrancyGuardUpgradea
     ) private returns (QuoteMatchContext memory) {
         Storage storage $ = getStorage();
         uint48 currentOrderId = queue.head;
-
         while (currentOrderId != 0 && ctx.remainingQuoteAmount > 0) {
             Order storage matchingOrder = $.orders[currentOrderId];
-
             if (matchingOrder.expiry < block.timestamp) {
                 _handleExpiredOrder(queue, matchingOrder);
                 currentOrderId = matchingOrder.next;
@@ -425,6 +449,8 @@ contract OrderBook is Initializable, OwnableUpgradeable, ReentrancyGuardUpgradea
                 currentOrderId = matchingOrder.next;
                 continue;
             }
+            
+            ctx.encounteredNonSelfOrder = true;
 
             uint128 maxBase = uint128(
                 PoolIdLibrary.quoteToBase(ctx.remainingQuoteAmount, ctx.bestPrice, ctx.baseDecimals)
@@ -754,6 +780,26 @@ contract OrderBook is Initializable, OwnableUpgradeable, ReentrancyGuardUpgradea
 
         // Return the price value if the pointer is valid
         return pricePtr != bytes32(0) ? uint128(RedBlackTreeLib.value(pricePtr)) : 0;
+    }
+
+    function _getNextAvailablePrice(
+        IOrderBook.Side oppositeSide,
+        uint128 skipPrice
+    ) private view returns (uint128) {
+        Storage storage $ = getStorage();
+        RedBlackTreeLib.Tree storage oppositePriceTree = $.priceTrees[oppositeSide];
+        
+        if (skipPrice == 0) {
+            bytes32 oppositePricePtr =
+                oppositeSide == IOrderBook.Side.BUY ? oppositePriceTree.last() : oppositePriceTree.first();
+            return uint128(RedBlackTreeLib.value(oppositePricePtr));
+        } else {
+            bytes32 ptr = oppositePriceTree.find(skipPrice);
+            bytes32 nextPtr = oppositeSide == IOrderBook.Side.BUY 
+                ? RedBlackTreeLib.prev(ptr)  
+                : RedBlackTreeLib.next(ptr);
+            return uint128(RedBlackTreeLib.value(nextPtr));
+        }
     }
 
     function _getBestMatchingPrice(

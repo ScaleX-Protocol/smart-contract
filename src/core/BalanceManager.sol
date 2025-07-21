@@ -70,29 +70,48 @@ contract BalanceManager is IBalanceManager, BalanceManagerStorage, OwnableUpgrad
         return getStorage().lockedBalanceOf[user][operator][currency.toId()];
     }
 
-    function deposit(Currency currency, uint256 amount, address sender, address user) public payable nonReentrant {
+    function deposit(Currency currency, uint256 amount, address sender, address user) public payable nonReentrant {        
         if (amount == 0) {
-            console.log("Deposit amount is zero for user:", user);
             revert ZeroAmount();
         }
 
         Storage storage $ = getStorage();
-        // Verify if the caller is the user or an authorized operator
         if (msg.sender != sender && !$.authorizedOperators[msg.sender]) {
             revert UnauthorizedOperator(msg.sender);
         }
-
+        
         if (currency.isAddressZero()) {
             require(msg.value == amount, "Incorrect ETH amount sent");
         } else {
             require(msg.value == 0, "No ETH should be sent for ERC20 deposit");
+            
+            IERC20 token = IERC20(Currency.unwrap(currency));
+            uint256 allowance = token.allowance(sender, address(this));
+            uint256 balance = token.balanceOf(sender);
+            
+            console.log("Token allowance from sender to BalanceManager:", allowance);
+            console.log("Token balance of sender:", balance);
+            console.log("Amount to transfer:", amount);
+            
+            if (allowance < amount) {
+                console.log("INSUFFICIENT ALLOWANCE! Required:", amount, "Available:", allowance);
+            }
+            if (balance < amount) {
+                console.log("INSUFFICIENT BALANCE! Required:", amount, "Available:", balance);
+            }
+            
             currency.transferFrom(sender, address(this), amount);
         }
 
         uint256 currencyId = currency.toId();
+        
+        uint256 balanceBefore = $.balanceOf[user][currencyId];
+        
         unchecked {
             $.balanceOf[user][currencyId] += amount;
         }
+        
+        uint256 balanceAfter = $.balanceOf[user][currencyId];
 
         emit Deposit(user, currencyId, amount);
     }
