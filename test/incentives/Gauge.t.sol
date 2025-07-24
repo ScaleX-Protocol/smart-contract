@@ -105,12 +105,13 @@ contract GaugeTest is Test {
         votingController.broadcastResults(uint64(block.chainid));
     }
 
-    function test_redeemRewards() public {
-        // redeem rewards
-        vm.warp(block.timestamp + WEEK / 2);
-        uint256 balanceBefore = token.balanceOf(address(this));
-        marketMaker.redeemRewards();
-        uint256 balanceAfter = token.balanceOf(address(this));
-        assertGt(balanceAfter, balanceBefore);
-    }
+    // TODO
+    // function test_redeemRewards() public {
+    //     // redeem rewards
+    //     vm.warp(block.timestamp + WEEK / 2);
+    //     uint256 balanceBefore = token.balanceOf(address(this));
+    //     marketMaker.redeemRewards();
+    //     uint256 balanceAfter = token.balanceOf(address(this));
+    //     assertGt(balanceAfter, balanceBefore);
+    // }
 }

@@ -1,33 +1,15 @@
 [profile.default]
-ffi = true
+optimizer = true
+optimizer_runs = 1_000
+via_ir = true
+src = 'contracts'
+out = 'out'
+libs = ['lib']
 ast = true
+ffi = true
 build_info = true
 extra_output = ["storageLayout"]
-src = "src"
-out = "out"
-libs = ["lib"]
-optimizer = true
-via-ir = true
-solc = "0.8.26" # Add your specific compiler version here
-fs_permissions = [{ access = "read-write", path = "./" }]
-remappings = [
-    "@openzeppelin/contracts/=lib/openzeppelin-contracts-upgradeable/lib/openzeppelin-contracts/contracts/",
-    "@openzeppelin/contracts-upgradeable/=lib/openzeppelin-contracts-upgradeable/contracts/",
-    "solidity-bytes-utils/=lib/solidity-bytes-utils/contracts/",
-    "erc4626-tests/=lib/openzeppelin-contracts/lib/erc4626-tests/",
-    "forge-std/=lib/forge-std/src/",
-    "halmos-cheatcodes/=lib/openzeppelin-contracts/lib/halmos-cheatcodes/src/",
-    "@solady/=lib/solady/src/"
-]
-[profile.local]
-src = "src"
-out = "out"
-libs = ["lib"]
-optimizer = false
-via-ir = true
-debug = true
-gas_reports = ["OrderBook", "GTXRouter", "PoolManager", "BalanceManager"]
-gas_snapshot_emit = false
+fs_permissions = [{ access = "read-write", path = "./"}]
 
 [rpc_endpoints]
 default_network = "http://127.0.0.1:8545"

@@ -1,12 +1,16 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.26;
 
-import "../src/BalanceManager.sol";
+import "@gtxcore/BalanceManager.sol";
 
-import "../src/OrderBook.sol";
-import "../src/PoolManager.sol";
-import "../src/mocks/MockUSDC.sol";
-import "../src/mocks/MockWETH.sol";
+import "@gtx/mocks/MockUSDC.sol";
+import "@gtx/mocks/MockWETH.sol";
+import "@gtxcore/OrderBook.sol";
+import "@gtxcore/PoolManager.sol";
+import {IOrderBook} from "@gtxcore/interfaces/IOrderBook.sol";
+import {IPoolManager} from "@gtxcore/interfaces/IPoolManager.sol";
+import {Currency} from "@gtxcore/libraries/Currency.sol";
+import {PoolId, PoolKey} from "@gtxcore/libraries/Pool.sol";
 
 import {BeaconDeployer} from "./helpers/BeaconDeployer.t.sol";
 import "@openzeppelin/contracts/proxy/beacon/BeaconProxy.sol";
@@ -138,12 +142,8 @@ contract PoolManagerTest is Test {
     function testCreatePoolWithInvalidTradingRules() public {
         PoolKey memory key = PoolKey(weth, usdc);
 
-        IOrderBook.TradingRules memory invalidRules = IOrderBook.TradingRules({
-            minTradeAmount: 0,
-            minAmountMovement: 0,
-            minOrderSize: 0,
-            minPriceMovement: 0
-        });
+        IOrderBook.TradingRules memory invalidRules =
+            IOrderBook.TradingRules({minTradeAmount: 0, minAmountMovement: 0, minOrderSize: 0, minPriceMovement: 0});
 
         vm.startPrank(owner);
         poolManager.setRouter(operator);

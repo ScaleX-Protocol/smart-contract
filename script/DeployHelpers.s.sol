@@ -25,16 +25,16 @@ contract DeployHelpers is Script {
     mapping(string => DeployedContract) public deployed;
 
     function setupLocalhostEnv() internal returns (uint256 localhostPrivateKey) {
-        if (block.chainid == 31_337) {
-            root = vm.projectRoot();
-            path = string.concat(root, "/localhost.json");
-            string memory json = vm.readFile(path);
-            bytes memory mnemonicBytes = vm.parseJson(json, ".wallet.mnemonic");
-            string memory mnemonic = abi.decode(mnemonicBytes, (string));
-            return vm.deriveKey(mnemonic, 0);
-        } else {
+        // if (block.chainid == 31_337) {
+        //     root = vm.projectRoot();
+        //     path = string.concat(root, "/localhost.json");
+        //     string memory json = vm.readFile(path);
+        //     bytes memory mnemonicBytes = vm.parseJson(json, ".wallet.mnemonic");
+        //     string memory mnemonic = abi.decode(mnemonicBytes, (string));
+        //     return vm.deriveKey(mnemonic, 0);
+        // } else {
             return vm.envUint("PRIVATE_KEY");
-        }
+        // }
     }
     
     function getDeployerKey() internal returns (uint256 deployerPrivateKey) {

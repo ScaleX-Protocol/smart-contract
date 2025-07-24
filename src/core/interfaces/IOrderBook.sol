@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.26;
 
-import {PoolKey, PoolId} from "../libraries/Pool.sol";
+import {PoolId, PoolKey} from "../libraries/Pool.sol";
+import {IOrderBookErrors} from "./IOrderBookErrors.sol";
 
-interface IOrderBook {
+interface IOrderBook is IOrderBookErrors {
     enum Side {
         BUY,
         SELL
@@ -45,6 +46,25 @@ interface IOrderBook {
         Status status;
         OrderType orderType;
         Side side;
+    }
+
+    struct MatchContext {
+        Order order;
+        Side side;
+        address user;
+        bool isMarketOrder;
+        uint128 bestPrice;
+        uint128 remaining;
+        uint128 previousRemaining;
+        uint128 filled;
+    }
+
+    struct MatchState {
+        uint128 remaining;
+        uint128 orderPrice;
+        uint128 latestBestPrice;
+        uint128 previousRemaining;
+        uint128 filled;
     }
 
     struct OrderQueue {
@@ -142,5 +162,7 @@ interface IOrderBook {
 
     function getTradingRules() external view returns (TradingRules memory);
 
-    function updateTradingRules(TradingRules memory _newRules) external;
+    function updateTradingRules(
+        TradingRules memory _newRules
+    ) external;
 }

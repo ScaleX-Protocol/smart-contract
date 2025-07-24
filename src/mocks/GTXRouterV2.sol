@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.26;
 
-import "../GTXRouter.sol";
+import "../core/GTXRouter.sol";
 
 /// @custom:oz-upgrades-from GTXRouter
 contract GTXRouterV2 is GTXRouter {

@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.26;
 
-import {OwnableUpgradeable} from "../lib/openzeppelin-contracts-upgradeable/contracts/access/OwnableUpgradeable.sol";
+import {OwnableUpgradeable} from "../../lib/openzeppelin-contracts-upgradeable/contracts/access/OwnableUpgradeable.sol";
 import {ReentrancyGuardUpgradeable} from
-    "../lib/openzeppelin-contracts-upgradeable/contracts/utils/ReentrancyGuardUpgradeable.sol";
+    "../../lib/openzeppelin-contracts-upgradeable/contracts/utils/ReentrancyGuardUpgradeable.sol";
 import {IBalanceManager} from "./interfaces/IBalanceManager.sol";
 import {IOrderBook} from "./interfaces/IOrderBook.sol";
 import {IOrderBookErrors} from "./interfaces/IOrderBookErrors.sol";
@@ -17,14 +17,7 @@ import "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
 import {RedBlackTreeLib} from "@solady/utils/RedBlackTreeLib.sol";
 import {Test, console} from "forge-std/Test.sol";
 
-contract OrderBook is
-    Initializable,
-    OwnableUpgradeable,
-    ReentrancyGuardUpgradeable,
-    IOrderBook,
-    IOrderBookErrors,
-    OrderBookStorage
-{
+contract OrderBook is Initializable, OwnableUpgradeable, ReentrancyGuardUpgradeable, IOrderBook, OrderBookStorage {
     using RedBlackTreeLib for RedBlackTreeLib.Tree;
     using EnumerableSet for EnumerableSet.UintSet;
 
@@ -86,7 +79,7 @@ contract OrderBook is
     ) private view {
         Storage storage $ = getStorage();
 
-        if (side == Side.BUY && orderType == IOrderBook.OrderType.MARKET) {
+        if(side == Side.BUY && orderType == OrderType.MARKET) {
             return;
         }
 
@@ -274,7 +267,20 @@ contract OrderBook is
         address user
     ) external onlyRouter nonReentrant returns (uint48 orderId, uint128 receivedAmount) {
         Storage storage $ = getStorage();
-        validateOrder(0, quantity, side, OrderType.MARKET, TimeInForce.GTC);
+        Side oppositeSide = side == Side.BUY ? Side.SELL : Side.BUY;
+        bytes32 bestPricePtr = oppositeSide == Side.BUY 
+            ? $.priceTrees[oppositeSide].last() 
+            : $.priceTrees[oppositeSide].first();
+        
+        if (RedBlackTreeLib.value(bestPricePtr) == 0) {
+            revert OrderHasNoLiquidity();
+        }
+        
+        if (side == Side.BUY) {
+            return _placeMarketOrderWithQuoteAmount(quantity, side, user);
+        }
+
+        validateBasicOrderParameters(0, quantity, OrderType.MARKET);
 
         orderId = $.nextOrderId;
 
@@ -304,12 +310,203 @@ contract OrderBook is
         uint128 feeAmount = uint128(uint256(filled) * feeTaker / feeUnit);
         receivedAmount = filled > feeAmount ? filled - feeAmount : 0;
 
-
-    unchecked {
+        unchecked {
             $.nextOrderId++;
         }
 
         return (orderId, receivedAmount);
+    }
+
+    function _placeMarketOrderWithQuoteAmount(
+        uint128 quoteAmount,
+        Side side,
+        address user
+    ) private returns (uint48 orderId, uint128 receivedAmount) {
+        Storage storage $ = getStorage();
+
+        if (side != Side.BUY) {
+            revert InvalidSideForQuoteAmount();
+        }
+
+        if (quoteAmount < $.tradingRules.minOrderSize) {
+            revert OrderTooSmall(quoteAmount, $.tradingRules.minOrderSize);
+        }
+
+        orderId = $.nextOrderId;
+
+        Order memory marketOrder = Order({
+            id: orderId,
+            user: user,
+            next: 0,
+            prev: 0,
+            price: 0,
+            quantity: quoteAmount,
+            filled: 0,
+            expiry: uint48(block.timestamp + $.expiryDays),
+            status: Status.OPEN,
+            orderType: OrderType.MARKET,
+            side: side
+        });
+
+        emit OrderPlaced(orderId, user, side, 0, quoteAmount, marketOrder.expiry, true, Status.OPEN);
+
+        uint128 baseAmountFilled = _matchOrderWithQuoteAmount(marketOrder, side, user, quoteAmount);
+
+        IBalanceManager bm = IBalanceManager($.balanceManager);
+        uint256 feeTaker = bm.feeTaker();
+        uint256 feeUnit = bm.getFeeUnit();
+
+        uint128 feeAmount = uint128(uint256(baseAmountFilled) * feeTaker / feeUnit);
+        receivedAmount = baseAmountFilled > feeAmount ? baseAmountFilled - feeAmount : 0;
+
+        unchecked {
+            $.nextOrderId++;
+        }
+
+        return (orderId, receivedAmount);
+    }
+
+    struct QuoteMatchContext {
+        uint128 bestPrice;
+        uint128 remainingQuoteAmount;
+        uint128 totalBaseAmountFilled;
+        address user;
+        uint8 baseDecimals;
+        Currency quoteCurrency;
+        bool encounteredNonSelfOrder;
+        uint128 lastSkippedPrice;
+    }
+
+    function _matchOrderWithQuoteAmount(
+        Order memory order,
+        Side side,
+        address user,
+        uint128 quoteAmount
+    ) private returns (uint128) {
+        Storage storage $ = getStorage();
+        Side oppositeSide = Side.SELL;
+
+        QuoteMatchContext memory ctx = QuoteMatchContext({
+            bestPrice: 0,
+            remainingQuoteAmount: quoteAmount,
+            totalBaseAmountFilled: 0,
+            user: user,
+            baseDecimals: $.poolKey.baseCurrency.decimals(),
+            quoteCurrency: $.poolKey.quoteCurrency,
+            encounteredNonSelfOrder: false,
+            lastSkippedPrice: 0
+        });
+
+        uint256 loopCount = 0;
+        while (ctx.remainingQuoteAmount > 0) {
+            loopCount++;
+            uint128 prevRemaining = ctx.remainingQuoteAmount;
+            ctx.encounteredNonSelfOrder = false; 
+            
+            ctx.bestPrice = _getNextAvailablePrice(oppositeSide, ctx.lastSkippedPrice);
+            
+            if (ctx.bestPrice == 0) {
+                break;
+            }
+
+            OrderQueue storage queue = $.orderQueues[oppositeSide][ctx.bestPrice];
+            
+            ctx = _matchAtPriceLevelWithQuoteAmount(order, queue, ctx);
+            
+            _updatePriceLevel(ctx.bestPrice, queue, $.priceTrees[oppositeSide]);
+
+            if (ctx.remainingQuoteAmount == prevRemaining && ctx.encounteredNonSelfOrder) {
+                break;
+            } else if (ctx.remainingQuoteAmount == prevRemaining && !ctx.encounteredNonSelfOrder) {
+                ctx.lastSkippedPrice = ctx.bestPrice;
+            }
+            
+            if (loopCount > 10) {
+                break;
+            }
+        }
+
+        console.log("Final result - total base filled:", ctx.totalBaseAmountFilled);
+        return ctx.totalBaseAmountFilled;
+    }
+
+    function _matchAtPriceLevelWithQuoteAmount(
+        Order memory order,
+        OrderQueue storage queue,
+        QuoteMatchContext memory ctx
+    ) private returns (QuoteMatchContext memory) {
+        Storage storage $ = getStorage();
+        uint48 currentOrderId = queue.head;
+        while (currentOrderId != 0 && ctx.remainingQuoteAmount > 0) {
+            Order storage matchingOrder = $.orders[currentOrderId];
+            if (matchingOrder.expiry < block.timestamp) {
+                _handleExpiredOrder(queue, matchingOrder);
+                currentOrderId = matchingOrder.next;
+                continue;
+            }
+
+            if (matchingOrder.user == ctx.user) {
+                currentOrderId = matchingOrder.next;
+                continue;
+            }
+            
+            ctx.encounteredNonSelfOrder = true;
+
+            uint128 maxBase = uint128(
+                PoolIdLibrary.quoteToBase(ctx.remainingQuoteAmount, ctx.bestPrice, ctx.baseDecimals)
+            );
+            uint128 available = matchingOrder.quantity - matchingOrder.filled;
+            uint128 baseAmount = available < maxBase ? available : maxBase;
+
+            if (baseAmount == 0) {
+                break;
+            }
+
+            uint128 quoteAmount = uint128(
+                PoolIdLibrary.baseToQuote(baseAmount, ctx.bestPrice, ctx.baseDecimals)
+            );
+
+            IBalanceManager bm = IBalanceManager($.balanceManager);
+            if (bm.getBalance(ctx.user, ctx.quoteCurrency) < quoteAmount) {
+                baseAmount = uint128(
+                    PoolIdLibrary.quoteToBase(bm.getBalance(ctx.user, ctx.quoteCurrency), ctx.bestPrice, ctx.baseDecimals)
+                );
+                if (baseAmount == 0) break;
+                quoteAmount = uint128(
+                    PoolIdLibrary.baseToQuote(baseAmount, ctx.bestPrice, ctx.baseDecimals)
+                );
+            }
+
+            ctx.remainingQuoteAmount -= quoteAmount;
+            ctx.totalBaseAmountFilled += baseAmount;
+            matchingOrder.filled += baseAmount;
+            queue.totalVolume -= baseAmount;
+
+            transferBalances(ctx.user, matchingOrder.user, ctx.bestPrice, baseAmount, Side.BUY, true);
+
+            if (matchingOrder.filled == matchingOrder.quantity) {
+                _removeOrderFromQueue(queue, matchingOrder);
+                matchingOrder.status = Status.FILLED;
+                emit UpdateOrder(matchingOrder.id, uint48(block.timestamp), matchingOrder.filled, Status.FILLED);
+            } else {
+                matchingOrder.status = Status.PARTIALLY_FILLED;
+                emit UpdateOrder(matchingOrder.id, uint48(block.timestamp), matchingOrder.filled, Status.PARTIALLY_FILLED);
+            }
+
+            emit OrderMatched(
+                ctx.user,
+                order.id,
+                matchingOrder.id,
+                Side.BUY,
+                uint48(block.timestamp),
+                ctx.bestPrice,
+                baseAmount
+            );
+
+            currentOrderId = matchingOrder.next;
+        }
+
+        return ctx;
     }
 
     function cancelOrder(uint48 orderId, address user) external onlyRouter {
@@ -369,7 +566,8 @@ contract OrderBook is
     function getOrderQueue(Side side, uint128 price) external view returns (uint48 orderCount, uint256 totalVolume) {
         Storage storage $ = getStorage();
         IOrderBook.OrderQueue storage queue = $.orderQueues[side][price];
-        return (queue.orderCount, queue.totalVolume);
+        orderCount = queue.orderCount;
+        totalVolume = queue.totalVolume;
     }
 
     function getOrder(
@@ -385,55 +583,49 @@ contract OrderBook is
     }
 
     function _processMatchingOrder(
-        Order memory originalOrder,
+        MatchContext memory ctx,
         Order storage matchingOrder,
-        OrderQueue storage queue,
-        uint128 bestPrice,
-        uint128 remaining,
-        uint128 filled,
-        Side side,
-        address user,
-        bool isMarketOrder
+        OrderQueue storage queue
     ) private returns (uint128, uint128) {
         uint128 matchingRemaining = matchingOrder.quantity - matchingOrder.filled;
-        uint128 executedQuantity = remaining < matchingRemaining ? remaining : matchingRemaining;
+        uint128 executedQuantity = ctx.remaining < matchingRemaining ? ctx.remaining : matchingRemaining;
 
-        if (isMarketOrder) {
+        if (ctx.isMarketOrder) {
             Storage storage $ = getStorage();
             IBalanceManager bm = IBalanceManager($.balanceManager);
-            uint256 requiredAmount = side == IOrderBook.Side.BUY
-                ? PoolIdLibrary.baseToQuote(executedQuantity, bestPrice, $.poolKey.baseCurrency.decimals())
+            uint256 requiredAmount = ctx.side == IOrderBook.Side.BUY
+                ? PoolIdLibrary.baseToQuote(executedQuantity, ctx.bestPrice, $.poolKey.baseCurrency.decimals())
                 : executedQuantity;
-            Currency currency = side == IOrderBook.Side.BUY ? $.poolKey.quoteCurrency : $.poolKey.baseCurrency;
-            uint256 userBalance = bm.getBalance(user, currency);
+            Currency currency = ctx.side == IOrderBook.Side.BUY ? $.poolKey.quoteCurrency : $.poolKey.baseCurrency;
+            uint256 userBalance = bm.getBalance(ctx.user, currency);
 
             if (userBalance < requiredAmount) {
                 uint128 affordableQuantity;
-                if (side == IOrderBook.Side.BUY) {
-                    affordableQuantity = uint128(PoolIdLibrary.quoteToBase(
-                        userBalance,
-                        bestPrice,
-                        $.poolKey.baseCurrency.decimals()
-                    ));
+                if (ctx.side == IOrderBook.Side.BUY) {
+                    affordableQuantity = uint128(
+                        PoolIdLibrary.quoteToBase(userBalance, ctx.bestPrice, $.poolKey.baseCurrency.decimals())
+                    );
                 } else {
                     affordableQuantity = uint128(userBalance);
                 }
 
-                if (affordableQuantity == 0) {
-                    return (0, filled);
+                ctx.previousRemaining = affordableQuantity;
+
+                if (affordableQuantity == 0 || ctx.previousRemaining == affordableQuantity) {
+                    return (0, ctx.filled);
                 }
 
                 executedQuantity = affordableQuantity < executedQuantity ? affordableQuantity : executedQuantity;
             }
         }
 
-        remaining -= executedQuantity;
-        filled += executedQuantity;
+        ctx.remaining -= executedQuantity;
+        ctx.filled += executedQuantity;
 
         matchingOrder.filled += executedQuantity;
         queue.totalVolume -= executedQuantity;
 
-        transferBalances(user, matchingOrder.user, bestPrice, executedQuantity, side, isMarketOrder);
+        transferBalances(ctx.user, matchingOrder.user, ctx.bestPrice, executedQuantity, ctx.side, ctx.isMarketOrder);
 
         if (matchingOrder.filled == matchingOrder.quantity) {
             _removeOrderFromQueue(queue, matchingOrder);
@@ -445,16 +637,16 @@ contract OrderBook is
         }
 
         emit OrderMatched(
-            user,
-            side == Side.BUY ? originalOrder.id : matchingOrder.id,
-            side == Side.SELL ? originalOrder.id : matchingOrder.id,
-            side,
+            ctx.user,
+            ctx.side == Side.BUY ? ctx.order.id : matchingOrder.id,
+            ctx.side == Side.SELL ? ctx.order.id : matchingOrder.id,
+            ctx.side,
             uint48(block.timestamp),
-            bestPrice,
+            ctx.bestPrice,
             executedQuantity
         );
 
-        return (remaining, filled);
+        return (ctx.remaining, ctx.filled);
     }
 
     function _updatePriceLevel(
@@ -467,65 +659,87 @@ contract OrderBook is
         }
     }
 
-    function _matchOrder(
-        Order memory order,
-        Side side,
-        address user,
-        bool isMarketOrder
-    ) private returns (uint128 filled) {
+    function _matchOrder(Order memory order, Side side, address user, bool isMarketOrder) private returns (uint128) {
         Storage storage $ = getStorage();
         Side oppositeSide = side == Side.BUY ? Side.SELL : Side.BUY;
-        RedBlackTreeLib.Tree storage priceTree = $.priceTrees[oppositeSide];
+        MatchState memory s = MatchState({
+            remaining: order.quantity - order.filled,
+            orderPrice: order.price,
+            latestBestPrice: 0,
+            previousRemaining: 0,
+            filled: 0
+        });
 
-        uint128 remaining = order.quantity - order.filled;
-        uint128 orderPrice = order.price;
-        uint128 latestBestPrice = 0;
-        uint128 previousRemaining = 0;
-        filled = 0;
-
-        while (remaining > 0) {
-            uint128 bestPrice = _getBestMatchingPrice(orderPrice, oppositeSide, isMarketOrder);
-
+        while (s.remaining > 0) {
+            uint128 bestPrice = _getBestMatchingPrice(s.orderPrice, oppositeSide, isMarketOrder);
             if (bestPrice == 0) {
                 break;
             }
 
-            if (bestPrice == latestBestPrice && previousRemaining == remaining) {
-                bytes32 bestPricePtr = priceTree.find(bestPrice);
+            if (bestPrice == s.latestBestPrice && s.previousRemaining == s.remaining) {
+                bytes32 ptr = $.priceTrees[oppositeSide].find(bestPrice);
                 bestPrice = side == Side.BUY
-                    ? uint128(RedBlackTreeLib.value(RedBlackTreeLib.next(bestPricePtr)))
-                    : uint128(RedBlackTreeLib.value(RedBlackTreeLib.prev(bestPricePtr)));
-
+                    ? uint128(RedBlackTreeLib.value(RedBlackTreeLib.next(ptr)))
+                    : uint128(RedBlackTreeLib.value(RedBlackTreeLib.prev(ptr)));
                 if (bestPrice == 0) {
                     break;
                 }
             }
 
-            latestBestPrice = bestPrice;
-            previousRemaining = remaining;
+            s.latestBestPrice = bestPrice;
+            s.previousRemaining = s.remaining;
             OrderQueue storage queue = $.orderQueues[oppositeSide][bestPrice];
-            uint48 currentOrderId = queue.head;
 
-            while (currentOrderId != 0 && remaining > 0) {
-                Order storage matchingOrder = $.orders[currentOrderId];
-                uint48 nextOrderId = matchingOrder.next;
-
-                if (matchingOrder.expiry < block.timestamp) {
-                    _handleExpiredOrder(queue, matchingOrder);
-                } else if (matchingOrder.user == user) {
-                    _cancelOrder(currentOrderId, user);
-                } else {
-                    (remaining, filled) = _processMatchingOrder(
-                        order, matchingOrder, queue, bestPrice, remaining, filled, side, user, isMarketOrder
-                    );
-                }
-                currentOrderId = nextOrderId;
-            }
-
-            _updatePriceLevel(bestPrice, queue, priceTree);
+            (s.remaining, s.filled) =
+                _matchAtPriceLevel(order, queue, bestPrice, s.remaining, s.filled, side, user, isMarketOrder);
+            _updatePriceLevel(bestPrice, queue, $.priceTrees[oppositeSide]);
         }
 
-        return filled;
+        return s.filled;
+    }
+
+    function _matchAtPriceLevel(
+        Order memory order,
+        OrderQueue storage queue,
+        uint128 bestPrice,
+        uint128 remaining,
+        uint128 filled,
+        Side side,
+        address user,
+        bool isMarketOrder
+    ) private returns (uint128, uint128) {
+        MatchContext memory ctx = MatchContext({
+            order: order,
+            side: side,
+            user: user,
+            isMarketOrder: isMarketOrder,
+            bestPrice: bestPrice,
+            remaining: remaining,
+            previousRemaining: remaining,
+            filled: filled
+        });
+
+        (ctx.remaining, ctx.filled) = _processOrderQueue(queue, ctx);
+        return (ctx.remaining, ctx.filled);
+    }
+
+    function _processOrderQueue(OrderQueue storage queue, MatchContext memory ctx) private returns (uint128, uint128) {
+        Storage storage $ = getStorage();
+        uint48 currentOrderId = queue.head;
+
+        while (currentOrderId != 0 && ctx.remaining > 0) {
+            Order storage matchingOrder = $.orders[currentOrderId];
+            uint48 nextOrderId = matchingOrder.next;
+
+            if (matchingOrder.expiry < block.timestamp) {
+                _handleExpiredOrder(queue, matchingOrder);
+            } else if (matchingOrder.user != ctx.user) {
+                ctx.previousRemaining = ctx.remaining;
+                (ctx.remaining, ctx.filled) = _processMatchingOrder(ctx, matchingOrder, queue);
+            }
+            currentOrderId = nextOrderId;
+        }
+        return (ctx.remaining, ctx.filled);
     }
 
     function getNextBestPrices(
@@ -566,6 +780,26 @@ contract OrderBook is
 
         // Return the price value if the pointer is valid
         return pricePtr != bytes32(0) ? uint128(RedBlackTreeLib.value(pricePtr)) : 0;
+    }
+
+    function _getNextAvailablePrice(
+        IOrderBook.Side oppositeSide,
+        uint128 skipPrice
+    ) private view returns (uint128) {
+        Storage storage $ = getStorage();
+        RedBlackTreeLib.Tree storage oppositePriceTree = $.priceTrees[oppositeSide];
+        
+        if (skipPrice == 0) {
+            bytes32 oppositePricePtr =
+                oppositeSide == IOrderBook.Side.BUY ? oppositePriceTree.last() : oppositePriceTree.first();
+            return uint128(RedBlackTreeLib.value(oppositePricePtr));
+        } else {
+            bytes32 ptr = oppositePriceTree.find(skipPrice);
+            bytes32 nextPtr = oppositeSide == IOrderBook.Side.BUY 
+                ? RedBlackTreeLib.prev(ptr)  
+                : RedBlackTreeLib.next(ptr);
+            return uint128(RedBlackTreeLib.value(nextPtr));
+        }
     }
 
     function _getBestMatchingPrice(
@@ -706,7 +940,9 @@ contract OrderBook is
         return $.orderQueues[side][price].orderCount == 0;
     }
 
-    function updateTradingRules(TradingRules memory _newRules) external {
+    function updateTradingRules(
+        TradingRules memory _newRules
+    ) external {
         Storage storage $ = getStorage();
 
         if (msg.sender != owner()) {

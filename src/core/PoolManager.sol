@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.26;
 
-import {Upgrades} from "../lib/openzeppelin-foundry-upgrades/src/Upgrades.sol";
+import {Upgrades} from "../../lib/openzeppelin-foundry-upgrades/src/Upgrades.sol";
 import {OrderBook} from "./OrderBook.sol";
 
 import {IBalanceManager} from "./interfaces/IBalanceManager.sol";
@@ -9,8 +9,9 @@ import {IOrderBook} from "./interfaces/IOrderBook.sol";
 import {IPoolManager} from "./interfaces/IPoolManager.sol";
 import {Currency} from "./libraries/Currency.sol";
 import {PoolId, PoolKey} from "./libraries/Pool.sol";
-import {PoolManagerStorage} from "./storages/PoolManagerStorage.sol";
+
 import {TradingRulesValidator} from "./libraries/TradingRulesValidator.sol";
+import {PoolManagerStorage} from "./storages/PoolManagerStorage.sol";
 
 import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
@@ -67,7 +68,7 @@ contract PoolManager is Initializable, OwnableUpgradeable, PoolManagerStorage, I
         PoolId id = key.toId();
 
         if (address($.pools[id].orderBook) != address(0)) {
-            revert PoolAlreadyExists(id);
+            revert PoolAlreadyExists(PoolId.unwrap(id));
         }
 
         bytes memory initData =
@@ -105,10 +106,7 @@ contract PoolManager is Initializable, OwnableUpgradeable, PoolManagerStorage, I
         return id;
     }
 
-    function updatePoolTradingRules(
-        PoolId _poolId,
-        IOrderBook.TradingRules memory _newRules
-    ) external onlyOwner {
+    function updatePoolTradingRules(PoolId _poolId, IOrderBook.TradingRules memory _newRules) external onlyOwner {
         validateTradingRules(_newRules);
 
         Storage storage $ = getStorage();
@@ -120,7 +118,9 @@ contract PoolManager is Initializable, OwnableUpgradeable, PoolManagerStorage, I
         emit TradingRulesUpdated(_poolId, _newRules);
     }
 
-    function validateTradingRules(IOrderBook.TradingRules memory _rules) internal pure {
+    function validateTradingRules(
+        IOrderBook.TradingRules memory _rules
+    ) internal pure {
         TradingRulesValidator.validate(_rules);
     }
 
@@ -187,13 +187,6 @@ contract PoolManager is Initializable, OwnableUpgradeable, PoolManagerStorage, I
     }
 
     function createPoolKey(Currency currency1, Currency currency2) public pure returns (PoolKey memory) {
-        address addr1 = Currency.unwrap(currency1);
-        address addr2 = Currency.unwrap(currency2);
-
-        if (addr1 < addr2) {
-            return PoolKey({baseCurrency: currency1, quoteCurrency: currency2});
-        } else {
-            return PoolKey({baseCurrency: currency2, quoteCurrency: currency1});
-        }
+        return PoolKey({baseCurrency: currency1, quoteCurrency: currency2});
     }
 }
