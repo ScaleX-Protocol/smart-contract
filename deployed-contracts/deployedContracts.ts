@@ -18,7 +18,7 @@ interface DeployedContracts {
 export const deployedContracts: DeployedContracts = {
   31337: {
     BalanceManager: {
-      address: "0x59b670e9fa9d0a427751af201d676719a970857b",
+      address: "0x5e6cb7e728e1c320855587e1d9c6f7972ebdd6d5",
       abi: [
         {
           type: "constructor",
@@ -889,7 +889,7 @@ export const deployedContracts: DeployedContracts = {
       },
     },
     UpgradeableBeacon: {
-      address: "0xc5a5c42992decbae36851359345fe25997f5c42d",
+      address: "0x512f7469bcc83089497506b5df64c6e246b39925",
       abi: [
         {
           type: "constructor",
@@ -1044,7 +1044,7 @@ export const deployedContracts: DeployedContracts = {
       },
     },
     PoolManager: {
-      address: "0x322813fd9a801c5507c9de605d63cea4f2ce6c44",
+      address: "0x0dd99d9f56a14e9d53b2ddc62d9f0babe806647a",
       abi: [
         {
           type: "constructor",
@@ -1700,7 +1700,7 @@ export const deployedContracts: DeployedContracts = {
       },
     },
     GTXRouter: {
-      address: "0x4a679253410272dd5232b3ff7cf5dbb88f295319",
+      address: "0x95775fd3afb1f4072794ca4dda27f2444bcf8ac3",
       abi: [
         {
           type: "constructor",
@@ -2219,6 +2219,50 @@ export const deployedContracts: DeployedContracts = {
         },
         {
           type: "function",
+          name: "swap",
+          inputs: [
+            {
+              name: "srcCurrency",
+              type: "address",
+              internalType: "Currency",
+            },
+            {
+              name: "dstCurrency",
+              type: "address",
+              internalType: "Currency",
+            },
+            {
+              name: "srcAmount",
+              type: "uint256",
+              internalType: "uint256",
+            },
+            {
+              name: "minDstAmount",
+              type: "uint256",
+              internalType: "uint256",
+            },
+            {
+              name: "maxHops",
+              type: "uint8",
+              internalType: "uint8",
+            },
+            {
+              name: "user",
+              type: "address",
+              internalType: "address",
+            },
+          ],
+          outputs: [
+            {
+              name: "receivedAmount",
+              type: "uint256",
+              internalType: "uint256",
+            },
+          ],
+          stateMutability: "nonpayable",
+        },
+        {
+          type: "function",
           name: "transferOwnership",
           inputs: [
             {
@@ -2298,6 +2342,17 @@ export const deployedContracts: DeployedContracts = {
         },
         {
           type: "error",
+          name: "IdenticalCurrencies",
+          inputs: [
+            {
+              name: "currency",
+              type: "address",
+              internalType: "address",
+            },
+          ],
+        },
+        {
+          type: "error",
           name: "InsufficientBalance",
           inputs: [
             {
@@ -2333,6 +2388,22 @@ export const deployedContracts: DeployedContracts = {
             },
             {
               name: "userBalance",
+              type: "uint256",
+              internalType: "uint256",
+            },
+          ],
+        },
+        {
+          type: "error",
+          name: "InsufficientSwapBalance",
+          inputs: [
+            {
+              name: "available",
+              type: "uint256",
+              internalType: "uint256",
+            },
+            {
+              name: "required",
               type: "uint256",
               internalType: "uint256",
             },
@@ -2403,6 +2474,22 @@ export const deployedContracts: DeployedContracts = {
               name: "reason",
               type: "string",
               internalType: "string",
+            },
+          ],
+        },
+        {
+          type: "error",
+          name: "NoValidSwapPath",
+          inputs: [
+            {
+              name: "srcCurrency",
+              type: "address",
+              internalType: "address",
+            },
+            {
+              name: "dstCurrency",
+              type: "address",
+              internalType: "address",
             },
           ],
         },
@@ -2541,6 +2628,38 @@ export const deployedContracts: DeployedContracts = {
         },
         {
           type: "error",
+          name: "SwapHopFailed",
+          inputs: [
+            {
+              name: "hopIndex",
+              type: "uint256",
+              internalType: "uint256",
+            },
+            {
+              name: "receivedAmount",
+              type: "uint256",
+              internalType: "uint256",
+            },
+          ],
+        },
+        {
+          type: "error",
+          name: "TooManyHops",
+          inputs: [
+            {
+              name: "maxHops",
+              type: "uint8",
+              internalType: "uint8",
+            },
+            {
+              name: "limit",
+              type: "uint8",
+              internalType: "uint8",
+            },
+          ],
+        },
+        {
+          type: "error",
           name: "TradingPaused",
           inputs: [],
         },
@@ -2629,7 +2748,7 @@ export const deployedContracts: DeployedContracts = {
       },
     },
     OrderBook: {
-      address: "0x09635f643e140090a9a8dcd712ed6285858cebef",
+      address: "0xd3ffd73c53f139cebb80b6a524be280955b3f4db",
       abi: [
         {
           type: "constructor",
@@ -3374,6 +3493,17 @@ export const deployedContracts: DeployedContracts = {
         },
         {
           type: "error",
+          name: "IdenticalCurrencies",
+          inputs: [
+            {
+              name: "currency",
+              type: "address",
+              internalType: "address",
+            },
+          ],
+        },
+        {
+          type: "error",
           name: "InsufficientBalanceRequired",
           inputs: [
             {
@@ -3383,6 +3513,22 @@ export const deployedContracts: DeployedContracts = {
             },
             {
               name: "userBalance",
+              type: "uint256",
+              internalType: "uint256",
+            },
+          ],
+        },
+        {
+          type: "error",
+          name: "InsufficientSwapBalance",
+          inputs: [
+            {
+              name: "available",
+              type: "uint256",
+              internalType: "uint256",
+            },
+            {
+              name: "required",
               type: "uint256",
               internalType: "uint256",
             },
@@ -3437,6 +3583,22 @@ export const deployedContracts: DeployedContracts = {
               name: "slippageBps",
               type: "uint256",
               internalType: "uint256",
+            },
+          ],
+        },
+        {
+          type: "error",
+          name: "NoValidSwapPath",
+          inputs: [
+            {
+              name: "srcCurrency",
+              type: "address",
+              internalType: "address",
+            },
+            {
+              name: "dstCurrency",
+              type: "address",
+              internalType: "address",
             },
           ],
         },
@@ -3574,6 +3736,38 @@ export const deployedContracts: DeployedContracts = {
         },
         {
           type: "error",
+          name: "SwapHopFailed",
+          inputs: [
+            {
+              name: "hopIndex",
+              type: "uint256",
+              internalType: "uint256",
+            },
+            {
+              name: "receivedAmount",
+              type: "uint256",
+              internalType: "uint256",
+            },
+          ],
+        },
+        {
+          type: "error",
+          name: "TooManyHops",
+          inputs: [
+            {
+              name: "maxHops",
+              type: "uint8",
+              internalType: "uint8",
+            },
+            {
+              name: "limit",
+              type: "uint8",
+              internalType: "uint8",
+            },
+          ],
+        },
+        {
+          type: "error",
           name: "TradingPaused",
           inputs: [],
         },
@@ -3616,7 +3810,7 @@ export const deployedContracts: DeployedContracts = {
       },
     },
     PoolManagerResolver: {
-      address: "0x67d269191c92caf3cd7723f116c85e6e9bf55933",
+      address: "0x9fd16ea9e31233279975d99d5e8fc91dd214c7da",
       abi: [
         {
           type: "constructor",
@@ -3714,7 +3908,7 @@ export const deployedContracts: DeployedContracts = {
       inheritedFunctions: {},
     },
     BeaconProxy: {
-      address: "0x84ea74d481ee0a5332c457a4d796187f6ba67feb",
+      address: "0xb932c8342106776e73e39d695f3ffc3a9624ece0",
       abi: [
         {
           type: "constructor",
@@ -5999,6 +6193,50 @@ export const deployedContracts: DeployedContracts = {
         },
         {
           type: "function",
+          name: "swap",
+          inputs: [
+            {
+              name: "srcCurrency",
+              type: "address",
+              internalType: "Currency",
+            },
+            {
+              name: "dstCurrency",
+              type: "address",
+              internalType: "Currency",
+            },
+            {
+              name: "srcAmount",
+              type: "uint256",
+              internalType: "uint256",
+            },
+            {
+              name: "minDstAmount",
+              type: "uint256",
+              internalType: "uint256",
+            },
+            {
+              name: "maxHops",
+              type: "uint8",
+              internalType: "uint8",
+            },
+            {
+              name: "user",
+              type: "address",
+              internalType: "address",
+            },
+          ],
+          outputs: [
+            {
+              name: "receivedAmount",
+              type: "uint256",
+              internalType: "uint256",
+            },
+          ],
+          stateMutability: "nonpayable",
+        },
+        {
+          type: "function",
           name: "transferOwnership",
           inputs: [
             {
@@ -6078,6 +6316,17 @@ export const deployedContracts: DeployedContracts = {
         },
         {
           type: "error",
+          name: "IdenticalCurrencies",
+          inputs: [
+            {
+              name: "currency",
+              type: "address",
+              internalType: "address",
+            },
+          ],
+        },
+        {
+          type: "error",
           name: "InsufficientBalance",
           inputs: [
             {
@@ -6113,6 +6362,22 @@ export const deployedContracts: DeployedContracts = {
             },
             {
               name: "userBalance",
+              type: "uint256",
+              internalType: "uint256",
+            },
+          ],
+        },
+        {
+          type: "error",
+          name: "InsufficientSwapBalance",
+          inputs: [
+            {
+              name: "available",
+              type: "uint256",
+              internalType: "uint256",
+            },
+            {
+              name: "required",
               type: "uint256",
               internalType: "uint256",
             },
@@ -6183,6 +6448,22 @@ export const deployedContracts: DeployedContracts = {
               name: "reason",
               type: "string",
               internalType: "string",
+            },
+          ],
+        },
+        {
+          type: "error",
+          name: "NoValidSwapPath",
+          inputs: [
+            {
+              name: "srcCurrency",
+              type: "address",
+              internalType: "address",
+            },
+            {
+              name: "dstCurrency",
+              type: "address",
+              internalType: "address",
             },
           ],
         },
@@ -6316,6 +6597,38 @@ export const deployedContracts: DeployedContracts = {
               name: "minReceived",
               type: "uint256",
               internalType: "uint256",
+            },
+          ],
+        },
+        {
+          type: "error",
+          name: "SwapHopFailed",
+          inputs: [
+            {
+              name: "hopIndex",
+              type: "uint256",
+              internalType: "uint256",
+            },
+            {
+              name: "receivedAmount",
+              type: "uint256",
+              internalType: "uint256",
+            },
+          ],
+        },
+        {
+          type: "error",
+          name: "TooManyHops",
+          inputs: [
+            {
+              name: "maxHops",
+              type: "uint8",
+              internalType: "uint8",
+            },
+            {
+              name: "limit",
+              type: "uint8",
+              internalType: "uint8",
             },
           ],
         },
@@ -7154,6 +7467,17 @@ export const deployedContracts: DeployedContracts = {
         },
         {
           type: "error",
+          name: "IdenticalCurrencies",
+          inputs: [
+            {
+              name: "currency",
+              type: "address",
+              internalType: "address",
+            },
+          ],
+        },
+        {
+          type: "error",
           name: "InsufficientBalanceRequired",
           inputs: [
             {
@@ -7163,6 +7487,22 @@ export const deployedContracts: DeployedContracts = {
             },
             {
               name: "userBalance",
+              type: "uint256",
+              internalType: "uint256",
+            },
+          ],
+        },
+        {
+          type: "error",
+          name: "InsufficientSwapBalance",
+          inputs: [
+            {
+              name: "available",
+              type: "uint256",
+              internalType: "uint256",
+            },
+            {
+              name: "required",
               type: "uint256",
               internalType: "uint256",
             },
@@ -7217,6 +7557,22 @@ export const deployedContracts: DeployedContracts = {
               name: "slippageBps",
               type: "uint256",
               internalType: "uint256",
+            },
+          ],
+        },
+        {
+          type: "error",
+          name: "NoValidSwapPath",
+          inputs: [
+            {
+              name: "srcCurrency",
+              type: "address",
+              internalType: "address",
+            },
+            {
+              name: "dstCurrency",
+              type: "address",
+              internalType: "address",
             },
           ],
         },
@@ -7349,6 +7705,38 @@ export const deployedContracts: DeployedContracts = {
               name: "minReceived",
               type: "uint256",
               internalType: "uint256",
+            },
+          ],
+        },
+        {
+          type: "error",
+          name: "SwapHopFailed",
+          inputs: [
+            {
+              name: "hopIndex",
+              type: "uint256",
+              internalType: "uint256",
+            },
+            {
+              name: "receivedAmount",
+              type: "uint256",
+              internalType: "uint256",
+            },
+          ],
+        },
+        {
+          type: "error",
+          name: "TooManyHops",
+          inputs: [
+            {
+              name: "maxHops",
+              type: "uint8",
+              internalType: "uint8",
+            },
+            {
+              name: "limit",
+              type: "uint8",
+              internalType: "uint8",
             },
           ],
         },

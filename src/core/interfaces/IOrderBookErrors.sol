@@ -25,4 +25,9 @@ interface IOrderBookErrors {
     error QueueEmpty();
     error OrderIsNotOpenOrder(IOrderBook.Status status);
     error InvalidSideForQuoteAmount();
+    error SwapHopFailed(uint256 hopIndex, uint256 receivedAmount);
+    error NoValidSwapPath(address srcCurrency, address dstCurrency);
+    error IdenticalCurrencies(address currency);
+    error TooManyHops(uint8 maxHops, uint8 limit);
+    error InsufficientSwapBalance(uint256 available, uint256 required);
 }

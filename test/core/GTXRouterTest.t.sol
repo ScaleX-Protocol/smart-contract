@@ -292,7 +292,7 @@ contract GTXRouterTest is Test {
         IERC20(Currency.unwrap(weth)).approve(address(balanceManager), poorSellerEthAmount);
 
         uint128 sellMarketQty = 5 * 10 ** 17;
-        vm.expectRevert("TransferFromFailed()");
+        vm.expectRevert(abi.encodeWithSelector(IOrderBookErrors.InsufficientSwapBalance.selector, poorSellerEthAmount, sellMarketQty));
         gtxRouter.placeMarketOrder(pool, sellMarketQty, IOrderBook.Side.SELL, uint128(poorSellerEthAmount), 0);
 
         vm.stopPrank();

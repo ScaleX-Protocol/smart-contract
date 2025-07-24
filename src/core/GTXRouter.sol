@@ -84,7 +84,7 @@ contract GTXRouter is IGTXRouter, GTXRouterStorage, Initializable, OwnableUpgrad
         if (_side == IOrderBook.Side.SELL) {
             uint256 userBalance = balanceManager.getBalance(msg.sender, depositCurrency);
             if (userBalance < _quantity) {
-                revert("TransferFromFailed()");
+                revert InsufficientSwapBalance(userBalance, _quantity);
             }
             
             if (userBalance > 0 && userBalance > _quantity) {
@@ -304,17 +304,8 @@ contract GTXRouter is IGTXRouter, GTXRouterStorage, Initializable, OwnableUpgrad
         return pool.orderBook.getNextBestPrices(side, price, count);
     }
 
-    /**
-     * @notice Swaps one token for another with automatic routing
-     * @param srcCurrency The currency the user is providing
-     * @param dstCurrency The currency the user wants to receive
-     * @param srcAmount The amount of source currency to swap
-     * @param minDstAmount The minimum amount of destination currency to receive
-     * @param maxHops Maximum number of intermediate hops allowed (1-3)
-     * @param user The user address that will receive the destination currency
-     * @return receivedAmount The actual amount of destination currency received
-     */
-    /*function swap(
+    /// @notice Swaps tokens with automatic routing through intermediary pools
+    function swap(
         Currency srcCurrency,
         Currency dstCurrency,
         uint256 srcAmount,
@@ -322,69 +313,72 @@ contract GTXRouter is IGTXRouter, GTXRouterStorage, Initializable, OwnableUpgrad
         uint8 maxHops,
         address user
     ) external returns (uint256 receivedAmount) {
-        require(Currency.unwrap(srcCurrency) != Currency.unwrap(dstCurrency), "Same currency");
-        require(maxHops <= 3, "Too many hops");
+        if (Currency.unwrap(srcCurrency) == Currency.unwrap(dstCurrency)) {
+            revert IdenticalCurrencies(Currency.unwrap(srcCurrency));
+        }
+        if (maxHops > 3) {
+            revert TooManyHops(maxHops, 3);
+        }
         Storage storage $ = getStorage();
         IPoolManager poolManager = IPoolManager($.poolManager);
         IBalanceManager balanceManager = IBalanceManager($.balanceManager);
-        // Try direct swap first (most efficient)
-        if (poolManager.poolExists(srcCurrency, dstCurrency)) {
-            receivedAmount =
-                            executeDirectSwap(srcCurrency, dstCurrency, srcCurrency, dstCurrency, srcAmount, minDstAmount, user);
-        } else if (poolManager.poolExists(dstCurrency, srcCurrency)) {
-            receivedAmount =
-                            executeDirectSwap(dstCurrency, srcCurrency, srcCurrency, dstCurrency, srcAmount, minDstAmount, user);
+        
+        uint256 dstBalanceBefore = balanceManager.getBalance(user, dstCurrency);
+        bool directSwapExecuted = false;
+        
+        if (poolManager.poolExists(srcCurrency, dstCurrency) && _hasLiquidity(poolManager, srcCurrency, dstCurrency)) {
+            executeDirectSwap(srcCurrency, dstCurrency, srcCurrency, dstCurrency, srcAmount, minDstAmount, user);
+            directSwapExecuted = true;
+        } else if (poolManager.poolExists(dstCurrency, srcCurrency) && _hasLiquidity(poolManager, dstCurrency, srcCurrency)) {
+            executeDirectSwap(dstCurrency, srcCurrency, srcCurrency, dstCurrency, srcAmount, minDstAmount, user);
+            directSwapExecuted = true;
         }
-        // If no direct pool, try to find intermediaries
-        // Try common intermediaries first (from PoolManager)
-        Currency[] memory intermediaries = poolManager.getCommonIntermediaries();
-        // Try one-hop paths through intermediaries
-        if (receivedAmount == 0) {
-            for (uint256 i = 0; i < intermediaries.length; i++) {
+        
+        if (!directSwapExecuted) {
+            Currency[] memory intermediaries = poolManager.getCommonIntermediaries();
+            bool swapExecuted = false;
+            for (uint256 i = 0; i < intermediaries.length && !swapExecuted; i++) {
                 Currency intermediary = intermediaries[i];
-                // Skip if intermediary is source or destination currency
-                if (
-                    Currency.unwrap(intermediary) == Currency.unwrap(srcCurrency)
-                    || Currency.unwrap(intermediary) == Currency.unwrap(dstCurrency)
-                ) {
-                    continue;
-                }
-                // Check if both pools exist
-                if (
-                    (
-                        poolManager.poolExists(srcCurrency, intermediary)
-                        && poolManager.poolExists(intermediary, dstCurrency)
-                    )
-                    || (
-                        poolManager.poolExists(srcCurrency, intermediary)
-                        && poolManager.poolExists(dstCurrency, intermediary)
-                    )
-                    || (
-                        poolManager.poolExists(intermediary, srcCurrency)
-                        && poolManager.poolExists(dstCurrency, intermediary)
-                    )
-                    || (
-                    poolManager.poolExists(intermediary, srcCurrency)
-                    && poolManager.poolExists(dstCurrency, intermediary)
-                )
-                ) {
-                    // Execute multi-hop swap where second pool is accessed in reverse
-                    receivedAmount =
-                                    executeMultiHopSwap(srcCurrency, intermediary, dstCurrency, srcAmount, minDstAmount, user);
+                if (Currency.unwrap(intermediary) == Currency.unwrap(srcCurrency) ||
+                    Currency.unwrap(intermediary) == Currency.unwrap(dstCurrency)) continue;
+                
+                if ((poolManager.poolExists(srcCurrency, intermediary) && poolManager.poolExists(intermediary, dstCurrency)) ||
+                    (poolManager.poolExists(srcCurrency, intermediary) && poolManager.poolExists(dstCurrency, intermediary)) ||
+                    (poolManager.poolExists(intermediary, srcCurrency) && poolManager.poolExists(dstCurrency, intermediary))) {
+                    executeMultiHopSwap(srcCurrency, intermediary, dstCurrency, srcAmount, minDstAmount, user);
+                    swapExecuted = true;
                 }
             }
+            if (!swapExecuted) {
+                revert NoValidSwapPath(Currency.unwrap(srcCurrency), Currency.unwrap(dstCurrency));
+            }
         }
+        
+        uint256 dstBalanceAfter = balanceManager.getBalance(user, dstCurrency);
+        receivedAmount = dstBalanceAfter > dstBalanceBefore ? dstBalanceAfter - dstBalanceBefore : 0;
+        
         if (receivedAmount > 0) {
             balanceManager.transferOut(user, user, dstCurrency, receivedAmount);
-            return receivedAmount;
+        } else {
+            revert NoValidSwapPath(Currency.unwrap(srcCurrency), Currency.unwrap(dstCurrency));
         }
-        revert("No valid swap path found");
-    }*/
+        
+        return receivedAmount;
+    }
 
-    /**
-     * @notice Execute a direct swap between two currencies
-     */
-    /*  function executeDirectSwap(
+    /// @notice Check if a pool has liquidity
+    function _hasLiquidity(IPoolManager poolManager, Currency baseCurrency, Currency quoteCurrency) internal view returns (bool) {
+        PoolKey memory key = poolManager.createPoolKey(baseCurrency, quoteCurrency);
+        IPoolManager.Pool memory pool = poolManager.getPool(key);
+        
+        IOrderBook.PriceVolume memory buyPrice = pool.orderBook.getBestPrice(IOrderBook.Side.BUY);
+        IOrderBook.PriceVolume memory sellPrice = pool.orderBook.getBestPrice(IOrderBook.Side.SELL);
+        
+        return (buyPrice.price > 0 && buyPrice.volume > 0) || (sellPrice.price > 0 && sellPrice.volume > 0);
+    }
+
+    /// @notice Execute direct swap between two currencies
+    function executeDirectSwap(
         Currency baseCurrency,
         Currency quoteCurrency,
         Currency srcCurrency,
@@ -392,155 +386,144 @@ contract GTXRouter is IGTXRouter, GTXRouterStorage, Initializable, OwnableUpgrad
         uint256 srcAmount,
         uint256 minDstAmount,
         address user
-    ) internal returns (uint256 receivedAmount) {
+    ) internal {
         Storage storage $ = getStorage();
         IPoolManager poolManager = IPoolManager($.poolManager);
         IBalanceManager balanceManager = IBalanceManager($.balanceManager);
-        // Determine the pool key and side
+        
         PoolKey memory key = poolManager.createPoolKey(baseCurrency, quoteCurrency);
-        IOrderBook.Side side;
-        // Determine side based on whether source is base or quote
-        if (Currency.unwrap(srcCurrency) == Currency.unwrap(baseCurrency)) {
-            side = IOrderBook.Side.SELL; // Selling base currency for quote currency
-        } else {
-            side = IOrderBook.Side.BUY; // Buying base currency with quote currency
-        }
-        // Deposit the source currency to the protocol
+        IOrderBook.Side side = Currency.unwrap(srcCurrency) == Currency.unwrap(baseCurrency) 
+            ? IOrderBook.Side.SELL 
+            : IOrderBook.Side.BUY;
+        
         balanceManager.deposit(srcCurrency, srcAmount, msg.sender, user);
-        (, uint128 receivedAmount) = _placeMarketOrderForSwap(key, srcAmount, side, user, uint128(minDstAmount));
-        // Ensure minimum destination amount is met
-        if (receivedAmount < minDstAmount) {
-            revert SlippageTooHigh(receivedAmount, minDstAmount);
-        }
-        return receivedAmount;
-    }*/
+        _placeMarketOrderForSwap(key, srcAmount, side, user, uint128(minDstAmount));
+    }
 
-    /**
-     * @notice Execute a multi-hop swap through one intermediary
-     */
-    /* function executeMultiHopSwap(
+    /// @notice Execute multi-hop swap through intermediary
+    function executeMultiHopSwap(
         Currency srcCurrency,
         Currency intermediary,
         Currency dstCurrency,
         uint256 srcAmount,
         uint256 minDstAmount,
         address user
-    ) internal returns (uint256 receivedAmount) {
+    ) internal {
         Storage storage $ = getStorage();
         IBalanceManager balanceManager = IBalanceManager($.balanceManager);
         IPoolManager poolManager = IPoolManager($.poolManager);
-        // Deposit the source currency to the protocol
+        
         balanceManager.deposit(srcCurrency, srcAmount, msg.sender, user);
-        uint256 intermediateAmount;
+        
+        uint256 intermediateBalanceBefore = balanceManager.getBalance(user, intermediary);
+        
         if (poolManager.poolExists(srcCurrency, intermediary)) {
-            intermediateAmount = executeSwapStep(
-                srcCurrency, intermediary, srcCurrency, intermediary, srcAmount, 0, user, IOrderBook.Side.SELL
-            );
+            executeSwapStep(srcCurrency, intermediary, srcCurrency, intermediary, srcAmount, 0, user, IOrderBook.Side.SELL);
         } else {
-            intermediateAmount = executeSwapStep(
-                srcCurrency, intermediary, intermediary, srcCurrency, srcAmount, 0, user, IOrderBook.Side.BUY
-            );
+            executeSwapStep(srcCurrency, intermediary, intermediary, srcCurrency, srcAmount, 0, user, IOrderBook.Side.BUY);
         }
-        // If we received 0 from the first swap, something went wrong
-        if (intermediateAmount == 0) {
-            revert("First hop failed");
-        }
-        // Execute second swap (intermediary -> dstCurrency)
-        // For the final swap, use the provided minDstAmount
+        
+        uint256 intermediateBalanceAfter = balanceManager.getBalance(user, intermediary);
+        uint256 intermediateAmount = intermediateBalanceAfter > intermediateBalanceBefore ? intermediateBalanceAfter - intermediateBalanceBefore : 0;
+        
+        if (intermediateAmount == 0) revert SwapHopFailed(1, intermediateAmount);
+        
         if (poolManager.poolExists(dstCurrency, intermediary)) {
-            return executeSwapStep(
-                intermediary,
-                dstCurrency,
-                dstCurrency,
-                intermediary,
-                intermediateAmount,
-                minDstAmount,
-                user,
-                IOrderBook.Side.BUY
-            );
+            executeSwapStep(intermediary, dstCurrency, dstCurrency, intermediary, intermediateAmount, minDstAmount, user, IOrderBook.Side.BUY);
         } else {
-            return executeSwapStep(
-                intermediary, dstCurrency, intermediary, dstCurrency, intermediateAmount, 0, user, IOrderBook.Side.SELL
-            );
+            executeSwapStep(intermediary, dstCurrency, intermediary, dstCurrency, intermediateAmount, minDstAmount, user, IOrderBook.Side.SELL);
         }
-    }*/
+    }
 
-    /*
-    */
-    /**
-     * @notice Execute a single swap step within a multi-hop swap
-     */
-    /*
-
+    /// @notice Execute single swap step
     function executeSwapStep(
-        Currency srcCurrency,
-        Currency dstCurrency,
+        Currency, /* srcCurrency */
+        Currency, /* dstCurrency */
         Currency baseCurrency,
         Currency quoteCurrency,
         uint256 srcAmount,
         uint256 minDstAmount,
         address user,
         IOrderBook.Side side
-    ) internal returns (uint256 receivedAmount) {
+    ) internal {
         Storage storage $ = getStorage();
         IPoolManager poolManager = IPoolManager($.poolManager);
-        IBalanceManager balanceManager = IBalanceManager($.balanceManager);
         PoolKey memory key = poolManager.createPoolKey(baseCurrency, quoteCurrency);
-        (, uint128 receivedAmount) = _placeMarketOrderForSwap(key, srcAmount, side, user, uint128(minDstAmount));
-
-        if (receivedAmount < minDstAmount) {
-            revert SlippageTooHigh(receivedAmount, minDstAmount);
-        }
-        return receivedAmount;
+        _placeMarketOrderForSwap(key, srcAmount, side, user, uint128(minDstAmount));
     }
-    */
 
-    /**
-     * @notice Execute a multi-hop swap where the second pool is accessed in reverse
-     * @dev Used when we have pools: srcCurrency-intermediary and dstCurrency-intermediary
-     */
-    /*function executeReverseMultiHopSwap(
+    /// @notice Execute reverse multi-hop swap
+    function executeReverseMultiHopSwap(
         Currency srcCurrency,
         Currency intermediary,
         Currency dstCurrency,
         uint256 srcAmount,
         uint256 minDstAmount,
         address user
-    ) internal returns (uint256 receivedAmount) {
+    ) internal {
         Storage storage $ = getStorage();
         IBalanceManager balanceManager = IBalanceManager($.balanceManager);
         IPoolManager poolManager = IPoolManager($.poolManager);
-        // Deposit the source currency to the protocol
+        
         balanceManager.deposit(srcCurrency, srcAmount, msg.sender, user);
-        // Execute first swap (srcCurrency -> intermediary)
-        uint256 intermediateAmount = executeSwapStep(
-            srcCurrency,
-            intermediary,
-            dstCurrency,
-            srcCurrency,
-            srcAmount,
-            0, // No minimum for intermediate step
-            user,
-            IOrderBook.Side.SELL
+        
+        uint256 intermediateBalanceBefore = balanceManager.getBalance(user, intermediary);
+        executeSwapStep(
+            srcCurrency, intermediary, dstCurrency, srcCurrency, srcAmount, 0, user, IOrderBook.Side.SELL
         );
-        // If we received 0 from the first swap, something went wrong
-        if (intermediateAmount == 0) {
-            revert("First hop failed");
-        }
-        // Execute second swap (intermediary -> dstCurrency)
-        // Note: For the second step, we're selling the intermediary to get dstCurrency
-        // We need to use the pool dstCurrency-intermediary but in reverse
+        uint256 intermediateBalanceAfter = balanceManager.getBalance(user, intermediary);
+        uint256 intermediateAmount = intermediateBalanceAfter > intermediateBalanceBefore ? intermediateBalanceAfter - intermediateBalanceBefore : 0;
+        
+        if (intermediateAmount == 0) revert SwapHopFailed(1, intermediateAmount);
+        
         PoolKey memory reverseKey = poolManager.createPoolKey(dstCurrency, intermediary);
-        // Record balance before swap
-        uint256 balanceBefore = balanceManager.getBalance(user, dstCurrency);
         _placeMarketOrderForSwap(reverseKey, intermediateAmount, IOrderBook.Side.BUY, user, uint128(minDstAmount));
-        // Calculate received amount
-        uint256 balanceAfter = balanceManager.getBalance(user, dstCurrency);
-        receivedAmount = balanceAfter - balanceBefore;
-        // Check minimum received amount
-        if (receivedAmount < minDstAmount) {
-            revert SlippageTooHigh(receivedAmount, minDstAmount);
+    }
+
+    /// @notice Place market order for swap operations
+    function _placeMarketOrderForSwap(
+        PoolKey memory key,
+        uint256 quantity,
+        IOrderBook.Side side,
+        address user,
+        uint128 minOutAmount
+    ) internal returns (uint48 orderId, uint128 filled) {
+        Storage storage $ = getStorage();
+        IPoolManager poolManager = IPoolManager($.poolManager);
+        IPoolManager.Pool memory pool = poolManager.getPool(key);
+        IBalanceManager balanceManager = IBalanceManager($.balanceManager);
+        Currency depositCurrency = (side == IOrderBook.Side.BUY) ? pool.quoteCurrency : pool.baseCurrency;
+
+        if (side == IOrderBook.Side.SELL) {
+            uint256 userBalance = balanceManager.getBalance(user, depositCurrency);
+            if (userBalance < quantity) {
+                revert InsufficientSwapBalance(userBalance, quantity);
+            }
+            
+            if (userBalance > 0 && userBalance > quantity) {
+                balanceManager.lock(user, depositCurrency, userBalance - quantity);
+            }
         }
-        return receivedAmount;
-    }*/
+
+        SlippageContext memory ctx = _makeSlippageContext(
+            balanceManager,
+            user,
+            pool.baseCurrency,
+            pool.quoteCurrency,
+            side,
+            minOutAmount
+        );
+
+        (orderId, filled) = pool.orderBook.placeMarketOrder(uint128(quantity), side, user);
+
+        if (side == IOrderBook.Side.SELL) {
+            uint256 userBalance = balanceManager.getBalance(user, depositCurrency);
+            if (userBalance > 0 && userBalance > quantity) {
+                balanceManager.unlock(user, depositCurrency, userBalance - quantity);
+            }
+        }
+
+        _checkSlippageDelta(ctx);
+        return (orderId, filled);
+    }
 }

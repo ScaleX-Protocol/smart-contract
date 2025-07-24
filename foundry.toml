@@ -1,6 +1,7 @@
 [profile.default]
 optimizer = true
 optimizer_runs = 1_000
+via_ir = true
 src = 'contracts'
 out = 'out'
 libs = ['lib']
