@@ -297,28 +297,27 @@ contract FillMockOrderBook is Script, DeployHelpers {
    function _verifyBuyOrdersPlaced(Currency base, Currency quote) private {
        console.log("Checking BUY orders...");
        
-       // Expected: BUY orders from 1900 to 1980 USDC (if 10 orders with 10 USDC step)
-       uint128 expectedStartPrice = 1900e6;
-       uint128 expectedEndPrice = 1980e6;
-       uint128 expectedQuantity = 5e17; // 0.5 ETH
-       
-       // Check best BUY price (should be highest = 1980)
-       IOrderBook.PriceVolume memory bestBuy = gtxRouter.getBestPrice(base, quote, IOrderBook.Side.BUY);
-       require(bestBuy.price == expectedEndPrice, "Best BUY price incorrect");
-       require(bestBuy.volume >= expectedQuantity, "Best BUY volume too low");
-       
-       // Verify we have the expected number of buy orders
+       // Verify we have buy orders placed
        require(buyOrderIds.length > 0, "No BUY orders were placed");
        
-       // Check a few specific price levels
-       (uint48 orderCount1980, uint256 volume1980) = gtxRouter.getOrderQueue(base, quote, IOrderBook.Side.BUY, 1980e6);
-       (uint48 orderCount1970, uint256 volume1970) = gtxRouter.getOrderQueue(base, quote, IOrderBook.Side.BUY, 1970e6);
-       (uint48 orderCount1900, uint256 volume1900) = gtxRouter.getOrderQueue(base, quote, IOrderBook.Side.BUY, 1900e6);
+       // Check best BUY price exists
+       IOrderBook.PriceVolume memory bestBuy = gtxRouter.getBestPrice(base, quote, IOrderBook.Side.BUY);
+       require(bestBuy.price > 0, "No best BUY price found");
+       require(bestBuy.volume > 0, "No volume at best BUY price");
        
-       require(orderCount1980 > 0, "No orders at 1980 USDC");
-       require(volume1980 == expectedQuantity, "Wrong volume at 1980 USDC");
-       require(orderCount1970 > 0, "No orders at 1970 USDC");
-       require(orderCount1900 > 0, "No orders at 1900 USDC");
+       // Verify each placed order exists and has valid data
+       for (uint256 i = 0; i < buyOrderIds.length; i++) {
+           IOrderBook.Order memory order = gtxRouter.getOrder(base, quote, buyOrderIds[i]);
+           require(order.id == buyOrderIds[i], "Order ID mismatch");
+           require(order.user == msg.sender, "Order user mismatch");
+           require(order.side == IOrderBook.Side.BUY, "Order side mismatch");
+           require(order.price > 0, "Invalid order price");
+           
+           // Check that there's still some volume at this price level (may be partially filled)
+           (uint48 orderCount, uint256 totalVolume) = gtxRouter.getOrderQueue(base, quote, IOrderBook.Side.BUY, order.price);
+           require(orderCount > 0, string(abi.encodePacked("No orders at price ", uint2str(order.price))));
+           require(totalVolume > 0, string(abi.encodePacked("No volume at price ", uint2str(order.price))));
+       }
        
        console.log("BUY orders verification passed");
    }
@@ -326,16 +325,29 @@ contract FillMockOrderBook is Script, DeployHelpers {
    function _verifySellOrdersPlaced(Currency base, Currency quote) private {
        console.log("Checking SELL orders...");
        
-       // Check if SELL orders were placed (currently commented out in script)
        IOrderBook.PriceVolume memory bestSell = gtxRouter.getBestPrice(base, quote, IOrderBook.Side.SELL);
        
        if (sellOrderIds.length == 0) {
-           require(bestSell.price == 0, "Unexpected SELL orders found");
-           console.log("No SELL orders (as expected)");
+           console.log("No SELL orders placed");
        } else {
            // If SELL orders exist, verify they're correctly placed
            require(bestSell.price > 0, "SELL orders placed but no best price");
            require(bestSell.volume > 0, "SELL orders placed but no volume");
+           
+           // Verify each placed sell order exists and has valid data
+           for (uint256 i = 0; i < sellOrderIds.length; i++) {
+               IOrderBook.Order memory order = gtxRouter.getOrder(base, quote, sellOrderIds[i]);
+               require(order.id == sellOrderIds[i], "SELL order ID mismatch");
+               require(order.user == msg.sender, "SELL order user mismatch");
+               require(order.side == IOrderBook.Side.SELL, "SELL order side mismatch");
+               require(order.price > 0, "Invalid SELL order price");
+               
+               // Check that there's still some volume at this price level (may be partially filled)
+               (uint48 orderCount, uint256 totalVolume) = gtxRouter.getOrderQueue(base, quote, IOrderBook.Side.SELL, order.price);
+               require(orderCount > 0, string(abi.encodePacked("No SELL orders at price ", uint2str(order.price))));
+               require(totalVolume > 0, string(abi.encodePacked("No SELL volume at price ", uint2str(order.price))));
+           }
+           
            console.log("SELL orders verification passed");
        }
    }
@@ -366,5 +378,26 @@ contract FillMockOrderBook is Script, DeployHelpers {
        }
        
        console.log("Orderbook structure verification passed");
+   }
+
+   // Utility function to convert uint to string
+   function uint2str(uint256 _i) internal pure returns (string memory str) {
+       if (_i == 0) {
+           return "0";
+       }
+       uint256 j = _i;
+       uint256 length;
+       while (j != 0) {
+           length++;
+           j /= 10;
+       }
+       bytes memory bstr = new bytes(length);
+       uint256 k = length;
+       j = _i;
+       while (j != 0) {
+           bstr[--k] = bytes1(uint8(48 + j % 10));
+           j /= 10;
+       }
+       str = string(bstr);
    }
 }

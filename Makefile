@@ -11,7 +11,7 @@ flag ?=
 # Custom network can be set via make network=<network_name>
 network ?= $(DEFAULT_NETWORK)
 
-.PHONY: account chain compile deploy deploy-verify flatten fork format generate lint test verify upgrade upgrade-verify full-integration simple-integration simple-demo swap
+.PHONY: account chain compile deploy deploy-verify flatten fork format generate lint test verify upgrade upgrade-verify full-integration simple-integration simple-demo swap deploy-chain-balance-manager add-tokens-chain-balance-manager add-single-token-chain-balance-manager remove-single-token-chain-balance-manager list-tokens-chain-balance-manager test-chain-balance-manager
 
 # Helper function to run forge script
 define forge_script
@@ -46,6 +46,14 @@ endef
 
 define forge_simple_market_order_demo
 	forge script script/SimpleMarketOrderDemo.s.sol:SimpleMarketOrderDemo --rpc-url $(network) --broadcast $(flag)
+endef
+
+define forge_deploy_chain_balance_manager
+	forge script script/DeployChainBalanceManagerSimple.s.sol:DeployChainBalanceManagerSimple --rpc-url $(network) --broadcast $(flag)
+endef
+
+define forge_add_tokens_chain_balance_manager
+	forge script script/AddTokensToChainBalanceManager.s.sol:AddTokensToChainBalanceManager --rpc-url $(network) --broadcast $(flag)
 endef
 
 # Define a target to deploy using the specified network
@@ -95,6 +103,30 @@ mint-tokens:
 # Define a target to run simple market order demo
 simple-demo:
 	$(call forge_simple_market_order_demo,)
+
+# Define a target to deploy ChainBalanceManager
+deploy-chain-balance-manager:
+	$(call forge_deploy_chain_balance_manager,)
+
+# Define a target to add tokens to ChainBalanceManager
+add-tokens-chain-balance-manager:
+	$(call forge_add_tokens_chain_balance_manager,)
+
+# Define a target to add single token to ChainBalanceManager
+add-single-token-chain-balance-manager:
+	forge script script/AddTokensToChainBalanceManager.s.sol:AddTokensToChainBalanceManager --sig "addSingleToken(address)" $(token) --rpc-url $(network) --broadcast $(flag)
+
+# Define a target to remove single token from ChainBalanceManager
+remove-single-token-chain-balance-manager:
+	forge script script/AddTokensToChainBalanceManager.s.sol:AddTokensToChainBalanceManager --sig "removeSingleToken(address)" $(token) --rpc-url $(network) --broadcast $(flag)
+
+# Define a target to list whitelisted tokens in ChainBalanceManager
+list-tokens-chain-balance-manager:
+	forge script script/AddTokensToChainBalanceManager.s.sol:AddTokensToChainBalanceManager --sig "listWhitelistedTokens()" --rpc-url $(network)
+
+# Test ChainBalanceManager
+test-chain-balance-manager:
+	forge test --match-contract ChainBalanceManagerTest -v
 
 # Define a target to run simple integration (deploy, deploy-mocks, simple demo)
 simple-integration:
@@ -193,6 +225,12 @@ help:
 	@echo "  upgrade         - Upgrade contracts using the specified network"
 	@echo "  upgrade-verify  - Upgrade and verify contracts using the specified network"
 	@echo "  verify          - Verify contracts using the specified network"
+	@echo "  deploy-chain-balance-manager - Deploy ChainBalanceManager contract"
+	@echo "  add-tokens-chain-balance-manager - Add tokens to ChainBalanceManager whitelist"
+	@echo "  add-single-token-chain-balance-manager - Add single token (usage: make add-single-token-chain-balance-manager token=0x...)"
+	@echo "  remove-single-token-chain-balance-manager - Remove single token (usage: make remove-single-token-chain-balance-manager token=0x...)"
+	@echo "  list-tokens-chain-balance-manager - List all whitelisted tokens"
+	@echo "  test-chain-balance-manager - Run ChainBalanceManager tests"
 	@echo "  compile         - Compile the contracts"
 	@echo "  test            - Run tests"
 	@echo "  lint            - Lint the code"

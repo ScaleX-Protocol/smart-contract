@@ -357,12 +357,15 @@ contract PlaceMarketMockOrderBook is Script, DeployHelpers {
            require(bmWethBalance > 0, "No WETH transferred to BalanceManager for SELL orders");
        }
        
-       // Verify user still has reasonable balances (not completely drained)
+       // Verify user balances are reasonable after trading
        uint256 initialWeth = 50e18; // From _setupFunds
        uint256 initialUsdc = 100_000e6; // From _setupFunds
        
-       require(userWethBalance <= initialWeth, "User WETH balance increased unexpectedly");
-       require(userUsdcBalance <= initialUsdc, "User USDC balance increased unexpectedly");
+       // Market BUY orders can increase WETH balance (user receives ETH)
+       // Market SELL orders can increase USDC balance (user receives USDC)
+       // Just ensure balances are not completely drained
+       require(userWethBalance > 0, "User WETH balance completely drained");
+       require(userUsdcBalance > 0, "User USDC balance completely drained");
        
        console.log("Balance changes verification passed");
    }
