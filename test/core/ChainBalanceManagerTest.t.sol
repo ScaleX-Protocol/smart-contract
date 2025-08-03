@@ -142,6 +142,169 @@ contract ChainBalanceManagerTest is Test {
         chainBalanceManager.deposit(address(0), 0);
     }
 
+    function test_UnlockAndClaimETH() public {
+        uint256 depositAmount = 5 ether;
+        uint256 unlockAmount = 2 ether;
+        
+        // Deposit first
+        vm.prank(user1);
+        chainBalanceManager.deposit{value: depositAmount}(address(0), depositAmount);
+        
+        uint256 userBalanceBefore = user1.balance;
+        
+        // Owner unlocks tokens for user
+        vm.prank(owner);
+        chainBalanceManager.unlock(address(0), unlockAmount, user1);
+        
+        assertEq(chainBalanceManager.getBalance(user1, address(0)), depositAmount - unlockAmount);
+        assertEq(chainBalanceManager.getUnlockedBalance(user1, address(0)), unlockAmount);
+        
+        // User claims unlocked tokens
+        vm.prank(user1);
+        chainBalanceManager.claim(address(0), unlockAmount);
+        
+        assertEq(chainBalanceManager.getUnlockedBalance(user1, address(0)), 0);
+        assertEq(user1.balance, userBalanceBefore + unlockAmount);
+    }
+
+    function test_UnlockAndClaimERC20() public {
+        uint256 depositAmount = 1000e6;
+        uint256 unlockAmount = 400e6;
+        
+        vm.prank(owner);
+        chainBalanceManager.addToken(address(mockUSDC));
+        
+        // Deposit first
+        vm.prank(user1);
+        mockUSDC.approve(address(chainBalanceManager), depositAmount);
+        
+        vm.prank(user1);
+        chainBalanceManager.deposit(address(mockUSDC), depositAmount);
+        
+        uint256 userBalanceBefore = mockUSDC.balanceOf(user1);
+        
+        // Owner unlocks tokens for user
+        vm.prank(owner);
+        chainBalanceManager.unlock(address(mockUSDC), unlockAmount, user1);
+        
+        assertEq(chainBalanceManager.getBalance(user1, address(mockUSDC)), depositAmount - unlockAmount);
+        assertEq(chainBalanceManager.getUnlockedBalance(user1, address(mockUSDC)), unlockAmount);
+        
+        // User claims unlocked tokens
+        vm.prank(user1);
+        chainBalanceManager.claim(address(mockUSDC), unlockAmount);
+        
+        assertEq(chainBalanceManager.getUnlockedBalance(user1, address(mockUSDC)), 0);
+        assertEq(mockUSDC.balanceOf(user1), userBalanceBefore + unlockAmount);
+    }
+
+    function test_UnlockRevertIfNotOwner() public {
+        uint256 depositAmount = 5 ether;
+        
+        vm.prank(user1);
+        chainBalanceManager.deposit{value: depositAmount}(address(0), depositAmount);
+        
+        vm.prank(notOwner);
+        vm.expectRevert();
+        chainBalanceManager.unlock(address(0), 1 ether, user1);
+    }
+
+    function test_UnlockRevertIfInsufficientBalance() public {
+        uint256 depositAmount = 5 ether;
+        uint256 unlockAmount = 10 ether;
+        
+        vm.prank(user1);
+        chainBalanceManager.deposit{value: depositAmount}(address(0), depositAmount);
+        
+        vm.prank(owner);
+        vm.expectRevert();
+        chainBalanceManager.unlock(address(0), unlockAmount, user1);
+    }
+
+    function test_UnlockRevertIfZeroAmount() public {
+        vm.prank(owner);
+        vm.expectRevert(IChainBalanceManagerErrors.ZeroAmount.selector);
+        chainBalanceManager.unlock(address(0), 0, user1);
+    }
+    
+    function test_ClaimRevertIfZeroAmount() public {
+        vm.prank(user1);
+        vm.expectRevert(IChainBalanceManagerErrors.ZeroAmount.selector);
+        chainBalanceManager.claim(address(0), 0);
+    }
+    
+    function test_ClaimRevertIfInsufficientUnlockedBalance() public {
+        uint256 depositAmount = 5 ether;
+        uint256 unlockAmount = 2 ether;
+        uint256 claimAmount = 3 ether;
+        
+        // Deposit and unlock
+        vm.prank(user1);
+        chainBalanceManager.deposit{value: depositAmount}(address(0), depositAmount);
+        
+        vm.prank(owner);
+        chainBalanceManager.unlock(address(0), unlockAmount, user1);
+        
+        // Try to claim more than unlocked
+        vm.prank(user1);
+        vm.expectRevert();
+        chainBalanceManager.claim(address(0), claimAmount);
+    }
+    
+    function test_PartialClaim() public {
+        uint256 depositAmount = 10 ether;
+        uint256 unlockAmount = 5 ether;
+        uint256 firstClaimAmount = 2 ether;
+        uint256 secondClaimAmount = 3 ether;
+        
+        // Deposit and unlock
+        vm.prank(user1);
+        chainBalanceManager.deposit{value: depositAmount}(address(0), depositAmount);
+        
+        vm.prank(owner);
+        chainBalanceManager.unlock(address(0), unlockAmount, user1);
+        
+        uint256 userBalanceBefore = user1.balance;
+        
+        // First partial claim
+        vm.prank(user1);
+        chainBalanceManager.claim(address(0), firstClaimAmount);
+        
+        assertEq(chainBalanceManager.getUnlockedBalance(user1, address(0)), unlockAmount - firstClaimAmount);
+        assertEq(user1.balance, userBalanceBefore + firstClaimAmount);
+        
+        // Second partial claim
+        vm.prank(user1);
+        chainBalanceManager.claim(address(0), secondClaimAmount);
+        
+        assertEq(chainBalanceManager.getUnlockedBalance(user1, address(0)), 0);
+        assertEq(user1.balance, userBalanceBefore + unlockAmount);
+    }
+    
+    function test_MultipleUnlocksForSameUser() public {
+        uint256 depositAmount = 10 ether;
+        uint256 firstUnlock = 3 ether;
+        uint256 secondUnlock = 2 ether;
+        
+        // Deposit
+        vm.prank(user1);
+        chainBalanceManager.deposit{value: depositAmount}(address(0), depositAmount);
+        
+        // First unlock
+        vm.prank(owner);
+        chainBalanceManager.unlock(address(0), firstUnlock, user1);
+        
+        assertEq(chainBalanceManager.getUnlockedBalance(user1, address(0)), firstUnlock);
+        assertEq(chainBalanceManager.getBalance(user1, address(0)), depositAmount - firstUnlock);
+        
+        // Second unlock
+        vm.prank(owner);
+        chainBalanceManager.unlock(address(0), secondUnlock, user1);
+        
+        assertEq(chainBalanceManager.getUnlockedBalance(user1, address(0)), firstUnlock + secondUnlock);
+        assertEq(chainBalanceManager.getBalance(user1, address(0)), depositAmount - firstUnlock - secondUnlock);
+    }
+
     function test_WithdrawETH() public {
         uint256 depositAmount = 5 ether;
         uint256 withdrawAmount = 2 ether;
@@ -152,7 +315,7 @@ contract ChainBalanceManagerTest is Test {
         
         uint256 userBalanceBefore = user1.balance;
         
-        // Owner withdraws for user
+        // Owner withdraws for user (seamless option)
         vm.prank(owner);
         chainBalanceManager.withdraw(address(0), withdrawAmount, user1);
         
@@ -176,7 +339,7 @@ contract ChainBalanceManagerTest is Test {
         
         uint256 userBalanceBefore = mockUSDC.balanceOf(user1);
         
-        // Owner withdraws for user
+        // Owner withdraws for user (seamless option)
         vm.prank(owner);
         chainBalanceManager.withdraw(address(mockUSDC), withdrawAmount, user1);
         
@@ -211,6 +374,42 @@ contract ChainBalanceManagerTest is Test {
         vm.prank(owner);
         vm.expectRevert(IChainBalanceManagerErrors.ZeroAmount.selector);
         chainBalanceManager.withdraw(address(0), 0, user1);
+    }
+
+    function test_BothWithdrawMethodsWork() public {
+        uint256 depositAmount = 10 ether;
+        uint256 withdrawAmount = 3 ether;
+        uint256 unlockAmount = 2 ether;
+        uint256 claimAmount = 2 ether;
+        
+        // Deposit
+        vm.prank(user1);
+        chainBalanceManager.deposit{value: depositAmount}(address(0), depositAmount);
+        
+        uint256 userBalanceBefore = user1.balance;
+        
+        // Test traditional withdraw (seamless)
+        vm.prank(owner);
+        chainBalanceManager.withdraw(address(0), withdrawAmount, user1);
+        
+        uint256 balanceAfterWithdraw = chainBalanceManager.getBalance(user1, address(0));
+        uint256 userBalanceAfterWithdraw = user1.balance;
+        
+        // Test unlock/claim method (controlled)
+        vm.prank(owner);
+        chainBalanceManager.unlock(address(0), unlockAmount, user1);
+        
+        vm.prank(user1);
+        chainBalanceManager.claim(address(0), claimAmount);
+        
+        uint256 finalBalance = chainBalanceManager.getBalance(user1, address(0));
+        uint256 finalUserBalance = user1.balance;
+        
+        // Verify both methods work correctly
+        assertEq(balanceAfterWithdraw, depositAmount - withdrawAmount);
+        assertEq(userBalanceAfterWithdraw, userBalanceBefore + withdrawAmount);
+        assertEq(finalBalance, depositAmount - withdrawAmount - unlockAmount);
+        assertEq(finalUserBalance, userBalanceBefore + withdrawAmount + claimAmount);
     }
 
     function test_MultipleUsersDeposits() public {

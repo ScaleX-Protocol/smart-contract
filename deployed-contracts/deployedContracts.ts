@@ -18,7 +18,7 @@ interface DeployedContracts {
 export const deployedContracts: DeployedContracts = {
   31337: {
     BalanceManager: {
-      address: "0x5e6cb7e728e1c320855587e1d9c6f7972ebdd6d5",
+      address: "0x82e01223d51eb87e16a03e24687edf0f294da6f1",
       abi: [
         {
           type: "constructor",
@@ -889,7 +889,7 @@ export const deployedContracts: DeployedContracts = {
       },
     },
     UpgradeableBeacon: {
-      address: "0x512f7469bcc83089497506b5df64c6e246b39925",
+      address: "0x1429859428c0abc9c2c47c8ee9fbaf82cfa0f20f",
       abi: [
         {
           type: "constructor",
@@ -1044,7 +1044,7 @@ export const deployedContracts: DeployedContracts = {
       },
     },
     PoolManager: {
-      address: "0x0dd99d9f56a14e9d53b2ddc62d9f0babe806647a",
+      address: "0x7969c5ed335650692bc04293b07f5bf2e7a673c0",
       abi: [
         {
           type: "constructor",
@@ -1700,7 +1700,7 @@ export const deployedContracts: DeployedContracts = {
       },
     },
     GTXRouter: {
-      address: "0x95775fd3afb1f4072794ca4dda27f2444bcf8ac3",
+      address: "0xc351628eb244ec633d5f21fbd6621e1a683b1181",
       abi: [
         {
           type: "constructor",
@@ -2748,7 +2748,7 @@ export const deployedContracts: DeployedContracts = {
       },
     },
     OrderBook: {
-      address: "0xd3ffd73c53f139cebb80b6a524be280955b3f4db",
+      address: "0xcbeaf3bde82155f56486fb5a1072cb8baaf547cc",
       abi: [
         {
           type: "constructor",
@@ -3810,7 +3810,7 @@ export const deployedContracts: DeployedContracts = {
       },
     },
     PoolManagerResolver: {
-      address: "0x9fd16ea9e31233279975d99d5e8fc91dd214c7da",
+      address: "0xb0d4afd8879ed9f52b28595d31b441d079b2ca07",
       abi: [
         {
           type: "constructor",
@@ -3908,7 +3908,7 @@ export const deployedContracts: DeployedContracts = {
       inheritedFunctions: {},
     },
     BeaconProxy: {
-      address: "0xb932c8342106776e73e39d695f3ffc3a9624ece0",
+      address: "0x5081a39b8a5f0e35a8d959395a630b68b74dd30f",
       abi: [
         {
           type: "constructor",

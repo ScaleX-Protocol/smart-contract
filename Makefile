@@ -11,7 +11,7 @@ flag ?=
 # Custom network can be set via make network=<network_name>
 network ?= $(DEFAULT_NETWORK)
 
-.PHONY: account chain compile deploy deploy-verify flatten fork format generate lint test verify upgrade upgrade-verify full-integration simple-integration simple-demo swap deploy-chain-balance-manager add-tokens-chain-balance-manager add-single-token-chain-balance-manager remove-single-token-chain-balance-manager list-tokens-chain-balance-manager test-chain-balance-manager
+.PHONY: account chain compile deploy deploy-verify flatten fork format generate lint test verify upgrade upgrade-verify full-integration simple-integration simple-demo swap deploy-chain-balance-manager add-tokens-chain-balance-manager add-single-token-chain-balance-manager remove-single-token-chain-balance-manager list-tokens-chain-balance-manager test-chain-balance-manager fill-orderbook-tokens market-orderbook-tokens
 
 # Helper function to run forge script
 define forge_script
@@ -36,6 +36,14 @@ define forge_place_market_mock_orderbook
 	forge script script/PlaceMarketMockOrderBook.s.sol:PlaceMarketMockOrderBook --rpc-url $(network) --broadcast $(flag)
 endef
 
+define forge_fill_orderbook_with_tokens
+	forge script script/FillMockOrderBook.s.sol:FillMockOrderBook --sig "runWithTokens(string,string)" "$(token0)" "$(token1)" --rpc-url $(network) --broadcast $(flag)
+endef
+
+define forge_market_orderbook_with_tokens
+	forge script script/PlaceMarketMockOrderBook.s.sol:PlaceMarketMockOrderBook --sig "runWithTokens(string,string)" "$(token0)" "$(token1)" --rpc-url $(network) --broadcast $(flag)
+endef
+
 define forge_swap
 	forge script script/Swap.s.sol:Swap --rpc-url $(network) --broadcast $(flag)
 endef
@@ -49,11 +57,23 @@ define forge_simple_market_order_demo
 endef
 
 define forge_deploy_chain_balance_manager
-	forge script script/DeployChainBalanceManagerSimple.s.sol:DeployChainBalanceManagerSimple --rpc-url $(network) --broadcast $(flag)
+	forge script script/DeployChainBalanceManager.s.sol:DeployChainBalanceManager --rpc-url $(network) --broadcast $(flag)
 endef
 
 define forge_add_tokens_chain_balance_manager
 	forge script script/AddTokensToChainBalanceManager.s.sol:AddTokensToChainBalanceManager --rpc-url $(network) --broadcast $(flag)
+endef
+
+define forge_test_chain_balance_manager_unlock_claim
+	forge script script/TestChainBalanceManagerUnlockClaim.s.sol:TestChainBalanceManagerUnlockClaim --rpc-url $(network) --broadcast $(flag)
+endef
+
+define forge_test_chain_balance_manager_simple
+	forge script script/TestChainBalanceManagerSimple.s.sol:TestChainBalanceManagerSimple --rpc-url $(network) --broadcast $(flag)
+endef
+
+define forge_test_chain_balance_manager_basic
+	forge script script/TestChainBalanceManagerBasic.s.sol:TestChainBalanceManagerBasic --rpc-url $(network) --broadcast $(flag)
 endef
 
 # Define a target to deploy using the specified network
@@ -92,6 +112,14 @@ fill-orderbook:
 market-orderbook:
 	$(call forge_place_market_mock_orderbook,)
 
+# Define a target to fill orderbook with specific tokens
+fill-orderbook-tokens:
+	$(call forge_fill_orderbook_with_tokens,)
+
+# Define a target to place market orders with specific tokens
+market-orderbook-tokens:
+	$(call forge_market_orderbook_with_tokens,)
+
 # Define a target to execute swaps
 swap:
 	$(call forge_swap,)
@@ -127,6 +155,18 @@ list-tokens-chain-balance-manager:
 # Test ChainBalanceManager
 test-chain-balance-manager:
 	forge test --match-contract ChainBalanceManagerTest -v
+
+# Test ChainBalanceManager unlock/claim functionality with deployment
+test-chain-balance-manager-unlock-claim:
+	$(call forge_test_chain_balance_manager_unlock_claim,)
+
+# Test ChainBalanceManager simple test (deploys own mock tokens)
+test-chain-balance-manager-simple:
+	$(call forge_test_chain_balance_manager_simple,)
+
+# Test ChainBalanceManager basic functionality
+test-chain-balance-manager-basic:
+	$(call forge_test_chain_balance_manager_basic,)
 
 # Define a target to run simple integration (deploy, deploy-mocks, simple demo)
 simple-integration:
@@ -217,6 +257,8 @@ help:
 	@echo "  deploy-mocks-verify - Deploy and verify mock contracts"
 	@echo "  fill-orderbook  - Fill mock order book"
 	@echo "  market-orderbook - Place market orders in mock order book"
+	@echo "  fill-orderbook-tokens - Fill orderbook with specific tokens (usage: make fill-orderbook-tokens token0=MOCK_TOKEN_WETH token1=MOCK_TOKEN_USDC)"
+	@echo "  market-orderbook-tokens - Place market orders with specific tokens (usage: make market-orderbook-tokens token0=MOCK_TOKEN_WETH token1=MOCK_TOKEN_USDC)"
 	@echo "  swap            - Execute token swaps"
 	@echo "  mint-tokens     - Mint tokens to specified recipient"
 	@echo "  simple-demo     - Run simple market order demonstration"
@@ -231,6 +273,7 @@ help:
 	@echo "  remove-single-token-chain-balance-manager - Remove single token (usage: make remove-single-token-chain-balance-manager token=0x...)"
 	@echo "  list-tokens-chain-balance-manager - List all whitelisted tokens"
 	@echo "  test-chain-balance-manager - Run ChainBalanceManager tests"
+	@echo "  test-chain-balance-manager-unlock-claim - Test unlock/claim functionality with deployed contracts"
 	@echo "  compile         - Compile the contracts"
 	@echo "  test            - Run tests"
 	@echo "  lint            - Lint the code"

@@ -90,6 +90,53 @@ contract FillMockOrderBook is Script, DeployHelpers {
        console.log("- SELL orders from 2000 USDC to 2100 USDC");
    }
 
+   function runWithTokens(string memory token0Key, string memory token1Key) public {
+       loadDeployments();
+       
+       // Load token addresses from deployment file
+       address token0Address = deployed[token0Key].addr;
+       address token1Address = deployed[token1Key].addr;
+       
+       require(token0Address != address(0), string(abi.encodePacked("Token not found: ", token0Key)));
+       require(token1Address != address(0), string(abi.encodePacked("Token not found: ", token1Key)));
+       
+       console.log("Using tokens:");
+       console.log("Token0 (%s):", token0Key, token0Address);
+       console.log("Token1 (%s):", token1Key, token1Address);
+       
+       // Load core contracts
+       balanceManager = BalanceManager(deployed[BALANCE_MANAGER_ADDRESS].addr);
+       poolManager = PoolManager(deployed[POOL_MANAGER_ADDRESS].addr);
+       gtxRouter = GTXRouter(deployed[GTX_ROUTER_ADDRESS].addr);
+       
+       // Use the provided tokens instead of hardcoded ones
+       mockWETH = MockWETH(payable(token0Address));
+       mockUSDC = MockUSDC(token1Address);
+       
+       // Deploy the resolver
+       poolManagerResolver = new PoolManagerResolver();
+       
+       // Get currency objects
+       Currency weth = Currency.wrap(address(mockWETH));
+       Currency usdc = Currency.wrap(address(mockUSDC));
+
+       // Get the pool using the resolver
+       IPoolManager.Pool memory pool = poolManagerResolver.getPool(weth, usdc, address(poolManager));
+
+       // Setup sender with funds
+       _setupFunds(200e18, 400_000e6); // 200 ETH, 400,000 USDC
+
+       // Place BUY orders (bids) - ascending price from 1900 to 1980
+       _placeBuyOrders(pool, 1900e6, 1980e6, 10e6, 10, 5e17);
+
+       // Place SELL orders (asks) - ascending price from 2000 to 2100
+       _placeSellOrders(pool, 2000e6, 2100e6, 10e6, 10, 4e17);
+       
+       console.log("Order book filled with custom tokens:");
+       console.log("Token0 (%s):", token0Key, token0Address);
+       console.log("Token1 (%s):", token1Key, token1Address);
+   }
+
    function _setupFunds(uint256 ethAmount, uint256 usdcAmount) private {
        console.log("\n=== Setting up funds ===");
        console.log("Minting ETH amount:", ethAmount, "(raw)");

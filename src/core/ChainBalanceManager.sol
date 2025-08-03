@@ -9,7 +9,8 @@ import {Currency} from "./libraries/Currency.sol";
 import {IChainBalanceManager} from "./interfaces/IChainBalanceManager.sol";
 
 contract ChainBalanceManager is IChainBalanceManager, OwnableUpgradeable, ReentrancyGuardUpgradeable {
-    mapping(address => mapping(address => uint256)) public balanceOf; // user => token => balance
+    mapping(address => mapping(address => uint256)) public balanceOf; 
+    mapping(address => mapping(address => uint256)) public unlockedBalanceOf; 
     mapping(address => bool) public whitelistedTokens;
     address[] public tokenList;
 
@@ -79,6 +80,21 @@ contract ChainBalanceManager is IChainBalanceManager, OwnableUpgradeable, Reentr
         emit Deposit(msg.sender, token, amount);
     }
 
+    function unlock(address token, uint256 amount, address user) external onlyOwner {
+        if (amount == 0) {
+            revert ZeroAmount();
+        }
+
+        if (balanceOf[user][token] < amount) {
+            revert InsufficientBalance(user, uint256(uint160(token)), amount, balanceOf[user][token]);
+        }
+
+        balanceOf[user][token] -= amount;
+        unlockedBalanceOf[user][token] += amount;
+
+        emit Unlock(user, token, amount);
+    }
+
     function withdraw(address token, uint256 amount, address user) external onlyOwner nonReentrant {
         if (amount == 0) {
             revert ZeroAmount();
@@ -101,8 +117,32 @@ contract ChainBalanceManager is IChainBalanceManager, OwnableUpgradeable, Reentr
         emit Withdraw(user, token, amount);
     }
 
+    function claim(address token, uint256 amount) external nonReentrant {
+        if (amount == 0) {
+            revert ZeroAmount();
+        }
+
+        if (unlockedBalanceOf[msg.sender][token] < amount) {
+            revert InsufficientUnlockedBalance(msg.sender, uint256(uint160(token)), amount, unlockedBalanceOf[msg.sender][token]);
+        }
+
+        unlockedBalanceOf[msg.sender][token] -= amount;
+
+        if (token == address(0)) {
+            payable(msg.sender).transfer(amount);
+        } else {
+            IERC20(token).transfer(msg.sender, amount);
+        }
+
+        emit Claim(msg.sender, token, amount);
+    }
+
     function getBalance(address user, address token) external view returns (uint256) {
         return balanceOf[user][token];
+    }
+
+    function getUnlockedBalance(address user, address token) external view returns (uint256) {
+        return unlockedBalanceOf[user][token];
     }
 
     function isTokenWhitelisted(address token) external view returns (bool) {

@@ -115,6 +115,53 @@ contract PlaceMarketMockOrderBook is Script, DeployHelpers {
        console.log("- 5 market SELL orders (selling ETH for USDC)");
    }
 
+   function runWithTokens(string memory token0Key, string memory token1Key) public {
+       loadDeployments();
+       
+       // Load token addresses from deployment file
+       address token0Address = deployed[token0Key].addr;
+       address token1Address = deployed[token1Key].addr;
+       
+       require(token0Address != address(0), string(abi.encodePacked("Token not found: ", token0Key)));
+       require(token1Address != address(0), string(abi.encodePacked("Token not found: ", token1Key)));
+       
+       console.log("Using tokens:");
+       console.log("Token0 (%s):", token0Key, token0Address);
+       console.log("Token1 (%s):", token1Key, token1Address);
+       
+       // Load core contracts
+       balanceManager = BalanceManager(deployed[BALANCE_MANAGER_ADDRESS].addr);
+       poolManager = PoolManager(deployed[POOL_MANAGER_ADDRESS].addr);
+       gtxRouter = GTXRouter(deployed[GTX_ROUTER_ADDRESS].addr);
+       
+       // Use the provided tokens instead of hardcoded ones
+       mockWETH = MockWETH(payable(token0Address));
+       mockUSDC = MockUSDC(token1Address);
+       
+       // Deploy the resolver
+       poolManagerResolver = new PoolManagerResolver();
+       
+       // Get currency objects
+       Currency weth = Currency.wrap(address(mockWETH));
+       Currency usdc = Currency.wrap(address(mockUSDC));
+
+       // Get the pool using the resolver
+       IPoolManager.Pool memory pool = poolManagerResolver.getPool(weth, usdc, address(poolManager));
+
+       // Setup sender with funds
+       _setupFunds(200e18, 400_000e6); // 200 ETH, 400,000 USDC
+
+       // Place market orders
+       _placeMarketBuyOrders(pool, 5); // 5 buy orders
+       _placeMarketSellOrders(pool, 1); // 5 sell orders
+       
+       console.log("\nMarket orders placed with custom tokens:");
+       console.log("Token0 (%s):", token0Key, token0Address);
+       console.log("Token1 (%s):", token1Key, token1Address);
+       console.log("- Market BUY orders placed");
+       console.log("- Market SELL orders placed");
+   }
+
    function _setupFunds(uint256 ethAmount, uint256 usdcAmount) private {
        // Mint tokens directly to sender
        mockWETH.mint(deployerAddress, ethAmount);
