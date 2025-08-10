@@ -3,6 +3,7 @@ pragma solidity ^0.8.26;
 import {IMessageRecipient} from "./interfaces/IMessageRecipient.sol";
 import {ISyntheticERC20} from "./interfaces/ISyntheticERC20.sol";
 import {IMailbox} from "./interfaces/IMailbox.sol";
+import {IBalanceManager} from "../core/interfaces/IBalanceManager.sol";
 import { TypeCasts } from "./libraries/TypeCasts.sol";
 
 contract BridgeSyntheticTokenSender {
@@ -30,6 +31,11 @@ contract BridgeSyntheticTokenSender {
         address token,
         uint256 amount
     ) external payable returns (bytes32) {
+        IBalanceManager(balanceManager).withdraw(
+            Currency.wrap(token),
+            amount,
+            user
+        );
         ISyntheticERC20(token).burn(msg.sender, amount);
 
         bytes memory messageBody = abi.encode(token, user, amount);
