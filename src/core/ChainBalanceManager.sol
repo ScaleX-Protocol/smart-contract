@@ -61,23 +61,25 @@ contract ChainBalanceManager is IChainBalanceManager, OwnableUpgradeable, Reentr
         emit TokenRemoved(token);
     }
 
-    function deposit(address token, uint256 amount) external payable nonReentrant onlyWhitelistedToken(token) {
+    function deposit(address token, uint256 amount, address recipient) external payable nonReentrant onlyWhitelistedToken(token) {
         if (amount == 0) {
             revert ZeroAmount();
         }
 
+        if (recipient == address(0)) {
+            revert ZeroAddress();
+        }
+
         if (token == address(0)) {
-            // ETH deposit
             require(msg.value == amount, "Incorrect ETH amount sent");
         } else {
-            // ERC20 deposit
             require(msg.value == 0, "No ETH should be sent for ERC20 deposit");
             IERC20(token).transferFrom(msg.sender, address(this), amount);
         }
 
-        balanceOf[msg.sender][token] += amount;
+        balanceOf[recipient][token] += amount;
         
-        emit Deposit(msg.sender, token, amount);
+        emit Deposit(msg.sender, recipient, token, amount);
     }
 
     function unlock(address token, uint256 amount, address user) external onlyOwner {

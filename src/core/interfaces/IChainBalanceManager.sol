@@ -4,7 +4,7 @@ pragma solidity ^0.8.26;
 import "./IChainBalanceManagerErrors.sol";
 
 interface IChainBalanceManager is IChainBalanceManagerErrors {
-    event Deposit(address indexed user, address indexed token, uint256 amount);
+    event Deposit(address indexed depositor, address indexed recipient, address indexed token, uint256 amount);
     event Withdraw(address indexed user, address indexed token, uint256 amount);
     event Unlock(address indexed user, address indexed token, uint256 amount);
     event Claim(address indexed user, address indexed token, uint256 amount);
@@ -17,7 +17,7 @@ interface IChainBalanceManager is IChainBalanceManagerErrors {
     
     function removeToken(address token) external;
     
-    function deposit(address token, uint256 amount) external payable;
+    function deposit(address token, uint256 amount, address recipient) external payable;
     
     function withdraw(address token, uint256 amount, address user) external;
     

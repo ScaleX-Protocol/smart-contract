@@ -10,7 +10,7 @@ import "../src/core/PoolManager.sol";
 import "../src/mocks/MockToken.sol";
 import "../src/mocks/MockUSDC.sol";
 import "../src/mocks/MockWETH.sol";
-import "../src/resolvers/PoolManagerResolver.sol";
+// import "../src/resolvers/PoolManagerResolver.sol"; // File not found
 
 contract DebugLimitOrder is Script, DeployHelpers {
     string constant BALANCE_MANAGER_ADDRESS = "PROXY_BALANCEMANAGER";
@@ -22,14 +22,14 @@ contract DebugLimitOrder is Script, DeployHelpers {
     BalanceManager balanceManager;
     PoolManager poolManager;
     GTXRouter gtxRouter;
-    PoolManagerResolver poolManagerResolver;
+    // PoolManagerResolver poolManagerResolver; // File not found
     MockWETH mockWETH;
     MockUSDC mockUSDC;
 
     function setUp() public {
         loadDeployments();
         loadContracts();
-        poolManagerResolver = new PoolManagerResolver();
+        // poolManagerResolver = new PoolManagerResolver(); // File not found
     }
 
     function loadContracts() private {
@@ -58,7 +58,7 @@ contract DebugLimitOrder is Script, DeployHelpers {
         console.log("Base currency:", Currency.unwrap(baseCurrency));
         console.log("Quote currency:", Currency.unwrap(quoteCurrency));
         console.log("Order book:", address(pool.orderBook));
-        console.log("Price:", 4000000000);
+        console2.log("Price:", 4000000000);
         console.log("Quantity:", 1000000000000000000);
         console.log("Side: BUY (0)");
         console.log("Deposit amount:", 4000000000);
