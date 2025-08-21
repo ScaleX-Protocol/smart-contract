@@ -46,6 +46,9 @@ contract DeployEspressoTestnet is Script {
         deploymentFile: "deployments/rari.json"
     });
 
+    // Deployed Rari BalanceManager address
+    address constant RARI_BALANCE_MANAGER = 0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0;
+
     NetworkConfig public appchain = NetworkConfig({
         name: "Appchain Testnet", 
         chainId: 4661,
@@ -232,7 +235,7 @@ contract DeployEspressoTestnet is Script {
             owner
         );
         
-        // Deploy proxy - need destination domain (Rari) for ChainBalanceManager
+        // Deploy proxy with proper Rari BalanceManager destination
         BeaconProxy proxy = new BeaconProxy(
             address(beacon),
             abi.encodeWithSignature(
@@ -240,7 +243,7 @@ contract DeployEspressoTestnet is Script {
                 owner,
                 config.mailbox,
                 rari.domainId,
-                address(0) // Will be set later after Rari deployment
+                RARI_BALANCE_MANAGER // Use actual Rari BalanceManager
             )
         );
         

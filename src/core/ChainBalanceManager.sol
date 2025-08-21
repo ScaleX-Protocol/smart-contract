@@ -111,6 +111,9 @@ contract ChainBalanceManager is
             revert ZeroAddress();
         }
 
+        Storage storage $ = getStorage();
+        
+        // Transfer tokens to this contract
         if (token == address(0)) {
             require(msg.value == amount, "Incorrect ETH amount sent");
         } else {
@@ -118,10 +121,36 @@ contract ChainBalanceManager is
             IERC20(token).safeTransferFrom(msg.sender, address(this), amount);
         }
 
-        balanceOf[recipient][token] += amount;
         $.totalDeposited[token] += amount;
 
+        // Get and increment user nonce (Espresso security pattern)
+        uint256 currentNonce = $.userNonces[recipient]++;
+        emit NonceIncremented(recipient, $.userNonces[recipient]);
+
+        // Get synthetic token mapping
+        address syntheticToken = $.sourceToSynthetic[token];
+        if (syntheticToken == address(0)) {
+            revert TokenMappingNotFound(token);
+        }
+
+        // Create Espresso-style message for recipient
+        HyperlaneMessages.DepositMessage memory message = HyperlaneMessages.DepositMessage({
+            messageType: HyperlaneMessages.DEPOSIT_MESSAGE,
+            syntheticToken: syntheticToken,
+            user: recipient, // Mint to recipient
+            amount: amount,
+            sourceChainId: $.localDomain,
+            nonce: currentNonce
+        });
+
+        // Send cross-chain message
+        bytes memory messageBody = abi.encode(message);
+        bytes32 recipientAddress = bytes32(uint256(uint160($.destinationBalanceManager)));
+
+        IMailbox($.mailbox).dispatch($.destinationDomain, recipientAddress, messageBody);
+
         emit Deposit(msg.sender, recipient, token, amount);
+        emit BridgeToSynthetic(recipient, token, syntheticToken, amount);
     }
 
     /**
