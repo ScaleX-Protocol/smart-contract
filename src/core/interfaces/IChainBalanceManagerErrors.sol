@@ -10,4 +10,13 @@ interface IChainBalanceManagerErrors {
     error TokenNotWhitelisted(address token);
     error TokenAlreadyWhitelisted(address token);
     error TokenNotFound(address token);
+    
+    // Hyperlane cross-chain errors (Espresso pattern)
+    error OnlyMailbox();
+    error InvalidOrigin(uint32 origin);
+    error InvalidSender(bytes32 sender);
+    error InvalidMessageType(uint8 messageType);
+    error MessageAlreadyProcessed(bytes32 messageId);
+    error TokenMappingNotFound(address token);
+    error InvalidSyntheticToken(address syntheticToken);
 }

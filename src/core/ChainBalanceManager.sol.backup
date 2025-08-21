@@ -1,40 +1,38 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.26;
 
-import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
-
+import {OwnableUpgradeable} from "../../lib/openzeppelin-contracts-upgradeable/contracts/access/OwnableUpgradeable.sol";
+import {ReentrancyGuardUpgradeable} from "../../lib/openzeppelin-contracts-upgradeable/contracts/utils/ReentrancyGuardUpgradeable.sol";
 import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
-import {ReentrancyGuardUpgradeable} from "@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardUpgradeable.sol";
+import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
 import {IChainBalanceManager} from "./interfaces/IChainBalanceManager.sol";
-
-import {IMailbox} from "./interfaces/IMailbox.sol";
 import {IMessageRecipient} from "./interfaces/IMessageRecipient.sol";
+import {IMailbox} from "./interfaces/IMailbox.sol";
 import {Currency} from "./libraries/Currency.sol";
 import {HyperlaneMessages} from "./libraries/HyperlaneMessages.sol";
 import {ChainBalanceManagerStorage} from "./storages/ChainBalanceManagerStorage.sol";
 
 /**
- * @title ChainBalanceManager
+ * @title ChainBalanceManagerUpgradeable
  * @dev Upgradeable vault contract for source chains with Espresso Hyperlane integration
  * Follows proven patterns from the working Espresso testnet implementation
  */
-contract ChainBalanceManager is
+contract ChainBalanceManagerUpgradeable is 
     IChainBalanceManager,
     IMessageRecipient,
     ChainBalanceManagerStorage,
-    OwnableUpgradeable,
-    ReentrancyGuardUpgradeable
+    OwnableUpgradeable, 
+    ReentrancyGuardUpgradeable,
+    UUPSUpgradeable 
 {
     using HyperlaneMessages for *;
     using SafeERC20 for IERC20;
 
     // Additional events not in interface
-    event BridgeToSynthetic(
-        address indexed user, address indexed sourceToken, address indexed syntheticToken, uint256 amount
-    );
+    event BridgeToSynthetic(address indexed user, address indexed sourceToken, address indexed syntheticToken, uint256 amount);
     event WithdrawMessageReceived(address indexed user, address indexed token, uint256 amount);
     event TokenMappingSet(address indexed sourceToken, address indexed syntheticToken);
     event NonceIncremented(address indexed user, uint256 newNonce);
@@ -53,34 +51,34 @@ contract ChainBalanceManager is
     ) public initializer {
         __Ownable_init(_owner);
         __ReentrancyGuard_init();
+        __UUPSUpgradeable_init();
 
         Storage storage $ = getStorage();
         $.mailbox = _mailbox;
         $.destinationDomain = _destinationDomain;
         $.destinationBalanceManager = _destinationBalanceManager;
-
+        
         // Set local domain based on known Espresso domains
-        if (_destinationDomain == 1_918_988_905) {
+        if (_destinationDomain == 1918988905) {
             // If destination is Rari, we're on Appchain
             $.localDomain = 4661;
         } else {
             // Default to Arbitrum Sepolia
-            $.localDomain = 421_614;
+            $.localDomain = 421614;
         }
     }
-
+    
     // Legacy interface compatibility - use overloading
-    function initialize(
-        address _owner
-    ) external override {
+    function initialize(address _owner) external override {
         revert("Use initialize with full parameters");
     }
 
-    modifier onlyWhitelistedToken(
-        address token
-    ) {
+    function _authorizeUpgrade(address newImplementation) internal override onlyOwner {}
+
+    modifier onlyWhitelistedToken(Currency currency) {
         Storage storage $ = getStorage();
-        if (!$.whitelistedTokens[token] && token != address(0)) {
+        address token = Currency.unwrap(currency);
+        if (!$.whitelistedTokens[token] && !currency.isAddressZero()) {
             revert TokenNotWhitelisted(token);
         }
         _;
@@ -98,49 +96,58 @@ contract ChainBalanceManager is
     //                     CORE VAULT FUNCTIONS
     // =============================================================
 
-    function deposit(
-        address token,
-        uint256 amount,
-        address recipient
-    ) external payable nonReentrant onlyWhitelistedToken(token) {
-        if (amount == 0) {
-            revert ZeroAmount();
-        }
+    /**
+     * @dev Deposit tokens into the vault (Espresso pattern)
+     */
+    function deposit(Currency currency, uint256 amount) 
+        external 
+        payable 
+        nonReentrant 
+        onlyWhitelistedToken(currency) 
+    {
+        if (amount == 0) revert ZeroAmount();
 
-        if (recipient == address(0)) {
-            revert ZeroAddress();
-        }
+        Storage storage $ = getStorage();
+        address token = Currency.unwrap(currency);
 
-        if (token == address(0)) {
+        if (currency.isAddressZero()) {
+            // ETH deposit
             require(msg.value == amount, "Incorrect ETH amount sent");
         } else {
+            // ERC20 deposit
             require(msg.value == 0, "No ETH should be sent for ERC20 deposit");
-            IERC20(token).safeTransferFrom(msg.sender, address(this), amount);
+            currency.transferFrom(msg.sender, address(this), amount);
         }
 
-        balanceOf[recipient][token] += amount;
+        $.balanceOf[msg.sender][token] += amount;
         $.totalDeposited[token] += amount;
-
-        emit Deposit(msg.sender, recipient, token, amount);
+        
+        emit Deposit(msg.sender, token, amount);
     }
 
     /**
      * @dev Bridge tokens to synthetic tokens on Rari (Espresso pattern)
      */
-    function bridgeToSynthetic(address token, uint256 amount) external nonReentrant {
-        if (amount == 0) {
-            revert ZeroAmount();
-        }
+    function bridgeToSynthetic(Currency currency, uint256 amount) 
+        external 
+        nonReentrant 
+    {
+        if (amount == 0) revert ZeroAmount();
 
         Storage storage $ = getStorage();
-
+        
         if ($.balanceOf[msg.sender][token] < amount) {
-            revert InsufficientBalance(msg.sender, uint256(uint160(token)), amount, $.balanceOf[msg.sender][token]);
+            revert InsufficientBalance(
+                msg.sender, 
+                uint256(uint160(token)), 
+                amount, 
+                $.balanceOf[msg.sender][token]
+            );
         }
 
         // Lock tokens by reducing user balance
         $.balanceOf[msg.sender][token] -= amount;
-
+        
         // Get and increment user nonce (Espresso security pattern)
         uint256 currentNonce = $.userNonces[msg.sender]++;
         emit NonceIncremented(msg.sender, $.userNonces[msg.sender]);
@@ -152,7 +159,7 @@ contract ChainBalanceManager is
         }
 
         // Create Espresso-style message
-        HyperlaneMessages.DepositMessage memory message = HyperlaneMessages.DepositMessage({
+        HyperlaneMessages.DepositNotification memory message = HyperlaneMessages.DepositNotification({
             messageType: HyperlaneMessages.DEPOSIT_MESSAGE,
             syntheticToken: syntheticToken,
             user: msg.sender,
@@ -174,17 +181,17 @@ contract ChainBalanceManager is
      * @dev Handle cross-chain messages from Rari (Espresso pattern)
      */
     function handle(
-        uint32 _origin,
-        bytes32 _sender,
+        uint32 _origin, 
+        bytes32 _sender, 
         bytes calldata _messageBody
     ) external payable override onlyMailbox nonReentrant {
         Storage storage $ = getStorage();
-
+        
         // Verify origin and sender (Espresso security pattern)
         if (_origin != $.destinationDomain) {
             revert InvalidOrigin(_origin);
         }
-
+        
         if (_sender != bytes32(uint256(uint160($.destinationBalanceManager)))) {
             revert InvalidSender(_sender);
         }
@@ -198,7 +205,7 @@ contract ChainBalanceManager is
 
         // Process message based on type
         uint8 messageType = HyperlaneMessages.decodeMessageType(_messageBody);
-
+        
         if (messageType == HyperlaneMessages.WITHDRAW_MESSAGE) {
             _handleWithdrawMessage(_messageBody);
         } else {
@@ -209,12 +216,11 @@ contract ChainBalanceManager is
     /**
      * @dev Handle withdrawal message from Rari (unlock tokens)
      */
-    function _handleWithdrawMessage(
-        bytes calldata _messageBody
-    ) internal {
+    function _handleWithdrawMessage(bytes calldata _messageBody) internal {
         Storage storage $ = getStorage();
-
-        HyperlaneMessages.WithdrawMessage memory message = HyperlaneMessages.decodeWithdrawMessage(_messageBody);
+        
+        HyperlaneMessages.WithdrawMessage memory message = 
+            HyperlaneMessages.decodeWithdrawMessage(_messageBody);
 
         // Get source token from synthetic token mapping
         address sourceToken = $.syntheticToSource[message.syntheticToken];
@@ -233,15 +239,16 @@ contract ChainBalanceManager is
      * @dev Claim unlocked tokens (Espresso pattern)
      */
     function claim(address token, uint256 amount) external nonReentrant {
-        if (amount == 0) {
-            revert ZeroAmount();
-        }
+        if (amount == 0) revert ZeroAmount();
 
         Storage storage $ = getStorage();
-
+        
         if ($.unlockedBalanceOf[msg.sender][token] < amount) {
             revert InsufficientUnlockedBalance(
-                msg.sender, uint256(uint160(token)), amount, $.unlockedBalanceOf[msg.sender][token]
+                msg.sender,
+                uint256(uint160(token)),
+                amount,
+                $.unlockedBalanceOf[msg.sender][token]
             );
         }
 
@@ -260,15 +267,22 @@ contract ChainBalanceManager is
     /**
      * @dev Direct withdrawal from deposited balance (owner only - for emergencies)
      */
-    function withdraw(address token, uint256 amount, address user) external onlyOwner nonReentrant {
-        if (amount == 0) {
-            revert ZeroAmount();
-        }
+    function withdraw(address token, uint256 amount, address user) 
+        external 
+        onlyOwner 
+        nonReentrant 
+    {
+        if (amount == 0) revert ZeroAmount();
 
         Storage storage $ = getStorage();
-
+        
         if ($.balanceOf[user][token] < amount) {
-            revert InsufficientBalance(user, uint256(uint160(token)), amount, $.balanceOf[user][token]);
+            revert InsufficientBalance(
+                user,
+                uint256(uint160(token)),
+                amount,
+                $.balanceOf[user][token]
+            );
         }
 
         $.balanceOf[user][token] -= amount;
@@ -285,15 +299,21 @@ contract ChainBalanceManager is
     /**
      * @dev Unlock tokens for withdrawal (owner only - for cross-chain unlocks)
      */
-    function unlock(address token, uint256 amount, address user) external onlyOwner {
-        if (amount == 0) {
-            revert ZeroAmount();
-        }
+    function unlock(address token, uint256 amount, address user) 
+        external 
+        onlyOwner 
+    {
+        if (amount == 0) revert ZeroAmount();
 
         Storage storage $ = getStorage();
-
+        
         if ($.balanceOf[user][token] < amount) {
-            revert InsufficientBalance(user, uint256(uint160(token)), amount, $.balanceOf[user][token]);
+            revert InsufficientBalance(
+                user,
+                uint256(uint160(token)),
+                amount,
+                $.balanceOf[user][token]
+            );
         }
 
         $.balanceOf[user][token] -= amount;
@@ -309,35 +329,31 @@ contract ChainBalanceManager is
     /**
      * @dev Add token to whitelist
      */
-    function addToken(
-        address token
-    ) external onlyOwner {
+    function addToken(address token) external onlyOwner {
         Storage storage $ = getStorage();
-
+        
         if ($.whitelistedTokens[token]) {
             revert TokenAlreadyWhitelisted(token);
         }
-
+        
         $.whitelistedTokens[token] = true;
         $.tokenList.push(token);
-
+        
         emit TokenWhitelisted(token);
     }
 
     /**
      * @dev Remove token from whitelist
      */
-    function removeToken(
-        address token
-    ) external onlyOwner {
+    function removeToken(address token) external onlyOwner {
         Storage storage $ = getStorage();
-
+        
         if (!$.whitelistedTokens[token]) {
             revert TokenNotFound(token);
         }
-
+        
         $.whitelistedTokens[token] = false;
-
+        
         // Remove from tokenList array
         for (uint256 i = 0; i < $.tokenList.length; i++) {
             if ($.tokenList[i] == token) {
@@ -346,7 +362,7 @@ contract ChainBalanceManager is
                 break;
             }
         }
-
+        
         emit TokenRemoved(token);
     }
 
@@ -355,22 +371,25 @@ contract ChainBalanceManager is
      */
     function setTokenMapping(address sourceToken, address syntheticToken) external onlyOwner {
         Storage storage $ = getStorage();
-
+        
         $.sourceToSynthetic[sourceToken] = syntheticToken;
         $.syntheticToSource[syntheticToken] = sourceToken;
-
+        
         emit TokenMappingSet(sourceToken, syntheticToken);
     }
 
     /**
      * @dev Update cross-chain configuration
      */
-    function updateCrossChainConfig(uint32 _destinationDomain, address _destinationBalanceManager) external onlyOwner {
+    function updateCrossChainConfig(uint32 _destinationDomain, address _destinationBalanceManager) 
+        external 
+        onlyOwner 
+    {
         Storage storage $ = getStorage();
-
+        
         $.destinationDomain = _destinationDomain;
         $.destinationBalanceManager = _destinationBalanceManager;
-
+        
         emit CrossChainConfigUpdated(_destinationDomain, _destinationBalanceManager);
     }
 
@@ -386,9 +405,7 @@ contract ChainBalanceManager is
         return getStorage().unlockedBalanceOf[user][token];
     }
 
-    function isTokenWhitelisted(
-        address token
-    ) external view returns (bool) {
+    function isTokenWhitelisted(address token) external view returns (bool) {
         return getStorage().whitelistedTokens[token] || token == address(0);
     }
 
@@ -400,35 +417,23 @@ contract ChainBalanceManager is
         return getStorage().tokenList.length;
     }
 
-    function getUserNonce(
-        address user
-    ) external view returns (uint256) {
+    function getUserNonce(address user) external view returns (uint256) {
         return getStorage().userNonces[user];
     }
 
-    function isMessageProcessed(
-        bytes32 messageId
-    ) external view returns (bool) {
+    function isMessageProcessed(bytes32 messageId) external view returns (bool) {
         return getStorage().processedMessages[messageId];
     }
 
-    function getTokenMapping(
-        address sourceToken
-    ) external view returns (address) {
+    function getTokenMapping(address sourceToken) external view returns (address) {
         return getStorage().sourceToSynthetic[sourceToken];
     }
 
-    function getReverseTokenMapping(
-        address syntheticToken
-    ) external view returns (address) {
+    function getReverseTokenMapping(address syntheticToken) external view returns (address) {
         return getStorage().syntheticToSource[syntheticToken];
     }
 
-    function getCrossChainConfig()
-        external
-        view
-        returns (uint32 destinationDomain, address destinationBalanceManager)
-    {
+    function getCrossChainConfig() external view returns (uint32 destinationDomain, address destinationBalanceManager) {
         Storage storage $ = getStorage();
         return ($.destinationDomain, $.destinationBalanceManager);
     }
@@ -451,15 +456,11 @@ contract ChainBalanceManager is
         return getStorage().unlockedBalanceOf[user][token];
     }
 
-    function whitelistedTokens(
-        address token
-    ) external view returns (bool) {
+    function whitelistedTokens(address token) external view returns (bool) {
         return getStorage().whitelistedTokens[token];
     }
 
-    function tokenList(
-        uint256 index
-    ) external view returns (address) {
+    function tokenList(uint256 index) external view returns (address) {
         return getStorage().tokenList[index];
     }
 }

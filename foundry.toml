@@ -10,6 +10,16 @@ ffi = true
 build_info = true
 extra_output = ["storageLayout"]
 fs_permissions = [{ access = "read-write", path = "./"}]
+remappings = [
+    "@openzeppelin/contracts/=lib/openzeppelin-contracts-upgradeable/lib/openzeppelin-contracts/contracts/",
+    "@openzeppelin/contracts-upgradeable/=lib/openzeppelin-contracts-upgradeable/contracts/",
+    "erc4626-tests/=lib/openzeppelin-contracts/lib/erc4626-tests/",
+    "forge-std/=lib/forge-std/src/",
+    "halmos-cheatcodes/=lib/openzeppelin-contracts/lib/halmos-cheatcodes/src/",
+    "@solady/=lib/solady/src/",
+    "@gtxcore/=src/core/",
+    "@gtx/=src/"
+]
 
 [rpc_endpoints]
 default_network = "http://127.0.0.1:8545"
@@ -21,6 +31,9 @@ mainnet = "https://eth-mainnet.g.alchemy.com/v2/${ALCHEMY_API_KEY}"
 sepolia = "https://eth-sepolia.g.alchemy.com/v2/${ALCHEMY_API_KEY}"
 arbitrum = "https://arb-mainnet.g.alchemy.com/v2/${ALCHEMY_API_KEY}"
 arbitrumSepolia = "https://arb-sepolia.g.alchemy.com/v2/jBG4sMyhez7V13jNTeQKfVfgNa54nCmF"
+# Espresso Testnet Networks
+rariTestnet = "https://rari.caff.testnet.espresso.network"
+appchainTestnet = "https://appchain.caff.testnet.espresso.network"
 
 [etherscan]
 mainnet = { key = "${ETHERSCAN_API_KEY}" }

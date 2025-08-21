@@ -14,6 +14,13 @@ abstract contract BalanceManagerStorage {
         uint256 feeMaker;
         uint256 feeTaker;
         uint256 feeUnit;
+        
+        // Cross-chain fields (following example folder pattern)
+        address mailbox;                                    // Hyperlane mailbox
+        uint32 localDomain;                                // This chain's domain ID  
+        mapping(uint32 => address) chainBalanceManagers;   // chainId => ChainBalanceManager address
+        mapping(address => uint256) userNonces;            // User nonces for replay protection
+        mapping(bytes32 => bool) processedMessages;        // Prevent replay attacks
     }
 
     function getStorage() internal pure returns (Storage storage $) {

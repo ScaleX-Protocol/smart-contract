@@ -42,7 +42,7 @@ contract DeployChainBalanceManager is DeployHelpers {
 
         // Deploy proxy
         console.log("\n========== DEPLOYING CHAIN BALANCE MANAGER PROXY ==========");
-        bytes memory initData = abi.encodeCall(ChainBalanceManager.initialize, (beaconOwner));
+        bytes memory initData = abi.encodeWithSignature("initialize(address)", beaconOwner);
         BeaconProxy proxy = new BeaconProxy(chainBalanceManagerBeacon, initData);
         address chainBalanceManagerProxy = address(proxy);
 
@@ -83,7 +83,7 @@ contract DeployChainBalanceManager is DeployHelpers {
         console.log("Beacon deployed at:", address(beacon));
 
         // Deploy proxy
-        bytes memory initData = abi.encodeCall(ChainBalanceManager.initialize, (owner));
+        bytes memory initData = abi.encodeWithSignature("initialize(address)", owner);
         BeaconProxy proxy = new BeaconProxy(address(beacon), initData);
         console.log("Proxy deployed at:", address(proxy));
 
