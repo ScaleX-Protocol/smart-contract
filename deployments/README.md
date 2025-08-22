@@ -86,15 +86,62 @@ forge script script/CheckBalance.s.sol:CheckBalance --rpc-url ${APPCHAIN_ENDPOIN
 - **Destination Chain (Rari)**: Use `BalanceManager` proxy address
 - **Token Contracts**: Mock tokens on source chains, real ERC20 synthetic tokens on Rari
 
+## Deployed Contracts Summary
+
+### Rari Testnet (Chain ID: 1918988905) - Destination Chain
+
+| Contract | Type | Address | Purpose |
+|----------|------|---------|---------|
+| **BalanceManager** | BeaconProxy | `0xd7fEF09a6cBd62E3f026916CDfE415b1e64f4Eb5` | Cross-chain message handling, V2 minting |
+| **PoolManager** | BeaconProxy | `0xA3B22cA94Cc3Eb8f6Bd8F4108D88d085e12d886b` | AMM liquidity pools and swaps |
+| **Router** | BeaconProxy | `0xF38489749c3e65c82a9273c498A8c6614c34754b` | User-facing swap interface |
+| **TokenRegistry** | Implementation | `0x80207B9bacc73dadAc1C8A03C6a7128350DF5c9E` | Token registration and currency IDs |
+| **SyntheticTokenFactory** | Implementation | `0x2594C4ca1B552ad573bcc0C4c561FAC6a87987fC` | Creates synthetic ERC20 tokens |
+| **ChainRegistry** | Implementation | `0x0a1Ced1539C9FB81aBdDF870588A4fEfBf461bBB` | Multi-chain configuration |
+
+### Synthetic Tokens (Real ERC20s)
+| Token | Address | Type |
+|-------|---------|------|
+| **gsUSDT** | `0x6fcf28b801C7116cA8b6460289e259aC8D9131F3` | Synthetic USDT |
+| **gsWETH** | `0xC7A1777e80982E01e07406e6C6E8B30F5968F836` | Synthetic WETH |
+| **gsWBTC** | `0xfAcf2E43910f93CE00d95236C23693F73FdA3Dcf` | Synthetic WBTC |
+
+### Beacon Infrastructure (Admin Only)
+| Beacon | Address | Controls |
+|--------|---------|----------|
+| **BalanceManagerBeacon** | `0xF1A53bC852bB9e139a8200003B55164592695395` | BalanceManager upgrades |
+| **PoolManagerBeacon** | `0x6F97F295D78373FE7555Fd809f3Bb5c146cC8CF7` | PoolManager upgrades |
+| **RouterBeacon** | `0x00BF70ab9Fb9f330E9Bb66d6E3A11F8Cf51F737a` | Router upgrades |
+| **OrderBookBeacon** | `0xa8630B75d92814b79dE1C5A170d00Ef0714b3C28` | OrderBook upgrades |
+
+### Source Chains - ChainBalanceManager Addresses
+
+| Chain | Chain ID | ChainBalanceManager | Purpose |
+|-------|----------|-------------------|---------|
+| **Appchain Testnet** | 4661 | `0x27D0Dd86F00b59aD528f1D9B699847A588fbA2C7` | Deposit initiation |
+| **Arbitrum Sepolia** | 421614 | `0xF36453ceB82F0893FCCe4da04d32cEBfe33aa29A` | Deposit initiation |
+| **Rise Sepolia** | 11155931 | `0xa2B3Eb8995814E84B4E369A11afe52Cef6C7C745` | Deposit initiation |
+
 ## Cross-Chain Token Mappings
 
 All source chains bridge to synthetic tokens on Rari:
 
 | Source Token | Source Chains | Synthetic Token (Rari) | Address |
 |-------------|---------------|----------------------|---------|
-| USDT | Appchain, Rise, Arbitrum | gsUSDT | 0x6fcf28b801C7116cA8b6460289e259aC8D9131F3 |
-| WETH | Appchain, Rise, Arbitrum | gsWETH | 0xC7A1777e80982E01e07406e6C6E8B30F5968F836 |  
-| WBTC | Appchain, Rise, Arbitrum | gsWBTC | 0xfAcf2E43910f93CE00d95236C23693F73FdA3Dcf |
+| USDT | Appchain, Rise, Arbitrum | gsUSDT | `0x6fcf28b801C7116cA8b6460289e259aC8D9131F3` |
+| WETH | Appchain, Rise, Arbitrum | gsWETH | `0xC7A1777e80982E01e07406e6C6E8B30F5968F836` |  
+| WBTC | Appchain, Rise, Arbitrum | gsWBTC | `0xfAcf2E43910f93CE00d95236C23693F73FdA3Dcf` |
+
+## Contract Interaction Guide
+
+### For Users/Frontend:
+- ✅ **Interact with BeaconProxy addresses** (BalanceManager, PoolManager, Router)
+- ✅ **Use Implementation ABIs** (BalanceManagerABI, PoolManagerABI, etc.)
+- ❌ **Never call Implementation contracts directly**
+
+### For Admins:
+- 🔧 **Use Beacon contracts** for upgrades and configuration
+- 🔧 **Monitor Implementation versions** for upgrade tracking
 
 ## Security Features
 
