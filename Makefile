@@ -11,7 +11,28 @@ flag ?=
 # Custom network can be set via make network=<network_name>
 network ?= $(DEFAULT_NETWORK)
 
+<<<<<<< HEAD
 .PHONY: account chain compile deploy deploy-verify flatten fork format generate lint test verify upgrade upgrade-verify full-integration simple-integration simple-demo swap deploy-chain-balance-manager add-tokens-chain-balance-manager add-single-token-chain-balance-manager remove-single-token-chain-balance-manager list-tokens-chain-balance-manager test-chain-balance-manager fill-orderbook-tokens market-orderbook-tokens fill-orderbook-configurable market-orderbook-configurable send-token deploy-faucet deploy-faucet-verify setup-faucet add-faucet-tokens deposit-faucet-tokens check-balances
+=======
+# =============================================================
+#                   ESPRESSO HYPERLANE INTEGRATION
+# =============================================================
+
+# Espresso testnet RPC URLs (proven working)
+RARI_RPC := https://rari.caff.testnet.espresso.network
+APPCHAIN_RPC := https://appchain.caff.testnet.espresso.network
+ARBITRUM_RPC := https://sepolia-rollup.arbitrum.io/rpc
+
+# Helper function to get RPC URL by network name
+define get_rpc_url
+$(if $(filter rari_testnet,$(1)),$(RARI_RPC),\
+$(if $(filter appchain_testnet,$(1)),$(APPCHAIN_RPC),\
+$(if $(filter arbitrum_sepolia,$(1)),$(ARBITRUM_RPC),\
+$(1))))
+endef
+
+.PHONY: account chain compile deploy deploy-verify flatten fork format generate lint test verify upgrade upgrade-verify full-integration simple-integration simple-demo swap deploy-chain-balance-manager add-tokens-chain-balance-manager add-single-token-chain-balance-manager remove-single-token-chain-balance-manager list-tokens-chain-balance-manager test-chain-balance-manager fill-orderbook-tokens market-orderbook-tokens deploy-upgradeable-gtx upgrade-gtx-contract test-espresso-integration check-env
+>>>>>>> 2cb6d97 (feat: balance manager and chain balance manager with hyperlane)
 
 # Helper function to run forge script
 define forge_script
@@ -84,6 +105,7 @@ define forge_test_chain_balance_manager_basic
 	forge script script/TestChainBalanceManagerBasic.s.sol:TestChainBalanceManagerBasic --rpc-url $(network) --broadcast $(flag)
 endef
 
+<<<<<<< HEAD
 define forge_send_token
 	forge script script/SendToken.s.sol:SendToken --rpc-url $(network) --broadcast $(flag)
 endef
@@ -111,6 +133,32 @@ endef
 # Helper function to check token balances
 define forge_check_balances
 	forge script script/CheckTokenBalances.s.sol:CheckTokenBalances --rpc-url $(network) $(flag)
+=======
+# =============================================================
+#              NEW ESPRESSO HYPERLANE FUNCTIONS
+# =============================================================
+
+# Environment check
+check-env:
+	@if [ -z "$(PRIVATE_KEY)" ]; then \
+		echo "Error: PRIVATE_KEY not set in .env"; \
+		exit 1; \
+	fi
+
+# Deploy upgradeable GTX contracts
+define forge_deploy_upgradeable_gtx
+	NETWORK=$(1) forge script script/DeployUpgradeableGTX.s.sol:DeployUpgradeableGTX --rpc-url $(call get_rpc_url,$(1)) --broadcast $(flag)
+endef
+
+# Upgrade GTX contracts
+define forge_upgrade_gtx
+	PROXY_ADDRESS=$(1) CONTRACT_TYPE=$(2) forge script script/UpgradeGTXContract.s.sol:UpgradeGTXContract --rpc-url $(call get_rpc_url,$(3)) --broadcast $(flag)
+endef
+
+# Test Espresso integration
+define forge_test_espresso
+	TEST_TYPE=$(1) $(2) forge script script/TestEspressoIntegration.s.sol:TestEspressoIntegration --rpc-url $(call get_rpc_url,$(3)) $(4)
+>>>>>>> 2cb6d97 (feat: balance manager and chain balance manager with hyperlane)
 endef
 
 # Define a target to deploy using the specified network
@@ -328,9 +376,91 @@ generate-abi:
 build:
 	forge clean && forge build --build-info --build-info-path out/build-info/
 
+# =============================================================
+#         NEW UPGRADEABLE & ESPRESSO INTEGRATION TARGETS
+# =============================================================
+
+# Deploy upgradeable GTX contracts to Rari (host chain)
+deploy-upgradeable-rari: check-env
+	@echo "⚡ Deploying Upgradeable GTX to Rari..."
+	$(call forge_deploy_upgradeable_gtx,rari_testnet)
+
+# Deploy upgradeable GTX contracts to Appchain (source chain)
+deploy-upgradeable-appchain: check-env
+	@echo "⚡ Deploying Upgradeable GTX to Appchain..."
+	$(call forge_deploy_upgradeable_gtx,appchain_testnet)
+
+# Deploy upgradeable GTX contracts to Arbitrum (source chain)
+deploy-upgradeable-arbitrum: check-env
+	@echo "⚡ Deploying Upgradeable GTX to Arbitrum..."
+	$(call forge_deploy_upgradeable_gtx,arbitrum_sepolia)
+
+# Deploy upgradeable GTX to all chains
+deploy-upgradeable-all: check-env
+	@echo "🚀 Deploying to all chains with upgradeability..."
+	@$(MAKE) deploy-upgradeable-rari
+	@echo ""
+	@$(MAKE) deploy-upgradeable-appchain
+	@echo ""
+	@$(MAKE) deploy-upgradeable-arbitrum
+	@echo ""
+	@echo "🎉 All upgradeable contracts deployed!"
+	@echo "📋 Update proxy addresses in .env for instant upgrades"
+
+# Upgrade BalanceManager (Rari host chain)
+upgrade-balance-manager: check-env
+	@if [ -z "$(PROXY_ADDRESS)" ]; then \
+		echo "Usage: make upgrade-balance-manager PROXY_ADDRESS=0x123..."; \
+		exit 1; \
+	fi
+	@echo "⚡ Upgrading BalanceManager in seconds..."
+	$(call forge_upgrade_gtx,$(PROXY_ADDRESS),BalanceManager,rari_testnet)
+
+# Upgrade ChainBalanceManager (source chains)
+upgrade-chain-balance-manager: check-env
+	@if [ -z "$(PROXY_ADDRESS)" ] || [ -z "$(NETWORK)" ]; then \
+		echo "Usage: make upgrade-chain-balance-manager PROXY_ADDRESS=0x123... NETWORK=appchain_testnet"; \
+		exit 1; \
+	fi
+	@echo "⚡ Upgrading ChainBalanceManager in seconds..."
+	$(call forge_upgrade_gtx,$(PROXY_ADDRESS),ChainBalanceManager,$(NETWORK))
+
+# Test cross-chain deposit (Appchain → Rari)
+test-deposit: check-env
+	@if [ -z "$(APPCHAIN_CHAIN_BM_PROXY)" ]; then \
+		echo "Error: Set APPCHAIN_CHAIN_BM_PROXY in .env"; \
+		exit 1; \
+	fi
+	@echo "🔄 Testing cross-chain deposit..."
+	$(call forge_test_espresso,deposit,APPCHAIN_CHAIN_BM_PROXY=$(APPCHAIN_CHAIN_BM_PROXY),appchain_testnet,)
+
+# Test cross-chain withdrawal (Rari → Appchain)
+test-withdraw: check-env
+	@if [ -z "$(RARI_BALANCE_MANAGER_PROXY)" ]; then \
+		echo "Error: Set RARI_BALANCE_MANAGER_PROXY in .env"; \
+		exit 1; \
+	fi
+	@echo "🔄 Testing cross-chain withdrawal..."
+	$(call forge_test_espresso,withdraw,RARI_BALANCE_MANAGER_PROXY=$(RARI_BALANCE_MANAGER_PROXY),rari_testnet,)
+
+# Test complete cross-chain flow
+test-cross-chain: check-env
+	@echo "🔄 Testing complete cross-chain flow..."
+	$(call forge_test_espresso,complete,APPCHAIN_CHAIN_BM_PROXY=$(APPCHAIN_CHAIN_BM_PROXY) RARI_BALANCE_MANAGER_PROXY=$(RARI_BALANCE_MANAGER_PROXY),appchain_testnet,)
+
+# Check balances across all chains
+test-balances: check-env
+	@echo "📊 Checking balances across all chains..."
+	@echo "=== Rari Synthetic Balances ==="
+	@$(call forge_test_espresso,balance_rari,,rari_testnet,)
+	@echo ""
+	@echo "=== Appchain Unlocked Balances ==="
+	@$(call forge_test_espresso,balance_appchain,,appchain_testnet,)
+
 
 # Define a target to display help information
 help:
+<<<<<<< HEAD
 	@echo "Makefile targets:"
 	@echo "  deploy          - Deploy contracts using the specified network"
 	@echo "  deploy-verify   - Deploy and verify contracts using the specified network"
@@ -372,3 +502,50 @@ help:
 	@echo "  generate-abi    - Generate ABI files"
 	@echo "  build           - Build the project with build info"
 	@echo "  help            - Display this help information"
+=======
+	@echo "=== GTX CLOB DEX - Upgradeable Contracts with Espresso Hyperlane ==="
+	@echo ""
+	@echo "🚀 Quick Start Commands:"
+	@echo "  deploy-upgradeable-all          - Deploy upgradeable contracts to all chains"
+	@echo "  test-cross-chain                - Test complete cross-chain flow"
+	@echo ""
+	@echo "⚡ Instant Upgrades (Perfect for Accelerator!):"
+	@echo "  upgrade-balance-manager PROXY_ADDRESS=0x123..."
+	@echo "  upgrade-chain-balance-manager PROXY_ADDRESS=0x123... NETWORK=appchain_testnet"
+	@echo ""
+	@echo "🔗 Espresso Cross-Chain Testing:"
+	@echo "  test-deposit                    - Test Appchain → Rari deposit"
+	@echo "  test-withdraw                   - Test Rari → Appchain withdrawal"
+	@echo "  test-balances                   - Check balances across all chains"
+	@echo ""
+	@echo "🏗️  Upgradeable Deployment:"
+	@echo "  deploy-upgradeable-rari         - Deploy upgradeable BalanceManager"
+	@echo "  deploy-upgradeable-appchain     - Deploy upgradeable ChainBalanceManager"
+	@echo "  deploy-upgradeable-arbitrum     - Deploy upgradeable ChainBalanceManager"
+	@echo ""
+	@echo "📋 Legacy CLOB Commands:"
+	@echo "  deploy                          - Deploy contracts using the specified network"
+	@echo "  deploy-verify                   - Deploy and verify contracts"
+	@echo "  deploy-mocks                    - Deploy mock contracts"
+	@echo "  fill-orderbook                  - Fill mock order book"
+	@echo "  market-orderbook                - Place market orders in mock order book"
+	@echo "  swap                            - Execute token swaps"
+	@echo "  simple-demo                     - Run simple market order demonstration"
+	@echo "  simple-integration              - Run simple integration sequence"
+	@echo "  full-integration                - Run full deployment and testing"
+	@echo ""
+	@echo "🔧 Development Commands:"
+	@echo "  compile                         - Compile the contracts"
+	@echo "  test                            - Run tests"
+	@echo "  lint                            - Lint the code"
+	@echo "  generate-abi                    - Generate ABI files"
+	@echo "  build                           - Build project with build info"
+	@echo ""
+	@echo "📋 Required Environment Variables (.env):"
+	@echo "  PRIVATE_KEY=0x123..."
+	@echo "  RARI_BALANCE_MANAGER_PROXY=0x123...      # After deployment"
+	@echo "  APPCHAIN_CHAIN_BM_PROXY=0x123...         # After deployment"
+	@echo ""
+	@echo "🎯 Perfect for Accelerator Development!"
+	@echo "   Upgrade contracts in seconds, iterate at lightning speed!"
+>>>>>>> 2cb6d97 (feat: balance manager and chain balance manager with hyperlane)

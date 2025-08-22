@@ -32,7 +32,7 @@ contract ChainBalanceManagerTest is Test {
         (BeaconProxy beaconProxy,) = beaconDeployer.deployUpgradeableContract(
             address(new ChainBalanceManager()),
             owner,
-            abi.encodeCall(ChainBalanceManager.initialize, (owner))
+            abi.encodeWithSignature("initialize(address,address,uint32,address)", owner, address(0), 0, address(0))
         );
 
         chainBalanceManager = ChainBalanceManager(address(beaconProxy));
