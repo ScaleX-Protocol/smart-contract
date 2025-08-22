@@ -422,6 +422,11 @@ contract ChainBalanceManager is
         return ($.mailbox, $.localDomain);
     }
 
+    function getDestinationConfig() external view returns (uint32 destinationDomain, address destinationBalanceManager) {
+        Storage storage $ = getStorage();
+        return ($.destinationDomain, $.destinationBalanceManager);
+    }
+
     // =============================================================
     //                    LEGACY COMPATIBILITY
     // =============================================================

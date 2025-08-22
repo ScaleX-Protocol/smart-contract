@@ -53,6 +53,10 @@ contract BalanceManager is
         emit PoolManagerSet(_poolManager);
     }
 
+    function setMailbox(address _mailbox) external onlyOwner {
+        getStorage().mailbox = _mailbox;
+    }
+
     // Allow owner to set authorized operators (e.g., Router)
     function setAuthorizedOperator(address operator, bool approved) external {
         Storage storage $ = getStorage();

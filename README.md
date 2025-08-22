@@ -1,23 +1,50 @@
-# 🚀 CLOB DEX - Next-Gen Decentralized Exchange
+# 🚀 CLOB DEX - Cross-Chain Decentralized Exchange
 
-> 💫 Building the future of trustless trading on RISE Network
+> 🌉 Multi-chain CLOB with unified liquidity across Espresso testnet
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Rise Network](https://img.shields.io/badge/Network-RISE-blue)](https://www.riselabs.xyz)
+[![Hyperlane](https://img.shields.io/badge/CrossChain-Hyperlane-green)](https://hyperlane.xyz)
+[![Status](https://img.shields.io/badge/Status-OPERATIONAL-brightgreen)](docs/CROSS_CHAIN_STATUS.md)
+[![Espresso](https://img.shields.io/badge/Network-Espresso-purple)](https://docs.espresso.network)
 
 ## 🌟 Vision
 
-Revolutionizing DeFi trading with a high-performance, fully on-chain Central Limit Order Book (CLOB). Our mission is to bring CEX-grade performance with DEX-level trustlessness.
+A unified cross-chain trading hub powered by Central Limit Order Book (CLOB) technology. Bridge assets from multiple chains and trade with unified liquidity on Rari testnet, bringing together the best of CEX performance and DEX trustlessness.
 
-## 🏗️ System Architecture
+## 🎯 **System Status: OPERATIONAL** ✅
 
-![CLOB DEX Architecture](diagram.png)
+The cross-chain CLOB DEX is **fully deployed and working**! 
 
-The CLOB DEX system consists of four main components:
-- **GTXRouter**: Entry point for all user interactions
-- **PoolManager**: Manages trading pairs and pool deployments
-- **OrderBook**: Handles order placement and matching using RB-Tree
-- **BalanceManager**: Manages token deposits, withdrawals, and locks
+- 🌉 **Cross-chain messaging**: ENABLED via Hyperlane
+- 🔄 **Token bridging**: OPERATIONAL (USDT → gsUSDT)  
+- 📊 **CLOB trading**: READY on Rari testnet
+- 🔍 **Message tracking**: [Hyperlane Explorer](https://hyperlane-explorer.gtxdex.xyz/)
+
+📋 [View detailed status report](docs/CROSS_CHAIN_STATUS.md)
+
+## 🏗️ Cross-Chain Architecture
+
+```
+┌─────────────────────┐    Hyperlane Bridge    ┌──────────────────────────┐
+│   SOURCE CHAINS     │ ─────────────────────► │     RARI TRADING HUB     │
+│                     │                        │                          │
+│ • Appchain (4661)   │   Message Dispatch     │ • BalanceManager         │
+│ • Arbitrum Sepolia  │ ◄───────────────────── │ • PoolManager            │
+│ • Rise Sepolia      │   Withdrawal Flow      │ • OrderBook (RB-Tree)    │
+│                     │                        │ • Router                 │
+│ ChainBalanceManager │                        │                          │
+│ • Lock USDT/WETH    │                        │ Synthetic Tokens:        │
+│ • Bridge to gsTokens│                        │ • gsUSDT, gsWETH, gsWBTC │
+│ • Handle withdraws  │                        │                          │
+└─────────────────────┘                        └──────────────────────────┘
+```
+
+### **Core Components**
+- **ChainBalanceManager**: Source chain vault contracts for token locking
+- **BalanceManager**: Rari trading account manager with cross-chain message handling
+- **PoolManager**: Trading pair management and pool deployments  
+- **OrderBook**: CLOB with Red-Black Tree for efficient order matching
+- **Router**: User-friendly trading interface and swap execution
 
 ## 💎 Core Features
 
@@ -195,6 +222,43 @@ Before proceeding, ensure you have the following installed:
    ```
 
 3. Duplicate the `.env.example` file in the root directory, rename it to `.env`, and set the required variables.
+
+## 🚀 Quick Start - Cross-Chain Trading
+
+### **Step 1: Bridge Assets to Rari**
+```solidity
+// On Appchain: Deposit USDT for cross-chain bridging
+chainBalanceManager.deposit(
+    0x1362Dd75d8F1579a0Ebd62DF92d8F3852C3a7516, // USDT address
+    amount,
+    recipient
+);
+```
+
+### **Step 2: Trade on Rari**
+```solidity  
+// On Rari: Trade synthetic tokens
+router.swapExactIn(
+    gsUSDT,    // 0x3d17BF5d39A96d5B4D76b40A7f74c0d02d2fadF7
+    gsWETH,    // 0xC7A1777e80982E01e07406e6C6E8B30F5968F836  
+    amount,
+    minOut
+);
+```
+
+### **Step 3: Monitor Bridge Status**
+- **Hyperlane Explorer**: https://hyperlane-explorer.gtxdex.xyz/
+- **Test Transaction**: [View Message](https://hyperlane-explorer.gtxdex.xyz/message/0xfcadbcd23563cb0230070d9ead7f78a0c0e468c7a7d3c674858afc60ca0a013a)
+
+### **Contract Addresses**
+
+| Network | Contract | Address |
+|---------|----------|---------|
+| **Appchain** | ChainBalanceManager | `0x27D0Dd86F00b59aD528f1D9B699847A588fbA2C7` |
+| **Appchain** | USDT | `0x1362Dd75d8F1579a0Ebd62DF92d8F3852C3a7516` |
+| **Rari** | BalanceManager | `0xd7fEF09a6cBd62E3f026916CDfE415b1e64f4Eb5` |
+| **Rari** | gsUSDT | `0x3d17BF5d39A96d5B4D76b40A7f74c0d02d2fadF7` |
+| **Rari** | Router | `0xF38489749c3e65c82a9273c498A8c6614c34754b` |
 
 ---
 
