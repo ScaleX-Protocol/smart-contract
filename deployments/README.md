@@ -46,15 +46,55 @@ All networks are **FULLY OPERATIONAL** with successful cross-chain bridging to R
 - `rise-sepolia.json` - Rise Sepolia deployments
 - `arbitrum-sepolia.json` - Arbitrum Sepolia deployments
 
+## Testing Cross-Chain Deposits & Withdrawals
+
+To test how deposits and withdrawals work across chains, use these example scripts:
+
+### Cross-Chain Deposit Flow
+```bash
+# 1. Deposit from Appchain to Rari
+forge script script/TestDeposit.s.sol:TestDeposit --rpc-url ${APPCHAIN_ENDPOINT} --broadcast --legacy
+
+# 2. Check if tokens were minted on Rari  
+forge script script/CheckBalance.s.sol:CheckBalance --rpc-url ${RARI_ENDPOINT} --legacy
+```
+
+### Cross-Chain Withdrawal Flow
+```bash
+# 1. Withdraw from Rari back to source chain
+forge script script/TestWithdraw.s.sol:TestWithdraw --rpc-url ${RARI_ENDPOINT} --broadcast --legacy
+
+# 2. Verify tokens burned on Rari and received on source chain
+forge script script/CheckBalance.s.sol:CheckBalance --rpc-url ${APPCHAIN_ENDPOINT} --legacy
+```
+
+### Key Interactions Required
+
+**For Deposits:**
+1. **Source Chain**: Call `ChainBalanceManager.deposit(token, amount)` 
+2. **Destination Chain**: BalanceManager receives cross-chain message and mints real ERC20 tokens
+3. **Result**: User gets tradeable ERC20 tokens on destination chain
+
+**For Withdrawals:**
+1. **Destination Chain**: Call `BalanceManager.withdraw(token, amount, destinationChain)`
+2. **Source Chain**: ChainBalanceManager receives message and releases original tokens
+3. **Result**: ERC20 tokens burned on destination, original tokens released on source
+
+### Contract Addresses to Interact With
+
+- **Source Chains (Appchain, Arbitrum Sepolia, Rise Sepolia)**: Use `ChainBalanceManager` address
+- **Destination Chain (Rari)**: Use `BalanceManager` proxy address
+- **Token Contracts**: Mock tokens on source chains, real ERC20 synthetic tokens on Rari
+
 ## Cross-Chain Token Mappings
 
 All source chains bridge to synthetic tokens on Rari:
 
 | Source Token | Source Chains | Synthetic Token (Rari) | Address |
 |-------------|---------------|----------------------|---------|
-| USDT | Appchain, Rise, Arbitrum | gsUSDT | 0x8bA339dDCC0c7140dC6C2E268ee37bB308cd4C68 |
+| USDT | Appchain, Rise, Arbitrum | gsUSDT | 0x6fcf28b801C7116cA8b6460289e259aC8D9131F3 |
 | WETH | Appchain, Rise, Arbitrum | gsWETH | 0xC7A1777e80982E01e07406e6C6E8B30F5968F836 |  
-| WBTC | Appchain, Rise, Arbitrum | gsWBTC | 0x996BB75Aa83EAF0Ee2916F3fb372D16520A99eEF |
+| WBTC | Appchain, Rise, Arbitrum | gsWBTC | 0xfAcf2E43910f93CE00d95236C23693F73FdA3Dcf |
 
 ## Security Features
 

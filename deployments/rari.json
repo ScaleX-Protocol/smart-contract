@@ -4,6 +4,7 @@
 		"BalanceManager": "0xd7fEF09a6cBd62E3f026916CDfE415b1e64f4Eb5",
 		"BalanceManagerBeacon": "0xF1A53bC852bB9e139a8200003B55164592695395",
 		"BalanceManagerImpl": "0x71d5c9439923cf2579b12F87cc5adA52877B594e",
+		"BalanceManagerImplV2": "0x465C4A8c43df8fBc9952f28a72a6Ce2c3B57a26d",
 		"ChainRegistry": "0x0a1Ced1539C9FB81aBdDF870588A4fEfBf461bBB",
 		"SyntheticTokenFactory": "0x2594C4ca1B552ad573bcc0C4c561FAC6a87987fC",
 		"TokenRegistry": "0x80207B9bacc73dadAc1C8A03C6a7128350DF5c9E",
@@ -15,8 +16,8 @@
 		"RouterImpl": "0x278fa9938b4a14a69976560e7ea2861d0a53e940",
 		"OrderBookBeacon": "0xa8630B75d92814b79dE1C5A170d00Ef0714b3C28",
 		"OrderBookImpl": "0x3A49EfaD27ECDe3280714d078a9b6493d33c90ff",
-		"gsUSDT": "0x3d17BF5d39A96d5B4D76b40A7f74c0d02d2fadF7",
-		"gsWBTC": "0x996BB75Aa83EAF0Ee2916F3fb372D16520A99eEF",
+		"gsUSDT": "0x6fcf28b801C7116cA8b6460289e259aC8D9131F3",
+		"gsWBTC": "0xfAcf2E43910f93CE00d95236C23693F73FdA3Dcf",
 		"gsWETH": "0xC7A1777e80982E01e07406e6C6E8B30F5968F836"
 	},
 	"deployedAt": "1755794449",
@@ -31,7 +32,7 @@
 			"gsWETH_gsUSDT": {
 				"poolId": "0x95e33693c8b0e491367d67550606cf78dd5063c7157ebfbc2cf1843b33f88272",
 				"base": "0xC7A1777e80982E01e07406e6C6E8B30F5968F836",
-				"quote": "0x3d17BF5d39A96d5B4D76b40A7f74c0d02d2fadF7",
+				"quote": "0x6fcf28b801C7116cA8b6460289e259aC8D9131F3",
 				"description": "1 WETH = X USDT",
 				"minTradeAmount": "1000000000000000",
 				"minOrderSize": "10000000",
@@ -39,8 +40,8 @@
 			},
 			"gsWBTC_gsUSDT": {
 				"poolId": "0xfae71d5ecc427cd83f39409db3501e7c154b4964cefc3c50f85c99a78a2708bb",
-				"base": "0x996BB75Aa83EAF0Ee2916F3fb372D16520A99eEF",
-				"quote": "0x3d17BF5d39A96d5B4D76b40A7f74c0d02d2fadF7",
+				"base": "0xfAcf2E43910f93CE00d95236C23693F73FdA3Dcf",
+				"quote": "0x6fcf28b801C7116cA8b6460289e259aC8D9131F3",
 				"description": "1 WBTC = X USDT", 
 				"minTradeAmount": "100000",
 				"minOrderSize": "10000000",
@@ -60,10 +61,25 @@
 		},
 		"syntheticTokens": {
 			"gsUSDT": {
-				"address": "0x3d17BF5d39A96d5B4D76b40A7f74c0d02d2fadF7",
+				"address": "0x6fcf28b801C7116cA8b6460289e259aC8D9131F3",
 				"sourceChains": ["4661"],
 				"totalSupply": "0",
-				"pendingMessages": 1
+				"pendingMessages": 3,
+				"tokenMinting": "ENABLED_V2"
+			}
+		},
+		"upgrades": {
+			"balanceManagerV2": {
+				"upgradedAt": "1755877800",
+				"previousImpl": "0x71d5c9439923cf2579b12F87cc5adA52877B594e",
+				"newImpl": "0x465C4A8c43df8fBc9952f28a72a6Ce2c3B57a26d",
+				"changes": [
+					"Real ERC20 token minting on cross-chain deposits",
+					"Real ERC20 token burning on cross-chain withdrawals", 
+					"TokenRegistry integration added",
+					"setTokenRegistry() function added"
+				],
+				"status": "ACTIVE"
 			}
 		}
 	}

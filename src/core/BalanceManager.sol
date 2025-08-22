@@ -17,6 +17,8 @@ import {BalanceManagerStorage} from "./storages/BalanceManagerStorage.sol";
 import {console} from "forge-std/Test.sol";
 import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {ISyntheticERC20} from "./interfaces/ISyntheticERC20.sol";
+import {TokenRegistry} from "./TokenRegistry.sol";
 
 contract BalanceManager is
     IBalanceManager,
@@ -336,6 +338,13 @@ contract BalanceManager is
         $.localDomain = _localDomain;
     }
 
+    // Set TokenRegistry for synthetic token mapping
+    function setTokenRegistry(address _tokenRegistry) external onlyOwner {
+        Storage storage $ = getStorage();
+        require(_tokenRegistry != address(0), "Invalid TokenRegistry");
+        $.tokenRegistry = _tokenRegistry;
+    }
+
     // Set ChainBalanceManager for a source chain
     function setChainBalanceManager(uint32 chainId, address chainBalanceManager) external onlyOwner {
         Storage storage $ = getStorage();
@@ -374,10 +383,15 @@ contract BalanceManager is
         require(!$.processedMessages[messageId], "Message already processed");
         $.processedMessages[messageId] = true;
 
-        // Credit user's balance (synthetic token)
+        // Mint synthetic tokens directly to user
         Currency syntheticCurrency = Currency.wrap(message.syntheticToken);
         uint256 currencyId = syntheticCurrency.toId();
 
+        // Mint actual ERC20 synthetic tokens instead of internal accounting
+        ISyntheticERC20 syntheticToken = ISyntheticERC20(message.syntheticToken);
+        syntheticToken.mint(message.user, message.amount);
+        
+        // Update internal balance tracking for CLOB system
         $.balanceOf[message.user][currencyId] += message.amount;
 
         emit CrossChainDepositReceived(message.user, syntheticCurrency, message.amount, _origin);
@@ -399,9 +413,15 @@ contract BalanceManager is
         address targetChainBM = $.chainBalanceManagers[targetChainId];
         require(targetChainBM != address(0), "Target chain not supported");
 
-        // Burn from user's balance
+        // Burn synthetic tokens and update internal balance
         uint256 currencyId = syntheticCurrency.toId();
         require($.balanceOf[msg.sender][currencyId] >= amount, "Insufficient balance");
+        
+        // Burn actual ERC20 synthetic tokens
+        ISyntheticERC20 syntheticToken = ISyntheticERC20(Currency.unwrap(syntheticCurrency));
+        syntheticToken.burn(msg.sender, amount);
+        
+        // Update internal balance tracking
         $.balanceOf[msg.sender][currencyId] -= amount;
 
         // Get user nonce and increment

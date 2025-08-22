@@ -21,6 +21,7 @@ abstract contract BalanceManagerStorage {
         mapping(uint32 => address) chainBalanceManagers;   // chainId => ChainBalanceManager address
         mapping(address => uint256) userNonces;            // User nonces for replay protection
         mapping(bytes32 => bool) processedMessages;        // Prevent replay attacks
+        address tokenRegistry;                              // TokenRegistry for source->synthetic mapping
     }
 
     function getStorage() internal pure returns (Storage storage $) {
