@@ -2,9 +2,19 @@
 	"chainId": 1918988905,
 	"contracts": {
 		"BalanceManager": "0xd7fEF09a6cBd62E3f026916CDfE415b1e64f4Eb5",
+		"BalanceManagerBeacon": "0xF1A53bC852bB9e139a8200003B55164592695395",
+		"BalanceManagerImpl": "0x71d5c9439923cf2579b12F87cc5adA52877B594e",
 		"ChainRegistry": "0x0a1Ced1539C9FB81aBdDF870588A4fEfBf461bBB",
 		"SyntheticTokenFactory": "0x2594C4ca1B552ad573bcc0C4c561FAC6a87987fC",
 		"TokenRegistry": "0x80207B9bacc73dadAc1C8A03C6a7128350DF5c9E",
+		"PoolManager": "0xA3B22cA94Cc3Eb8f6Bd8F4108D88d085e12d886b",
+		"PoolManagerBeacon": "0x6F97F295D78373FE7555Fd809f3Bb5c146cC8CF7",
+		"PoolManagerImpl": "0x52cBf70302f32955c97F437254abe49F86Cfd00C",
+		"Router": "0xF38489749c3e65c82a9273c498A8c6614c34754b",
+		"RouterBeacon": "0x00BF70ab9Fb9f330E9Bb66d6E3A11F8Cf51F737a",
+		"RouterImpl": "0x278fa9938b4a14a69976560e7ea2861d0a53e940",
+		"OrderBookBeacon": "0xa8630B75d92814b79dE1C5A170d00Ef0714b3C28",
+		"OrderBookImpl": "0x3A49EfaD27ECDe3280714d078a9b6493d33c90ff",
 		"gsUSDT": "0x8bA339dDCC0c7140dC6C2E268ee37bB308cd4C68",
 		"gsWBTC": "0x996BB75Aa83EAF0Ee2916F3fb372D16520A99eEF",
 		"gsWETH": "0xC7A1777e80982E01e07406e6C6E8B30F5968F836"
@@ -13,5 +23,29 @@
 	"domainId": 1918988905,
 	"mailbox": "0x393EE49dA6e6fB9Ab32dd21D05096071cc7d9358",
 	"network": "rari",
-	"rpc": "${RARI_ENDPOINT}"
+	"rpc": "${RARI_ENDPOINT}",
+	"trading": {
+		"status": "ENABLED",
+		"deployedAt": "1755828486",
+		"pools": {
+			"gsWETH_gsUSDT": {
+				"poolId": "0x95e33693c8b0e491367d67550606cf78dd5063c7157ebfbc2cf1843b33f88272",
+				"base": "0xC7A1777e80982E01e07406e6C6E8B30F5968F836",
+				"quote": "0x8bA339dDCC0c7140dC6C2E268ee37bB308cd4C68",
+				"description": "1 WETH = X USDT",
+				"minTradeAmount": "1000000000000000",
+				"minOrderSize": "10000000",
+				"minPriceMovement": "10000"
+			},
+			"gsWBTC_gsUSDT": {
+				"poolId": "0xfae71d5ecc427cd83f39409db3501e7c154b4964cefc3c50f85c99a78a2708bb",
+				"base": "0x996BB75Aa83EAF0Ee2916F3fb372D16520A99eEF",
+				"quote": "0x8bA339dDCC0c7140dC6C2E268ee37bB308cd4C68",
+				"description": "1 WBTC = X USDT", 
+				"minTradeAmount": "100000",
+				"minOrderSize": "10000000",
+				"minPriceMovement": "100000000"
+			}
+		}
+	}
 }
