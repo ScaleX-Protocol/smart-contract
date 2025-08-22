@@ -1,1 +1,17 @@
-{"chainId":421614,"contracts":{"ChainBalanceManager":"0x94B06F1E8ab7aD5bB48061A1d27293DC32276EB0"},"deployedAt":"1755794339","domainId":421614,"mailbox":"0xfFAEF09B3cd11D9b20d1a19bECca54EEC2884766","network":"Arbitrum Sepolia","rpc":"https://sepolia-rollup.arbitrum.io/rpc"}
+{
+	"chainId": 421614,
+	"contracts": {
+		"ChainBalanceManager": "0xF36453ceB82F0893FCCe4da04d32cEBfe33aa29A",
+		"PROXY_CHAINBALANCEMANAGER": "0xF36453ceB82F0893FCCe4da04d32cEBfe33aa29A",
+		"BEACON_CHAINBALANCEMANAGER": "0xB7b9994Cba82150b874828bEdA2871E9d189b04c",
+		"IMPL_CHAINBALANCEMANAGER": "0xe5FB056534907159cb3659A4a58bcBec4cA5D646",
+		"USDT": "0x5eafC52D170ff391D41FBA99A7e91b9c4D49929a",
+		"WETH": "0x6B4C6C7521B3Ed61a9fA02E926b73D278B2a6ca7",
+		"WBTC": "0x24E55f604FF98a03B9493B53bA3ddEbD7d02733A"
+	},
+	"deployedAt": "1755795554",
+	"domainId": 421614,
+	"mailbox": "0x8DF6aDE95d25855ed0FB927ECD6a1D5Bb09d2145",
+	"network": "Arbitrum Sepolia",
+	"rpc": "${ARBITRUM_SEPOLIA_ENDPOINT}"
+}

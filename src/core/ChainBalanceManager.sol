@@ -153,51 +153,6 @@ contract ChainBalanceManager is
         emit BridgeToSynthetic(recipient, token, syntheticToken, amount);
     }
 
-    /**
-     * @dev Bridge tokens to synthetic tokens on Rari (Espresso pattern)
-     */
-    function bridgeToSynthetic(address token, uint256 amount) external nonReentrant {
-        if (amount == 0) {
-            revert ZeroAmount();
-        }
-
-        Storage storage $ = getStorage();
-
-        if ($.balanceOf[msg.sender][token] < amount) {
-            revert InsufficientBalance(msg.sender, uint256(uint160(token)), amount, $.balanceOf[msg.sender][token]);
-        }
-
-        // Lock tokens by reducing user balance
-        $.balanceOf[msg.sender][token] -= amount;
-
-        // Get and increment user nonce (Espresso security pattern)
-        uint256 currentNonce = $.userNonces[msg.sender]++;
-        emit NonceIncremented(msg.sender, $.userNonces[msg.sender]);
-
-        // Get synthetic token mapping
-        address syntheticToken = $.sourceToSynthetic[token];
-        if (syntheticToken == address(0)) {
-            revert TokenMappingNotFound(token);
-        }
-
-        // Create Espresso-style message
-        HyperlaneMessages.DepositMessage memory message = HyperlaneMessages.DepositMessage({
-            messageType: HyperlaneMessages.DEPOSIT_MESSAGE,
-            syntheticToken: syntheticToken,
-            user: msg.sender,
-            amount: amount,
-            sourceChainId: $.localDomain,
-            nonce: currentNonce
-        });
-
-        // Send cross-chain message
-        bytes memory messageBody = abi.encode(message);
-        bytes32 recipientAddress = bytes32(uint256(uint160($.destinationBalanceManager)));
-
-        IMailbox($.mailbox).dispatch($.destinationDomain, recipientAddress, messageBody);
-
-        emit BridgeToSynthetic(msg.sender, token, syntheticToken, amount);
-    }
 
     /**
      * @dev Handle cross-chain messages from Rari (Espresso pattern)

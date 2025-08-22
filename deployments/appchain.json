@@ -1,1 +1,17 @@
-{"chainId":4661,"contracts":{"ChainBalanceManager":"0xB8377eFe96802b7aB59bd8D7eaF76b4077D97b59"},"deployedAt":"1755793850","domainId":4661,"mailbox":"0xc8d6B960CFe734452f2468A2E0a654C5C25Bb6b1","network":"Appchain Testnet","rpc":"https://appchain.caff.testnet.espresso.network"}
+{
+	"chainId": 4661,
+	"contracts": {
+		"ChainBalanceManager": "0x27D0Dd86F00b59aD528f1D9B699847A588fbA2C7",
+		"PROXY_CHAINBALANCEMANAGER": "0x27D0Dd86F00b59aD528f1D9B699847A588fbA2C7",
+		"BEACON_CHAINBALANCEMANAGER": "0x80207B9bacc73dadAc1C8A03C6a7128350DF5c9E",
+		"IMPL_CHAINBALANCEMANAGER": "0x6AcaCCDacE944619678054Fe0eA03502ed557651",
+		"USDT": "0x1362Dd75d8F1579a0Ebd62DF92d8F3852C3a7516",
+		"WETH": "0x02950119C4CCD1993f7938A55B8Ab8384C3CcE4F",
+		"WBTC": "0xb2e9Eabb827b78e2aC66bE17327603778D117d18"
+	},
+	"deployedAt": "1755795032",
+	"domainId": 4661,
+	"mailbox": "0xc8d6B960CFe734452f2468A2E0a654C5C25Bb6b1",
+	"network": "Appchain Testnet",
+	"rpc": "${APPCHAIN_ENDPOINT}"
+}
