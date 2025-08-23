@@ -19,81 +19,111 @@ contract DeployActualSyntheticTokens is Script {
         // Switch to Rari
         vm.createSelectFork(vm.envString("RARI_ENDPOINT"));
         
-        // Contract addresses
-        address syntheticTokenFactoryAddr = 0x2594C4ca1B552ad573bcc0C4c561FAC6a87987fC;
-        address balanceManagerAddr = 0xd7fEF09a6cBd62E3f026916CDfE415b1e64f4Eb5;
+        // Read deployment addresses from rari.json (dynamically)
+        string memory deploymentFile = vm.readFile("deployments/rari.json");
         
-        // Expected addresses (currently just placeholders)
-        address expectedGsUSDT = 0x3d17BF5d39A96d5B4D76b40A7f74c0d02d2fadF7;
-        address expectedGsWBTC = 0x996BB75Aa83EAF0Ee2916F3fb372D16520A99eEF;
+        // Parse JSON to get deployed contract addresses
+        address syntheticTokenFactoryAddr = vm.parseJsonAddress(deploymentFile, ".contracts.SyntheticTokenFactory");
+        address balanceManagerAddr = vm.parseJsonAddress(deploymentFile, ".contracts.BalanceManager");
+        
+        // Get current synthetic token addresses from deployment file
+        address currentGsUSDT = vm.parseJsonAddress(deploymentFile, ".contracts.gsUSDT");
+        address currentGsWBTC = vm.parseJsonAddress(deploymentFile, ".contracts.gsWBTC");
+        address currentGsWETH = vm.parseJsonAddress(deploymentFile, ".contracts.gsWETH");
         
         console.log("=== CURRENT STATUS ===");
         console.log("SyntheticTokenFactory:", syntheticTokenFactoryAddr);
         console.log("BalanceManager (V2):", balanceManagerAddr);
-        console.log("Expected gsUSDT:", expectedGsUSDT);
-        console.log("Expected gsWBTC:", expectedGsWBTC);
+        console.log("Current gsUSDT (from rari.json):", currentGsUSDT);
+        console.log("Current gsWBTC (from rari.json):", currentGsWBTC);
+        console.log("Current gsWETH (from rari.json):", currentGsWETH);
         console.log("");
         
-        // Check if gsUSDT already exists as contract
+        // Check if synthetic tokens already exist as real contracts
         console.log("=== CHECKING EXISTING CONTRACTS ===");
-        console.log("gsUSDT placeholder address has no contract code");
-        console.log("Need to deploy real ERC20 tokens");
+        
+        // Check if gsUSDT has contract code
+        bool gsUSDTExists = currentGsUSDT.code.length > 0;
+        bool gsWBTCExists = currentGsWBTC.code.length > 0;
+        bool gsWETHExists = currentGsWETH.code.length > 0;
+        
+        console.log("gsUSDT contract exists:", gsUSDTExists);
+        console.log("gsWBTC contract exists:", gsWBTCExists);  
+        console.log("gsWETH contract exists:", gsWETHExists);
+        
+        if (gsUSDTExists && gsWBTCExists && gsWETHExists) {
+            console.log("All synthetic tokens already deployed as real contracts!");
+            console.log("No need to redeploy.");
+            return;
+        }
         
         vm.startBroadcast(deployerPrivateKey);
         
         console.log("=== DEPLOYING REAL SYNTHETIC TOKENS ===");
         
-        // Deploy gsUSDT as real ERC20
-        console.log("Deploying gsUSDT...");
-        SyntheticToken gsUSDT = new SyntheticToken(
-            "GTX Synthetic USDT",
-            "gsUSDT", 
-            balanceManagerAddr  // BalanceManager as minter
-        );
+        address newGsUSDT = currentGsUSDT;
+        address newGsWBTC = currentGsWBTC;
         
-        console.log("SUCCESS: gsUSDT deployed at:", address(gsUSDT));
+        // Deploy gsUSDT only if it doesn't exist
+        if (!gsUSDTExists) {
+            console.log("Deploying gsUSDT...");
+            SyntheticToken gsUSDT = new SyntheticToken(
+                "GTX Synthetic USDT",
+                "gsUSDT", 
+                balanceManagerAddr  // BalanceManager as minter
+            );
+            newGsUSDT = address(gsUSDT);
+            console.log("SUCCESS: gsUSDT deployed at:", newGsUSDT);
+        } else {
+            console.log("gsUSDT already exists at:", currentGsUSDT);
+        }
         
-        // Deploy gsWBTC as real ERC20  
-        console.log("Deploying gsWBTC...");
-        SyntheticToken gsWBTC = new SyntheticToken(
-            "GTX Synthetic WBTC",
-            "gsWBTC",
-            balanceManagerAddr  // BalanceManager as minter
-        );
-        
-        console.log("SUCCESS: gsWBTC deployed at:", address(gsWBTC));
+        // Deploy gsWBTC only if it doesn't exist  
+        if (!gsWBTCExists) {
+            console.log("Deploying gsWBTC...");
+            SyntheticToken gsWBTC = new SyntheticToken(
+                "GTX Synthetic WBTC",
+                "gsWBTC",
+                balanceManagerAddr  // BalanceManager as minter
+            );
+            newGsWBTC = address(gsWBTC);
+            console.log("SUCCESS: gsWBTC deployed at:", newGsWBTC);
+        } else {
+            console.log("gsWBTC already exists at:", currentGsWBTC);
+        }
         
         vm.stopBroadcast();
         
         console.log("");
         console.log("=== DEPLOYMENT SUMMARY ===");
-        console.log("Real gsUSDT ERC20:", address(gsUSDT));
-        console.log("Real gsWBTC ERC20:", address(gsWBTC));
-        console.log("gsWETH ERC20 (existing):", 0xC7A1777e80982E01e07406e6C6E8B30F5968F836);
+        console.log("Real gsUSDT ERC20:", newGsUSDT);
+        console.log("Real gsWBTC ERC20:", newGsWBTC);
+        console.log("gsWETH ERC20 (existing):", currentGsWETH);
         console.log("");
         
         console.log("=== VERIFICATION ===");
         
-        // Test ERC20 functionality
-        try gsUSDT.name() returns (string memory name) {
+        // Verify gsUSDT functionality
+        SyntheticToken gsUSDTToken = SyntheticToken(newGsUSDT);
+        try gsUSDTToken.name() returns (string memory name) {
             console.log("gsUSDT name:", name);
         } catch {
             console.log("gsUSDT name: Not readable");
         }
         
-        try gsUSDT.symbol() returns (string memory symbol) {
+        try gsUSDTToken.symbol() returns (string memory symbol) {
             console.log("gsUSDT symbol:", symbol);
         } catch {
             console.log("gsUSDT symbol: Not readable");
         }
         
-        try gsUSDT.totalSupply() returns (uint256 supply) {
+        try gsUSDTToken.totalSupply() returns (uint256 supply) {
             console.log("gsUSDT total supply:", supply);
         } catch {
             console.log("gsUSDT total supply: Not readable");
         }
         
-        try gsUSDT.bridgeSyntheticTokenReceiver() returns (address minter) {
+        try gsUSDTToken.bridgeSyntheticTokenReceiver() returns (address minter) {
             console.log("gsUSDT minter (BalanceManager):", minter);
             if (minter == balanceManagerAddr) {
                 console.log("SUCCESS: BalanceManager is authorized minter");

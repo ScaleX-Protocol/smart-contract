@@ -1,467 +1,633 @@
 export const PoolManagerABI: any[] = [
 	{
-		type: "constructor",
-		inputs: [],
-		stateMutability: "nonpayable",
+		"type": "constructor",
+		"inputs": [],
+		"stateMutability": "nonpayable"
 	},
 	{
-		type: "function",
-		name: "createPool",
-		inputs: [
+		"type": "function",
+		"name": "addCommonIntermediary",
+		"inputs": [
 			{
-				name: "currency0",
-				type: "address",
-				internalType: "Currency",
-			},
-			{
-				name: "currency1",
-				type: "address",
-				internalType: "Currency",
-			},
-			{
-				name: "fee",
-				type: "uint24",
-				internalType: "uint24",
-			},
-			{
-				name: "tickSpacing",
-				type: "int24",
-				internalType: "int24",
-			},
-			{
-				name: "sqrtPriceX96",
-				type: "uint160",
-				internalType: "uint160",
-			},
+				"name": "currency",
+				"type": "address",
+				"internalType": "Currency"
+			}
 		],
-		outputs: [
-			{
-				name: "poolId",
-				type: "bytes32",
-				internalType: "PoolId",
-			},
-		],
-		stateMutability: "nonpayable",
+		"outputs": [],
+		"stateMutability": "nonpayable"
 	},
 	{
-		type: "function",
-		name: "getPool",
-		inputs: [
+		"type": "function",
+		"name": "createPool",
+		"inputs": [
 			{
-				name: "id",
-				type: "bytes32",
-				internalType: "PoolId",
+				"name": "_baseCurrency",
+				"type": "address",
+				"internalType": "Currency"
 			},
-		],
-		outputs: [
 			{
-				name: "",
-				type: "tuple",
-				internalType: "struct Pool.State",
-				components: [
-					{
-						name: "slot0",
-						type: "tuple",
-						internalType: "struct Pool.Slot0",
-						components: [
-							{
-								name: "sqrtPriceX96",
-								type: "uint160",
-								internalType: "uint160",
-							},
-							{
-								name: "tick",
-								type: "int24",
-								internalType: "int24",
-							},
-							{
-								name: "protocolFee",
-								type: "uint24",
-								internalType: "uint24",
-							},
-							{
-								name: "lpFee",
-								type: "uint24",
-								internalType: "uint24",
-							},
-						],
-					},
-					{
-						name: "feeGrowthGlobal0X128",
-						type: "uint256",
-						internalType: "uint256",
-					},
-					{
-						name: "feeGrowthGlobal1X128",
-						type: "uint256",
-						internalType: "uint256",
-					},
-					{
-						name: "liquidity",
-						type: "uint128",
-						internalType: "uint128",
-					},
-				],
+				"name": "_quoteCurrency",
+				"type": "address",
+				"internalType": "Currency"
 			},
+			{
+				"name": "_tradingRules",
+				"type": "tuple",
+				"internalType": "struct IOrderBook.TradingRules",
+				"components": [
+					{
+						"name": "minTradeAmount",
+						"type": "uint128",
+						"internalType": "uint128"
+					},
+					{
+						"name": "minAmountMovement",
+						"type": "uint128",
+						"internalType": "uint128"
+					},
+					{
+						"name": "minPriceMovement",
+						"type": "uint128",
+						"internalType": "uint128"
+					},
+					{
+						"name": "minOrderSize",
+						"type": "uint128",
+						"internalType": "uint128"
+					}
+				]
+			}
 		],
-		stateMutability: "view",
+		"outputs": [
+			{
+				"name": "",
+				"type": "bytes32",
+				"internalType": "PoolId"
+			}
+		],
+		"stateMutability": "nonpayable"
 	},
 	{
-		type: "function",
-		name: "initialize",
-		inputs: [
+		"type": "function",
+		"name": "createPoolKey",
+		"inputs": [
 			{
-				name: "_balanceManager",
-				type: "address",
-				internalType: "address",
+				"name": "currency1",
+				"type": "address",
+				"internalType": "Currency"
 			},
+			{
+				"name": "currency2",
+				"type": "address",
+				"internalType": "Currency"
+			}
 		],
-		outputs: [],
-		stateMutability: "nonpayable",
+		"outputs": [
+			{
+				"name": "",
+				"type": "tuple",
+				"internalType": "struct PoolKey",
+				"components": [
+					{
+						"name": "baseCurrency",
+						"type": "address",
+						"internalType": "Currency"
+					},
+					{
+						"name": "quoteCurrency",
+						"type": "address",
+						"internalType": "Currency"
+					}
+				]
+			}
+		],
+		"stateMutability": "pure"
 	},
 	{
-		type: "function",
-		name: "modifyLiquidity",
-		inputs: [
+		"type": "function",
+		"name": "getAllCurrencies",
+		"inputs": [],
+		"outputs": [
 			{
-				name: "key",
-				type: "tuple",
-				internalType: "struct PoolKey",
-				components: [
-					{
-						name: "currency0",
-						type: "address",
-						internalType: "Currency",
-					},
-					{
-						name: "currency1",
-						type: "address",
-						internalType: "Currency",
-					},
-					{
-						name: "fee",
-						type: "uint24",
-						internalType: "uint24",
-					},
-					{
-						name: "tickSpacing",
-						type: "int24",
-						internalType: "int24",
-					},
-					{
-						name: "hooks",
-						type: "address",
-						internalType: "contract IHooks",
-					},
-				],
-			},
-			{
-				name: "params",
-				type: "tuple",
-				internalType: "struct IPoolManager.ModifyLiquidityParams",
-				components: [
-					{
-						name: "tickLower",
-						type: "int24",
-						internalType: "int24",
-					},
-					{
-						name: "tickUpper",
-						type: "int24",
-						internalType: "int24",
-					},
-					{
-						name: "liquidityDelta",
-						type: "int256",
-						internalType: "int256",
-					},
-					{
-						name: "salt",
-						type: "bytes32",
-						internalType: "bytes32",
-					},
-				],
-			},
-			{
-				name: "hookData",
-				type: "bytes",
-				internalType: "bytes",
-			},
+				"name": "",
+				"type": "address[]",
+				"internalType": "Currency[]"
+			}
 		],
-		outputs: [
-			{
-				name: "callerDelta",
-				type: "tuple",
-				internalType: "struct BalanceDelta",
-				components: [
-					{
-						name: "amount0",
-						type: "int128",
-						internalType: "int128",
-					},
-					{
-						name: "amount1",
-						type: "int128",
-						internalType: "int128",
-					},
-				],
-			},
-			{
-				name: "feeDelta",
-				type: "tuple",
-				internalType: "struct BalanceDelta",
-				components: [
-					{
-						name: "amount0",
-						type: "int128",
-						internalType: "int128",
-					},
-					{
-						name: "amount1",
-						type: "int128",
-						internalType: "int128",
-					},
-				],
-			},
-		],
-		stateMutability: "nonpayable",
+		"stateMutability": "view"
 	},
 	{
-		type: "function",
-		name: "swap",
-		inputs: [
+		"type": "function",
+		"name": "getCommonIntermediaries",
+		"inputs": [],
+		"outputs": [
 			{
-				name: "key",
-				type: "tuple",
-				internalType: "struct PoolKey",
-				components: [
-					{
-						name: "currency0",
-						type: "address",
-						internalType: "Currency",
-					},
-					{
-						name: "currency1",
-						type: "address",
-						internalType: "Currency",
-					},
-					{
-						name: "fee",
-						type: "uint24",
-						internalType: "uint24",
-					},
-					{
-						name: "tickSpacing",
-						type: "int24",
-						internalType: "int24",
-					},
-					{
-						name: "hooks",
-						type: "address",
-						internalType: "contract IHooks",
-					},
-				],
-			},
-			{
-				name: "params",
-				type: "tuple",
-				internalType: "struct IPoolManager.SwapParams",
-				components: [
-					{
-						name: "zeroForOne",
-						type: "bool",
-						internalType: "bool",
-					},
-					{
-						name: "amountSpecified",
-						type: "int256",
-						internalType: "int256",
-					},
-					{
-						name: "sqrtPriceLimitX96",
-						type: "uint160",
-						internalType: "uint160",
-					},
-				],
-			},
-			{
-				name: "hookData",
-				type: "bytes",
-				internalType: "bytes",
-			},
+				"name": "",
+				"type": "address[]",
+				"internalType": "Currency[]"
+			}
 		],
-		outputs: [
-			{
-				name: "swapDelta",
-				type: "tuple",
-				internalType: "struct BalanceDelta",
-				components: [
-					{
-						name: "amount0",
-						type: "int128",
-						internalType: "int128",
-					},
-					{
-						name: "amount1",
-						type: "int128",
-						internalType: "int128",
-					},
-				],
-			},
-		],
-		stateMutability: "nonpayable",
+		"stateMutability": "view"
 	},
 	{
-		type: "event",
-		name: "Initialize",
-		inputs: [
+		"type": "function",
+		"name": "getPool",
+		"inputs": [
 			{
-				name: "id",
-				type: "bytes32",
-				indexed: true,
-				internalType: "PoolId",
-			},
-			{
-				name: "currency0",
-				type: "address",
-				indexed: true,
-				internalType: "Currency",
-			},
-			{
-				name: "currency1",
-				type: "address",
-				indexed: true,
-				internalType: "Currency",
-			},
-			{
-				name: "fee",
-				type: "uint24",
-				indexed: false,
-				internalType: "uint24",
-			},
-			{
-				name: "tickSpacing",
-				type: "int24",
-				indexed: false,
-				internalType: "int24",
-			},
-			{
-				name: "hooks",
-				type: "address",
-				indexed: false,
-				internalType: "contract IHooks",
-			},
-			{
-				name: "sqrtPriceX96",
-				type: "uint160",
-				indexed: false,
-				internalType: "uint160",
-			},
-			{
-				name: "tick",
-				type: "int24",
-				indexed: false,
-				internalType: "int24",
-			},
+				"name": "key",
+				"type": "tuple",
+				"internalType": "struct PoolKey",
+				"components": [
+					{
+						"name": "baseCurrency",
+						"type": "address",
+						"internalType": "Currency"
+					},
+					{
+						"name": "quoteCurrency",
+						"type": "address",
+						"internalType": "Currency"
+					}
+				]
+			}
 		],
-		anonymous: false,
+		"outputs": [
+			{
+				"name": "",
+				"type": "tuple",
+				"internalType": "struct IPoolManager.Pool",
+				"components": [
+					{
+						"name": "baseCurrency",
+						"type": "address",
+						"internalType": "Currency"
+					},
+					{
+						"name": "quoteCurrency",
+						"type": "address",
+						"internalType": "Currency"
+					},
+					{
+						"name": "orderBook",
+						"type": "address",
+						"internalType": "contract IOrderBook"
+					}
+				]
+			}
+		],
+		"stateMutability": "view"
 	},
 	{
-		type: "event",
-		name: "ModifyLiquidity",
-		inputs: [
+		"type": "function",
+		"name": "getPoolId",
+		"inputs": [
 			{
-				name: "id",
-				type: "bytes32",
-				indexed: true,
-				internalType: "PoolId",
-			},
-			{
-				name: "sender",
-				type: "address",
-				indexed: true,
-				internalType: "address",
-			},
-			{
-				name: "tickLower",
-				type: "int24",
-				indexed: false,
-				internalType: "int24",
-			},
-			{
-				name: "tickUpper",
-				type: "int24",
-				indexed: false,
-				internalType: "int24",
-			},
-			{
-				name: "liquidityDelta",
-				type: "int256",
-				indexed: false,
-				internalType: "int256",
-			},
-			{
-				name: "salt",
-				type: "bytes32",
-				indexed: false,
-				internalType: "bytes32",
-			},
+				"name": "key",
+				"type": "tuple",
+				"internalType": "struct PoolKey",
+				"components": [
+					{
+						"name": "baseCurrency",
+						"type": "address",
+						"internalType": "Currency"
+					},
+					{
+						"name": "quoteCurrency",
+						"type": "address",
+						"internalType": "Currency"
+					}
+				]
+			}
 		],
-		anonymous: false,
+		"outputs": [
+			{
+				"name": "",
+				"type": "bytes32",
+				"internalType": "PoolId"
+			}
+		],
+		"stateMutability": "pure"
 	},
 	{
-		type: "event",
-		name: "Swap",
-		inputs: [
+		"type": "function",
+		"name": "getPoolLiquidityScore",
+		"inputs": [
 			{
-				name: "id",
-				type: "bytes32",
-				indexed: true,
-				internalType: "PoolId",
+				"name": "currency1",
+				"type": "address",
+				"internalType": "Currency"
 			},
 			{
-				name: "sender",
-				type: "address",
-				indexed: true,
-				internalType: "address",
-			},
-			{
-				name: "amount0",
-				type: "int128",
-				indexed: false,
-				internalType: "int128",
-			},
-			{
-				name: "amount1",
-				type: "int128",
-				indexed: false,
-				internalType: "int128",
-			},
-			{
-				name: "sqrtPriceX96",
-				type: "uint160",
-				indexed: false,
-				internalType: "uint160",
-			},
-			{
-				name: "liquidity",
-				type: "uint128",
-				indexed: false,
-				internalType: "uint128",
-			},
-			{
-				name: "tick",
-				type: "int24",
-				indexed: false,
-				internalType: "int24",
-			},
-			{
-				name: "fee",
-				type: "uint24",
-				indexed: false,
-				internalType: "uint24",
-			},
+				"name": "currency2",
+				"type": "address",
+				"internalType": "Currency"
+			}
 		],
-		anonymous: false,
+		"outputs": [
+			{
+				"name": "",
+				"type": "uint256",
+				"internalType": "uint256"
+			}
+		],
+		"stateMutability": "view"
 	},
+	{
+		"type": "function",
+		"name": "initialize",
+		"inputs": [
+			{
+				"name": "_owner",
+				"type": "address",
+				"internalType": "address"
+			},
+			{
+				"name": "_balanceManager",
+				"type": "address",
+				"internalType": "address"
+			},
+			{
+				"name": "_orderBookBeacon",
+				"type": "address",
+				"internalType": "address"
+			}
+		],
+		"outputs": [],
+		"stateMutability": "nonpayable"
+	},
+	{
+		"type": "function",
+		"name": "owner",
+		"inputs": [],
+		"outputs": [
+			{
+				"name": "",
+				"type": "address",
+				"internalType": "address"
+			}
+		],
+		"stateMutability": "view"
+	},
+	{
+		"type": "function",
+		"name": "poolExists",
+		"inputs": [
+			{
+				"name": "currency1",
+				"type": "address",
+				"internalType": "Currency"
+			},
+			{
+				"name": "currency2",
+				"type": "address",
+				"internalType": "Currency"
+			}
+		],
+		"outputs": [
+			{
+				"name": "",
+				"type": "bool",
+				"internalType": "bool"
+			}
+		],
+		"stateMutability": "view"
+	},
+	{
+		"type": "function",
+		"name": "removeCommonIntermediary",
+		"inputs": [
+			{
+				"name": "currency",
+				"type": "address",
+				"internalType": "Currency"
+			}
+		],
+		"outputs": [],
+		"stateMutability": "nonpayable"
+	},
+	{
+		"type": "function",
+		"name": "renounceOwnership",
+		"inputs": [],
+		"outputs": [],
+		"stateMutability": "nonpayable"
+	},
+	{
+		"type": "function",
+		"name": "setRouter",
+		"inputs": [
+			{
+				"name": "_router",
+				"type": "address",
+				"internalType": "address"
+			}
+		],
+		"outputs": [],
+		"stateMutability": "nonpayable"
+	},
+	{
+		"type": "function",
+		"name": "transferOwnership",
+		"inputs": [
+			{
+				"name": "newOwner",
+				"type": "address",
+				"internalType": "address"
+			}
+		],
+		"outputs": [],
+		"stateMutability": "nonpayable"
+	},
+	{
+		"type": "function",
+		"name": "updatePoolLiquidity",
+		"inputs": [
+			{
+				"name": "key",
+				"type": "tuple",
+				"internalType": "struct PoolKey",
+				"components": [
+					{
+						"name": "baseCurrency",
+						"type": "address",
+						"internalType": "Currency"
+					},
+					{
+						"name": "quoteCurrency",
+						"type": "address",
+						"internalType": "Currency"
+					}
+				]
+			},
+			{
+				"name": "liquidityScore",
+				"type": "uint256",
+				"internalType": "uint256"
+			}
+		],
+		"outputs": [],
+		"stateMutability": "nonpayable"
+	},
+	{
+		"type": "function",
+		"name": "updatePoolTradingRules",
+		"inputs": [
+			{
+				"name": "_poolId",
+				"type": "bytes32",
+				"internalType": "PoolId"
+			},
+			{
+				"name": "_newRules",
+				"type": "tuple",
+				"internalType": "struct IOrderBook.TradingRules",
+				"components": [
+					{
+						"name": "minTradeAmount",
+						"type": "uint128",
+						"internalType": "uint128"
+					},
+					{
+						"name": "minAmountMovement",
+						"type": "uint128",
+						"internalType": "uint128"
+					},
+					{
+						"name": "minPriceMovement",
+						"type": "uint128",
+						"internalType": "uint128"
+					},
+					{
+						"name": "minOrderSize",
+						"type": "uint128",
+						"internalType": "uint128"
+					}
+				]
+			}
+		],
+		"outputs": [],
+		"stateMutability": "nonpayable"
+	},
+	{
+		"type": "event",
+		"name": "CurrencyAdded",
+		"inputs": [
+			{
+				"name": "currency",
+				"type": "address",
+				"indexed": false,
+				"internalType": "Currency"
+			}
+		],
+		"anonymous": false
+	},
+	{
+		"type": "event",
+		"name": "Initialized",
+		"inputs": [
+			{
+				"name": "version",
+				"type": "uint64",
+				"indexed": false,
+				"internalType": "uint64"
+			}
+		],
+		"anonymous": false
+	},
+	{
+		"type": "event",
+		"name": "IntermediaryAdded",
+		"inputs": [
+			{
+				"name": "currency",
+				"type": "address",
+				"indexed": false,
+				"internalType": "Currency"
+			}
+		],
+		"anonymous": false
+	},
+	{
+		"type": "event",
+		"name": "IntermediaryRemoved",
+		"inputs": [
+			{
+				"name": "currency",
+				"type": "address",
+				"indexed": false,
+				"internalType": "Currency"
+			}
+		],
+		"anonymous": false
+	},
+	{
+		"type": "event",
+		"name": "OwnershipTransferred",
+		"inputs": [
+			{
+				"name": "previousOwner",
+				"type": "address",
+				"indexed": true,
+				"internalType": "address"
+			},
+			{
+				"name": "newOwner",
+				"type": "address",
+				"indexed": true,
+				"internalType": "address"
+			}
+		],
+		"anonymous": false
+	},
+	{
+		"type": "event",
+		"name": "PoolCreated",
+		"inputs": [
+			{
+				"name": "poolId",
+				"type": "bytes32",
+				"indexed": true,
+				"internalType": "PoolId"
+			},
+			{
+				"name": "orderBook",
+				"type": "address",
+				"indexed": false,
+				"internalType": "address"
+			},
+			{
+				"name": "baseCurrency",
+				"type": "address",
+				"indexed": false,
+				"internalType": "Currency"
+			},
+			{
+				"name": "quoteCurrency",
+				"type": "address",
+				"indexed": false,
+				"internalType": "Currency"
+			}
+		],
+		"anonymous": false
+	},
+	{
+		"type": "event",
+		"name": "PoolLiquidityUpdated",
+		"inputs": [
+			{
+				"name": "poolId",
+				"type": "bytes32",
+				"indexed": false,
+				"internalType": "PoolId"
+			},
+			{
+				"name": "newLiquidity",
+				"type": "uint256",
+				"indexed": false,
+				"internalType": "uint256"
+			}
+		],
+		"anonymous": false
+	},
+	{
+		"type": "event",
+		"name": "TradingRulesUpdated",
+		"inputs": [
+			{
+				"name": "poolId",
+				"type": "bytes32",
+				"indexed": true,
+				"internalType": "PoolId"
+			},
+			{
+				"name": "newRules",
+				"type": "tuple",
+				"indexed": false,
+				"internalType": "struct IOrderBook.TradingRules",
+				"components": [
+					{
+						"name": "minTradeAmount",
+						"type": "uint128",
+						"internalType": "uint128"
+					},
+					{
+						"name": "minAmountMovement",
+						"type": "uint128",
+						"internalType": "uint128"
+					},
+					{
+						"name": "minPriceMovement",
+						"type": "uint128",
+						"internalType": "uint128"
+					},
+					{
+						"name": "minOrderSize",
+						"type": "uint128",
+						"internalType": "uint128"
+					}
+				]
+			}
+		],
+		"anonymous": false
+	},
+	{
+		"type": "error",
+		"name": "InvalidInitialization",
+		"inputs": []
+	},
+	{
+		"type": "error",
+		"name": "InvalidRouter",
+		"inputs": []
+	},
+	{
+		"type": "error",
+		"name": "InvalidTradingRule",
+		"inputs": [
+			{
+				"name": "reason",
+				"type": "string",
+				"internalType": "string"
+			}
+		]
+	},
+	{
+		"type": "error",
+		"name": "NotInitializing",
+		"inputs": []
+	},
+	{
+		"type": "error",
+		"name": "OwnableInvalidOwner",
+		"inputs": [
+			{
+				"name": "owner",
+				"type": "address",
+				"internalType": "address"
+			}
+		]
+	},
+	{
+		"type": "error",
+		"name": "OwnableUnauthorizedAccount",
+		"inputs": [
+			{
+				"name": "account",
+				"type": "address",
+				"internalType": "address"
+			}
+		]
+	},
+	{
+		"type": "error",
+		"name": "PoolAlreadyExists",
+		"inputs": [
+			{
+				"name": "id",
+				"type": "bytes32",
+				"internalType": "bytes32"
+			}
+		]
+	}
 ] as const;

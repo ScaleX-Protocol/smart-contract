@@ -1,66 +1,78 @@
 export const BeaconProxyABI: any[] = [
 	{
-		type: "constructor",
-		inputs: [
+		"type": "constructor",
+		"inputs": [
 			{
-				name: "beacon",
-				type: "address",
-				internalType: "address",
+				"name": "beacon",
+				"type": "address",
+				"internalType": "address"
 			},
 			{
-				name: "data",
-				type: "bytes",
-				internalType: "bytes",
-			},
+				"name": "data",
+				"type": "bytes",
+				"internalType": "bytes"
+			}
 		],
-		stateMutability: "payable",
+		"stateMutability": "payable"
 	},
 	{
-		type: "fallback",
-		stateMutability: "payable",
+		"type": "fallback",
+		"stateMutability": "payable"
 	},
 	{
-		type: "receive",
-		stateMutability: "payable",
-	},
-	{
-		type: "event",
-		name: "BeaconUpgraded",
-		inputs: [
+		"type": "event",
+		"name": "BeaconUpgraded",
+		"inputs": [
 			{
-				name: "beacon",
-				type: "address",
-				indexed: true,
-				internalType: "address",
-			},
+				"name": "beacon",
+				"type": "address",
+				"indexed": true,
+				"internalType": "address"
+			}
 		],
-		anonymous: false,
+		"anonymous": false
 	},
 	{
-		type: "error",
-		name: "ERC1967InvalidBeacon",
-		inputs: [
+		"type": "error",
+		"name": "AddressEmptyCode",
+		"inputs": [
 			{
-				name: "beacon",
-				type: "address",
-				internalType: "address",
-			},
-		],
+				"name": "target",
+				"type": "address",
+				"internalType": "address"
+			}
+		]
 	},
 	{
-		type: "error",
-		name: "ERC1967InvalidImplementation",
-		inputs: [
+		"type": "error",
+		"name": "ERC1967InvalidBeacon",
+		"inputs": [
 			{
-				name: "implementation",
-				type: "address",
-				internalType: "address",
-			},
-		],
+				"name": "beacon",
+				"type": "address",
+				"internalType": "address"
+			}
+		]
 	},
 	{
-		type: "error",
-		name: "ERC1967NonPayable",
-		inputs: [],
+		"type": "error",
+		"name": "ERC1967InvalidImplementation",
+		"inputs": [
+			{
+				"name": "implementation",
+				"type": "address",
+				"internalType": "address"
+			}
+		]
 	},
+	{
+		"type": "error",
+		"name": "ERC1967NonPayable",
+		"inputs": []
+	},
+	{
+		"type": "error",
+		"name": "FailedCall",
+		"inputs": []
+	}
 ] as const;
