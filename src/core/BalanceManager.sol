@@ -570,12 +570,22 @@ contract BalanceManager is
         return getStorage().tokenRegistry;
     }
 
+    /**
+     * @dev Get cross-chain configuration
+     */
+    function getCrossChainConfig() external view returns (address mailbox, uint32 localDomain) {
+        Storage storage $ = getStorage();
+        return ($.mailbox, $.localDomain);
+    }
+
     // Cross-chain events
     event CrossChainDepositReceived(
         address indexed user, Currency indexed currency, uint256 amount, uint32 sourceChain
     );
     event CrossChainWithdrawSent(address indexed user, Currency indexed currency, uint256 amount, uint32 targetChain);
     event ChainBalanceManagerSet(uint32 indexed chainId, address indexed chainBalanceManager);
+    event CrossChainInitialized(address indexed mailbox, uint32 indexed localDomain);
+    event CrossChainConfigUpdated(address indexed oldMailbox, address indexed newMailbox, uint32 oldDomain, uint32 newDomain);
 
     // Local deposit event
     event LocalDeposit(

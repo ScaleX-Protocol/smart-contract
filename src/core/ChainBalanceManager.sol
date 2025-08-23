@@ -40,8 +40,8 @@ contract ChainBalanceManager is
     event TokenMappingSet(address indexed sourceToken, address indexed syntheticToken);
     event NonceIncremented(address indexed user, uint256 newNonce);
     event CrossChainConfigUpdated(uint32 indexed destinationDomain, address indexed destinationBalanceManager);
-    event LocalDeposit(address indexed user, address indexed token, uint256 amount);
     event DestinationChainConfigUpdated(bool isDestinationChain, address messageHandler);
+    event LocalDomainUpdated(uint32 indexed oldDomain, uint32 indexed newDomain);
 
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() {
@@ -49,17 +49,15 @@ contract ChainBalanceManager is
     }
 
     /**
-     * @dev Unified initialization for both cross-chain and same-chain modes
+     * @dev Initialize ChainBalanceManager for cross-chain operation only
      * @param _owner Contract owner
-     * @param _messageHandler Either Hyperlane mailbox (cross-chain) or BalanceManager (same-chain)
-     * @param _isDestinationChain true = same-chain mode, false = cross-chain mode
-     * @param _destinationDomain Target chain domain (can be same as local for destination mode)
-     * @param _destinationBalanceManager BalanceManager address on destination chain
+     * @param _mailbox Hyperlane mailbox for cross-chain messaging
+     * @param _destinationDomain Target chain domain (Rari: 1918988905)
+     * @param _destinationBalanceManager BalanceManager address on Rari
      */
     function initialize(
         address _owner,
-        address _messageHandler,
-        bool _isDestinationChain,
+        address _mailbox,
         uint32 _destinationDomain,
         address _destinationBalanceManager
     ) public initializer {
@@ -72,38 +70,21 @@ contract ChainBalanceManager is
         $.localDomain = uint32(block.chainid);
         $.destinationDomain = _destinationDomain;
         $.destinationBalanceManager = _destinationBalanceManager;
-        $.isDestinationChain = _isDestinationChain;
-        $.messageHandler = _messageHandler;
-
-        if (_isDestinationChain) {
-            // DESTINATION CHAIN MODE: Same-chain operation
-            // messageHandler should be BalanceManager
-            $.mailbox = address(0); // No mailbox needed
-            
-            // Validate destination domain matches local domain for same-chain
-            if ($.destinationDomain != $.localDomain) {
-                revert("Destination chain mode requires destinationDomain == localDomain");
-            }
-            
-            emit DestinationChainConfigUpdated(true, _messageHandler);
-        } else {
-            // SOURCE CHAIN MODE: Cross-chain operation  
-            // messageHandler should be Hyperlane mailbox
-            $.mailbox = _messageHandler; // Keep legacy field for compatibility
-            
-            // Validate we're not targeting the same chain for cross-chain mode
-            if ($.localDomain == _destinationDomain) {
-                revert("Cross-chain mode requires different localDomain and destinationDomain");
-            }
-            
-            emit DestinationChainConfigUpdated(false, _messageHandler);
+        $.isDestinationChain = false; // Always cross-chain mode
+        $.messageHandler = _mailbox;
+        $.mailbox = _mailbox;
+        
+        // Validate we're targeting a different chain (source -> destination)
+        if ($.localDomain == _destinationDomain) {
+            revert("ChainBalanceManager requires different source and destination chains");
         }
         
+        emit DestinationChainConfigUpdated(false, _mailbox);
         emit CrossChainConfigUpdated(_destinationDomain, _destinationBalanceManager);
     }
 
     /**
-     * @dev Convenience function for cross-chain mode initialization
+     * @dev Legacy compatibility function - use main initialize instead
      */
     function initializeCrossChain(
         address _owner,
@@ -111,31 +92,7 @@ contract ChainBalanceManager is
         uint32 _destinationDomain,
         address _destinationBalanceManager
     ) public initializer {
-        initialize(
-            _owner,
-            _mailbox,           // messageHandler = mailbox
-            false,             // isDestinationChain = false (cross-chain)
-            _destinationDomain,
-            _destinationBalanceManager
-        );
-    }
-
-    /**
-     * @dev Convenience function for same-chain mode initialization  
-     */
-    function initializeSameChain(
-        address _owner,
-        address _balanceManager
-    ) public initializer {
-        uint32 localDomain = uint32(block.chainid);
-        
-        initialize(
-            _owner,
-            _balanceManager,    // messageHandler = balanceManager
-            true,              // isDestinationChain = true (same-chain)
-            localDomain,       // destinationDomain = localDomain
-            _balanceManager    // destinationBalanceManager = balanceManager
-        );
+        initialize(_owner, _mailbox, _destinationDomain, _destinationBalanceManager);
     }
 
     // Legacy interface compatibility - use overloading
@@ -203,55 +160,16 @@ contract ChainBalanceManager is
             revert TokenMappingNotFound(token);
         }
 
-        if ($.isDestinationChain) {
-            // SAME CHAIN: Call BalanceManager directly
-            _handleLocalDeposit(token, syntheticToken, amount, recipient, currentNonce);
-        } else {
-            // CROSS CHAIN: Send Hyperlane message
-            _handleCrossChainDeposit(token, syntheticToken, amount, recipient, currentNonce);
-        }
+        // Always cross-chain - send Hyperlane message to Rari
+        _handleCrossChainDeposit(token, syntheticToken, amount, recipient, currentNonce);
 
         emit Deposit(msg.sender, recipient, token, amount);
         emit BridgeToSynthetic(recipient, token, syntheticToken, amount);
     }
 
-    /**
-     * @dev Handle local deposit on destination chain - call BalanceManager directly
-     */
-    function _handleLocalDeposit(
-        address token,
-        address syntheticToken,
-        uint256 amount,
-        address recipient,
-        uint256 nonce
-    ) internal {
-        Storage storage $ = getStorage();
-
-        // Create message exactly like cross-chain version
-        HyperlaneMessages.DepositMessage memory message = HyperlaneMessages.DepositMessage({
-            messageType: HyperlaneMessages.DEPOSIT_MESSAGE,
-            syntheticToken: syntheticToken,
-            user: recipient,
-            amount: amount,
-            sourceChainId: $.localDomain,
-            nonce: nonce
-        });
-
-        bytes memory messageBody = abi.encode(message);
-        bytes32 senderAddress = bytes32(uint256(uint160(address(this))));
-
-        // Call BalanceManager.handle() directly (same as Hyperlane would do)
-        IMessageRecipient($.destinationBalanceManager).handle{value: 0}(
-            $.localDomain,        // origin = local domain
-            senderAddress,        // sender = this contract
-            messageBody          // message body
-        );
-
-        emit LocalDeposit(recipient, token, amount);
-    }
 
     /**
-     * @dev Handle cross-chain deposit - send Hyperlane message
+     * @dev Handle cross-chain deposit - send Hyperlane message to Rari
      */
     function _handleCrossChainDeposit(
         address token,
@@ -262,7 +180,7 @@ contract ChainBalanceManager is
     ) internal {
         Storage storage $ = getStorage();
 
-        // Create Espresso-style message for recipient
+        // Create message for BalanceManager on Rari
         HyperlaneMessages.DepositMessage memory message = HyperlaneMessages.DepositMessage({
             messageType: HyperlaneMessages.DEPOSIT_MESSAGE,
             syntheticToken: syntheticToken,
@@ -272,7 +190,7 @@ contract ChainBalanceManager is
             nonce: nonce
         });
 
-        // Send cross-chain message via Hyperlane
+        // Send cross-chain message via Hyperlane to Rari BalanceManager
         bytes memory messageBody = abi.encode(message);
         bytes32 recipientAddress = bytes32(uint256(uint160($.destinationBalanceManager)));
 
@@ -500,6 +418,16 @@ contract ChainBalanceManager is
         emit CrossChainConfigUpdated(_destinationDomain, _destinationBalanceManager);
     }
 
+    /**
+     * @dev Update local domain (fix for incorrect domain during deployment)
+     */
+    function updateLocalDomain(uint32 _localDomain) external onlyOwner {
+        Storage storage $ = getStorage();
+        uint32 oldDomain = $.localDomain;
+        $.localDomain = _localDomain;
+        emit LocalDomainUpdated(oldDomain, _localDomain);
+    }
+
     // =============================================================
     //                      VIEW FUNCTIONS
     // =============================================================
@@ -570,19 +498,17 @@ contract ChainBalanceManager is
     }
 
     /**
-     * @dev Get unified configuration - works for both cross-chain and same-chain modes
+     * @dev Get cross-chain configuration
      */
-    function getUnifiedConfig() external view returns (
-        bool isDestinationChain,
-        address messageHandler,
+    function getCrossChainInfo() external view returns (
+        address mailbox,
         uint32 localDomain,
         uint32 destinationDomain,
         address destinationBalanceManager
     ) {
         Storage storage $ = getStorage();
         return (
-            $.isDestinationChain,
-            $.messageHandler,
+            $.mailbox,
             $.localDomain,
             $.destinationDomain,
             $.destinationBalanceManager
@@ -590,30 +516,14 @@ contract ChainBalanceManager is
     }
 
     /**
-     * @dev Admin function to configure for destination chain mode (post-deployment)
+     * @dev Admin function to update cross-chain configuration (post-deployment)
      */
-    function configureDestinationChainMode(
-        address _balanceManager
-    ) external onlyOwner {
-        Storage storage $ = getStorage();
-        $.isDestinationChain = true;
-        $.messageHandler = _balanceManager;
-        $.destinationBalanceManager = _balanceManager;
-        $.mailbox = address(0); // No mailbox needed for same-chain
-
-        emit DestinationChainConfigUpdated(true, _balanceManager);
-    }
-
-    /**
-     * @dev Admin function to configure for cross-chain mode (post-deployment)
-     */
-    function configureCrossChainMode(
+    function updateCrossChainConfig(
         address _mailbox,
         uint32 _destinationDomain,
         address _destinationBalanceManager
     ) external onlyOwner {
         Storage storage $ = getStorage();
-        $.isDestinationChain = false;
         $.messageHandler = _mailbox;
         $.mailbox = _mailbox;
         $.destinationDomain = _destinationDomain;

@@ -5,6 +5,7 @@
 		"BalanceManagerBeacon": "0xF1A53bC852bB9e139a8200003B55164592695395",
 		"BalanceManagerImpl": "0x71d5c9439923cf2579b12F87cc5adA52877B594e",
 		"BalanceManagerImplV2": "0x465C4A8c43df8fBc9952f28a72a6Ce2c3B57a26d",
+		"BalanceManagerImplV3": "0xBf7D5Fca0303DC711F6CDC08693DA6Eb2DF5D7Ce",
 		"ChainRegistry": "0x0a1Ced1539C9FB81aBdDF870588A4fEfBf461bBB",
 		"SyntheticTokenFactory": "0x2594C4ca1B552ad573bcc0C4c561FAC6a87987fC",
 		"TokenRegistry": "0x80207B9bacc73dadAc1C8A03C6a7128350DF5c9E",
@@ -33,43 +34,93 @@
 		"status": "ENABLED",
 		"deployedAt": "1755828486",
 		"pools": {
-			"gsWETH_gsUSDT": {
+			"gsWETH_gsUSDT_old": {
 				"poolId": "0x95e33693c8b0e491367d67550606cf78dd5063c7157ebfbc2cf1843b33f88272",
 				"base": "0xC7A1777e80982E01e07406e6C6E8B30F5968F836",
 				"quote": "0x6fcf28b801C7116cA8b6460289e259aC8D9131F3",
-				"description": "1 WETH = X USDT",
+				"description": "1 WETH = X USDT (OLD - wrong decimals)",
 				"minTradeAmount": "1000000000000000",
 				"minOrderSize": "10000000",
-				"minPriceMovement": "10000"
+				"minPriceMovement": "10000",
+				"deprecated": true
 			},
-			"gsWBTC_gsUSDT": {
+			"gsWBTC_gsUSDT_old": {
 				"poolId": "0xfae71d5ecc427cd83f39409db3501e7c154b4964cefc3c50f85c99a78a2708bb",
 				"base": "0xfAcf2E43910f93CE00d95236C23693F73FdA3Dcf",
 				"quote": "0x6fcf28b801C7116cA8b6460289e259aC8D9131F3",
-				"description": "1 WBTC = X USDT", 
+				"description": "1 WBTC = X USDT (OLD - wrong decimals)", 
 				"minTradeAmount": "100000",
 				"minOrderSize": "10000000",
-				"minPriceMovement": "100000000"
+				"minPriceMovement": "100000000",
+				"deprecated": true
+			},
+			"gWETH_gUSDT": {
+				"base": "0x3ffE82D34548b9561530AFB0593d52b9E9446fC8",
+				"quote": "0xf2dc96d3e25f06e7458fF670Cf1c9218bBb71D9d",
+				"baseDecimals": 18,
+				"quoteDecimals": 6,
+				"description": "1 gWETH = X gUSDT (clean names, correct decimals)",
+				"createdAt": "1755961508"
+			},
+			"gWBTC_gUSDT": {
+				"base": "0xd99813A6152dBB2026b2Cd4298CF88fAC1bCf748",
+				"quote": "0xf2dc96d3e25f06e7458fF670Cf1c9218bBb71D9d",
+				"baseDecimals": 8,
+				"quoteDecimals": 6,
+				"description": "1 gWBTC = X gUSDT (clean names, correct decimals)",
+				"createdAt": "1755961508"
 			}
 		}
 	},
 	"crossChain": {
 		"status": "ENABLED",
 		"configuredAt": "1755854204",
+		"mailboxInitialized": true,
 		"registeredChains": {
 			"4661": {
 				"name": "Appchain Testnet",
 				"chainBalanceManager": "0x27D0Dd86F00b59aD528f1D9B699847A588fbA2C7",
 				"registered": true
+			},
+			"421614": {
+				"name": "Arbitrum Sepolia",
+				"chainBalanceManager": "0xF36453ceB82F0893FCCe4da04d32cEBfe33aa29A",
+				"registered": true
+			},
+			"11155931": {
+				"name": "Rise Sepolia",
+				"chainBalanceManager": "0xa2B3Eb8995814E84B4E369A11afe52Cef6C7C745",
+				"registered": true
 			}
 		},
 		"syntheticTokens": {
-			"gsUSDT": {
+			"gsUSDT_old": {
 				"address": "0x6fcf28b801C7116cA8b6460289e259aC8D9131F3",
 				"sourceChains": ["4661"],
 				"totalSupply": "0",
 				"pendingMessages": 3,
-				"tokenMinting": "ENABLED_V2"
+				"tokenMinting": "ENABLED_V2",
+				"decimals": 18,
+				"deprecated": true,
+				"reason": "Wrong decimals - should be 6"
+			},
+			"gUSDT": {
+				"address": "0xf2dc96d3e25f06e7458fF670Cf1c9218bBb71D9d",
+				"decimals": 6,
+				"sourceChains": ["4661"],
+				"tokenMinting": "ENABLED_V3"
+			},
+			"gWBTC": {
+				"address": "0xd99813A6152dBB2026b2Cd4298CF88fAC1bCf748",
+				"decimals": 8,
+				"sourceChains": ["4661"],
+				"tokenMinting": "ENABLED_V3"
+			},
+			"gWETH": {
+				"address": "0x3ffE82D34548b9561530AFB0593d52b9E9446fC8",
+				"decimals": 18,
+				"sourceChains": ["4661"],
+				"tokenMinting": "ENABLED_V3"
 			}
 		},
 		"upgrades": {
@@ -82,6 +133,19 @@
 					"Real ERC20 token burning on cross-chain withdrawals", 
 					"TokenRegistry integration added",
 					"setTokenRegistry() function added"
+				],
+				"status": "SUPERSEDED"
+			},
+			"balanceManagerV3": {
+				"upgradedAt": "1755961508",
+				"previousImpl": "0x465C4A8c43df8fBc9952f28a72a6Ce2c3B57a26d",
+				"newImpl": "0xBf7D5Fca0303DC711F6CDC08693DA6Eb2DF5D7Ce",
+				"changes": [
+					"Added getCrossChainConfig() function",
+					"Added updateCrossChainConfig() function", 
+					"Fixed mailbox reinit hell issue",
+					"Added CrossChain events",
+					"Removed restrictive mailbox initialization"
 				],
 				"status": "ACTIVE"
 			}

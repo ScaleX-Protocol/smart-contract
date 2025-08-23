@@ -22,7 +22,20 @@
 		"tokenMappings": {
 			"USDT": {
 				"source": "0x1362Dd75d8F1579a0Ebd62DF92d8F3852C3a7516",
-				"synthetic": "0x6fcf28b801C7116cA8b6460289e259aC8D9131F3",
+				"synthetic": "0xf2dc96d3e25f06e7458fF670Cf1c9218bBb71D9d",
+				"decimals": 6,
+				"whitelisted": true
+			},
+			"WBTC": {
+				"source": "0xb2e9Eabb827b78e2aC66bE17327603778D117d18",
+				"synthetic": "0xd99813A6152dBB2026b2Cd4298CF88fAC1bCf748",
+				"decimals": 8,
+				"whitelisted": true
+			},
+			"WETH": {
+				"source": "0x02950119C4CCD1993f7938A55B8Ab8384C3CcE4F",
+				"synthetic": "0x3ffE82D34548b9561530AFB0593d52b9E9446fC8",
+				"decimals": 18,
 				"whitelisted": true
 			}
 		},
