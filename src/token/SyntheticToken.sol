@@ -6,14 +6,25 @@ import {ISyntheticERC20} from "@gtxcore/interfaces/ISyntheticERC20.sol";
 
 contract SyntheticToken is ERC20, ISyntheticERC20 {
     address public bridgeSyntheticTokenReceiver;
+    uint8 private _decimals;
 
     modifier onlyBridgeSyntheticTokenReceiver() {
         require(msg.sender == bridgeSyntheticTokenReceiver, "Not authorized");
         _;
     }
 
-    constructor(string memory name_, string memory symbol_, address _bridgeSyntheticTokenReceiver) ERC20(name_, symbol_) {
+    constructor(
+        string memory name_, 
+        string memory symbol_, 
+        uint8 decimals_,
+        address _bridgeSyntheticTokenReceiver
+    ) ERC20(name_, symbol_) {
+        _decimals = decimals_;
         bridgeSyntheticTokenReceiver = _bridgeSyntheticTokenReceiver;
+    }
+
+    function decimals() public view virtual override returns (uint8) {
+        return _decimals;
     }
 
     function mint(address to, uint256 amount) external onlyBridgeSyntheticTokenReceiver {

@@ -438,7 +438,16 @@ contract ChainBalanceManager is
      * @dev Add token to whitelist (legacy alias)  
      */
     function addToken(address token) external onlyOwner {
-        addWhitelistedToken(token);
+        Storage storage $ = getStorage();
+
+        if ($.whitelistedTokens[token]) {
+            revert TokenAlreadyWhitelisted(token);
+        }
+
+        $.whitelistedTokens[token] = true;
+        $.tokenList.push(token);
+
+        emit TokenWhitelisted(token);
     }
 
     /**

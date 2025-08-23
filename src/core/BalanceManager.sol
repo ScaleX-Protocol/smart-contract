@@ -14,11 +14,11 @@ import {Currency} from "./libraries/Currency.sol";
 import {HyperlaneMessages} from "./libraries/HyperlaneMessages.sol";
 import {BalanceManagerStorage} from "./storages/BalanceManagerStorage.sol";
 
-import {console} from "forge-std/Test.sol";
+import {TokenRegistry} from "./TokenRegistry.sol";
+import {ISyntheticERC20} from "./interfaces/ISyntheticERC20.sol";
 import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import {ISyntheticERC20} from "./interfaces/ISyntheticERC20.sol";
-import {TokenRegistry} from "./TokenRegistry.sol";
+import {console} from "forge-std/Test.sol";
 
 contract BalanceManager is
     IBalanceManager,
@@ -55,7 +55,9 @@ contract BalanceManager is
         emit PoolManagerSet(_poolManager);
     }
 
-    function setMailbox(address _mailbox) external onlyOwner {
+    function setMailbox(
+        address _mailbox
+    ) external onlyOwner {
         getStorage().mailbox = _mailbox;
     }
 
@@ -338,10 +340,27 @@ contract BalanceManager is
 
         $.mailbox = _mailbox;
         $.localDomain = _localDomain;
+
+        emit CrossChainInitialized(_mailbox, _localDomain);
+    }
+
+    // Update cross-chain configuration (for upgrades)
+    function updateCrossChainConfig(address _mailbox, uint32 _localDomain) external onlyOwner {
+        Storage storage $ = getStorage();
+
+        address oldMailbox = $.mailbox;
+        uint32 oldDomain = $.localDomain;
+
+        $.mailbox = _mailbox;
+        $.localDomain = _localDomain;
+
+        emit CrossChainConfigUpdated(oldMailbox, _mailbox, oldDomain, _localDomain);
     }
 
     // Set TokenRegistry for synthetic token mapping
-    function setTokenRegistry(address _tokenRegistry) external onlyOwner {
+    function setTokenRegistry(
+        address _tokenRegistry
+    ) external onlyOwner {
         Storage storage $ = getStorage();
         if (_tokenRegistry == address(0)) {
             revert InvalidTokenRegistry();
@@ -403,7 +422,7 @@ contract BalanceManager is
         // Mint actual ERC20 synthetic tokens to BalanceManager (vault)
         ISyntheticERC20 syntheticToken = ISyntheticERC20(message.syntheticToken);
         syntheticToken.mint(address(this), message.amount);
-        
+
         // Update internal balance tracking for CLOB system
         $.balanceOf[message.user][currencyId] += message.amount;
 
@@ -433,11 +452,11 @@ contract BalanceManager is
         if ($.balanceOf[msg.sender][currencyId] < amount) {
             revert InsufficientBalance(msg.sender, currencyId, amount, $.balanceOf[msg.sender][currencyId]);
         }
-        
+
         // Burn actual ERC20 synthetic tokens from BalanceManager (vault)
         ISyntheticERC20 syntheticToken = ISyntheticERC20(Currency.unwrap(syntheticCurrency));
         syntheticToken.burn(address(this), amount);
-        
+
         // Update internal balance tracking
         $.balanceOf[msg.sender][currencyId] -= amount;
 
@@ -493,11 +512,7 @@ contract BalanceManager is
     // =============================================================
 
     // Deposit local tokens and mint synthetic tokens on the same chain
-    function depositLocal(
-        address token,
-        uint256 amount,
-        address recipient
-    ) external nonReentrant {
+    function depositLocal(address token, uint256 amount, address recipient) external nonReentrant {
         if (amount == 0) {
             revert ZeroAmount();
         }
@@ -521,20 +536,11 @@ contract BalanceManager is
         }
 
         // Get synthetic token address from TokenRegistry
-        address syntheticToken = TokenRegistry($.tokenRegistry).getSyntheticToken(
-            currentChain,
-            token,
-            currentChain
-        );
+        address syntheticToken = TokenRegistry($.tokenRegistry).getSyntheticToken(currentChain, token, currentChain);
 
         // Convert amount using TokenRegistry decimal conversion
-        uint256 syntheticAmount = TokenRegistry($.tokenRegistry).convertAmountForMapping(
-            currentChain,
-            token,
-            currentChain,
-            amount,
-            true 
-        );
+        uint256 syntheticAmount =
+            TokenRegistry($.tokenRegistry).convertAmountForMapping(currentChain, token, currentChain, amount, true);
 
         // Transfer real tokens to this contract (vault them)
         IERC20(token).transferFrom(msg.sender, address(this), amount);
@@ -570,7 +576,7 @@ contract BalanceManager is
     );
     event CrossChainWithdrawSent(address indexed user, Currency indexed currency, uint256 amount, uint32 targetChain);
     event ChainBalanceManagerSet(uint32 indexed chainId, address indexed chainBalanceManager);
-    
+
     // Local deposit event
     event LocalDeposit(
         address indexed recipient,
