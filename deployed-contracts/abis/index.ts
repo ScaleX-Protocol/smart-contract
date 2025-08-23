@@ -1,6 +1,5 @@
 export { ChainBalanceManagerABI } from './ChainBalanceManagerABI';
 export { BalanceManagerABI } from './BalanceManagerABI';
-export { ERC20ABI } from './ERC20ABI';
 export { TokenRegistryABI } from './TokenRegistryABI';
 export { SyntheticTokenABI } from './SyntheticTokenABI';
 export { SyntheticTokenFactoryABI } from './SyntheticTokenFactoryABI';
@@ -10,3 +9,4 @@ export { GTXRouterABI } from './GTXRouterABI';
 export { OrderBookABI } from './OrderBookABI';
 export { UpgradeableBeaconABI } from './UpgradeableBeaconABI';
 export { BeaconProxyABI } from './BeaconProxyABI';
+export { ERC20ABI } from './ERC20ABI';

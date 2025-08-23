@@ -1,172 +1,498 @@
 export const ChainRegistryABI: any[] = [
 	{
-		type: "constructor",
-		inputs: [],
-		stateMutability: "nonpayable",
+		"type": "constructor",
+		"inputs": [],
+		"stateMutability": "nonpayable"
 	},
 	{
-		type: "function",
-		name: "getActiveChains",
-		inputs: [],
-		outputs: [
+		"type": "function",
+		"name": "getActiveChains",
+		"inputs": [],
+		"outputs": [
 			{
-				name: "",
-				type: "uint32[]",
-				internalType: "uint32[]",
-			},
+				"name": "",
+				"type": "uint32[]",
+				"internalType": "uint32[]"
+			}
 		],
-		stateMutability: "view",
+		"stateMutability": "view"
 	},
 	{
-		type: "function",
-		name: "getChainBalanceManager",
-		inputs: [
+		"type": "function",
+		"name": "getAllChains",
+		"inputs": [],
+		"outputs": [
 			{
-				name: "chainId",
-				type: "uint32",
-				internalType: "uint32",
-			},
+				"name": "",
+				"type": "uint32[]",
+				"internalType": "uint32[]"
+			}
 		],
-		outputs: [
-			{
-				name: "",
-				type: "address",
-				internalType: "address",
-			},
-		],
-		stateMutability: "view",
+		"stateMutability": "view"
 	},
 	{
-		type: "function",
-		name: "getChainInfo",
-		inputs: [
+		"type": "function",
+		"name": "getChainByDomain",
+		"inputs": [
 			{
-				name: "chainId",
-				type: "uint32",
-				internalType: "uint32",
-			},
+				"name": "domainId",
+				"type": "uint32",
+				"internalType": "uint32"
+			}
 		],
-		outputs: [
+		"outputs": [
 			{
-				name: "name",
-				type: "string",
-				internalType: "string",
-			},
-			{
-				name: "chainBalanceManager",
-				type: "address",
-				internalType: "address",
-			},
-			{
-				name: "isActive",
-				type: "bool",
-				internalType: "bool",
-			},
+				"name": "",
+				"type": "uint32",
+				"internalType": "uint32"
+			}
 		],
-		stateMutability: "view",
+		"stateMutability": "view"
 	},
 	{
-		type: "function",
-		name: "isChainRegistered",
-		inputs: [
+		"type": "function",
+		"name": "getChainConfig",
+		"inputs": [
 			{
-				name: "chainId",
-				type: "uint32",
-				internalType: "uint32",
-			},
+				"name": "chainId",
+				"type": "uint32",
+				"internalType": "uint32"
+			}
 		],
-		outputs: [
+		"outputs": [
 			{
-				name: "",
-				type: "bool",
-				internalType: "bool",
-			},
+				"name": "",
+				"type": "tuple",
+				"internalType": "struct ChainRegistryStorage.ChainConfig",
+				"components": [
+					{
+						"name": "domainId",
+						"type": "uint32",
+						"internalType": "uint32"
+					},
+					{
+						"name": "mailbox",
+						"type": "address",
+						"internalType": "address"
+					},
+					{
+						"name": "rpcEndpoint",
+						"type": "string",
+						"internalType": "string"
+					},
+					{
+						"name": "isActive",
+						"type": "bool",
+						"internalType": "bool"
+					},
+					{
+						"name": "name",
+						"type": "string",
+						"internalType": "string"
+					},
+					{
+						"name": "blockTime",
+						"type": "uint256",
+						"internalType": "uint256"
+					}
+				]
+			}
 		],
-		stateMutability: "view",
+		"stateMutability": "view"
 	},
 	{
-		type: "function",
-		name: "registerChain",
-		inputs: [
+		"type": "function",
+		"name": "getDomainId",
+		"inputs": [
 			{
-				name: "chainId",
-				type: "uint32",
-				internalType: "uint32",
-			},
-			{
-				name: "name",
-				type: "string",
-				internalType: "string",
-			},
-			{
-				name: "chainBalanceManager",
-				type: "address",
-				internalType: "address",
-			},
+				"name": "chainId",
+				"type": "uint32",
+				"internalType": "uint32"
+			}
 		],
-		outputs: [],
-		stateMutability: "nonpayable",
+		"outputs": [
+			{
+				"name": "",
+				"type": "uint32",
+				"internalType": "uint32"
+			}
+		],
+		"stateMutability": "view"
 	},
 	{
-		type: "function",
-		name: "updateChainStatus",
-		inputs: [
+		"type": "function",
+		"name": "getMailbox",
+		"inputs": [
 			{
-				name: "chainId",
-				type: "uint32",
-				internalType: "uint32",
-			},
-			{
-				name: "isActive",
-				type: "bool",
-				internalType: "bool",
-			},
+				"name": "chainId",
+				"type": "uint32",
+				"internalType": "uint32"
+			}
 		],
-		outputs: [],
-		stateMutability: "nonpayable",
+		"outputs": [
+			{
+				"name": "",
+				"type": "address",
+				"internalType": "address"
+			}
+		],
+		"stateMutability": "view"
 	},
 	{
-		type: "event",
-		name: "ChainRegistered",
-		inputs: [
+		"type": "function",
+		"name": "initialize",
+		"inputs": [
 			{
-				name: "chainId",
-				type: "uint32",
-				indexed: true,
-				internalType: "uint32",
-			},
-			{
-				name: "name",
-				type: "string",
-				indexed: false,
-				internalType: "string",
-			},
-			{
-				name: "chainBalanceManager",
-				type: "address",
-				indexed: true,
-				internalType: "address",
-			},
+				"name": "_owner",
+				"type": "address",
+				"internalType": "address"
+			}
 		],
-		anonymous: false,
+		"outputs": [],
+		"stateMutability": "nonpayable"
 	},
 	{
-		type: "event",
-		name: "ChainStatusUpdated",
-		inputs: [
+		"type": "function",
+		"name": "isChainActive",
+		"inputs": [
 			{
-				name: "chainId",
-				type: "uint32",
-				indexed: true,
-				internalType: "uint32",
-			},
-			{
-				name: "isActive",
-				type: "bool",
-				indexed: false,
-				internalType: "bool",
-			},
+				"name": "chainId",
+				"type": "uint32",
+				"internalType": "uint32"
+			}
 		],
-		anonymous: false,
+		"outputs": [
+			{
+				"name": "",
+				"type": "bool",
+				"internalType": "bool"
+			}
+		],
+		"stateMutability": "view"
 	},
+	{
+		"type": "function",
+		"name": "owner",
+		"inputs": [],
+		"outputs": [
+			{
+				"name": "",
+				"type": "address",
+				"internalType": "address"
+			}
+		],
+		"stateMutability": "view"
+	},
+	{
+		"type": "function",
+		"name": "registerChain",
+		"inputs": [
+			{
+				"name": "chainId",
+				"type": "uint32",
+				"internalType": "uint32"
+			},
+			{
+				"name": "domainId",
+				"type": "uint32",
+				"internalType": "uint32"
+			},
+			{
+				"name": "mailbox",
+				"type": "address",
+				"internalType": "address"
+			},
+			{
+				"name": "rpcEndpoint",
+				"type": "string",
+				"internalType": "string"
+			},
+			{
+				"name": "name",
+				"type": "string",
+				"internalType": "string"
+			},
+			{
+				"name": "blockTime",
+				"type": "uint256",
+				"internalType": "uint256"
+			}
+		],
+		"outputs": [],
+		"stateMutability": "nonpayable"
+	},
+	{
+		"type": "function",
+		"name": "removeChain",
+		"inputs": [
+			{
+				"name": "chainId",
+				"type": "uint32",
+				"internalType": "uint32"
+			}
+		],
+		"outputs": [],
+		"stateMutability": "nonpayable"
+	},
+	{
+		"type": "function",
+		"name": "renounceOwnership",
+		"inputs": [],
+		"outputs": [],
+		"stateMutability": "nonpayable"
+	},
+	{
+		"type": "function",
+		"name": "setChainStatus",
+		"inputs": [
+			{
+				"name": "chainId",
+				"type": "uint32",
+				"internalType": "uint32"
+			},
+			{
+				"name": "isActive",
+				"type": "bool",
+				"internalType": "bool"
+			}
+		],
+		"outputs": [],
+		"stateMutability": "nonpayable"
+	},
+	{
+		"type": "function",
+		"name": "transferOwnership",
+		"inputs": [
+			{
+				"name": "newOwner",
+				"type": "address",
+				"internalType": "address"
+			}
+		],
+		"outputs": [],
+		"stateMutability": "nonpayable"
+	},
+	{
+		"type": "function",
+		"name": "updateChain",
+		"inputs": [
+			{
+				"name": "chainId",
+				"type": "uint32",
+				"internalType": "uint32"
+			},
+			{
+				"name": "newMailbox",
+				"type": "address",
+				"internalType": "address"
+			},
+			{
+				"name": "newRpcEndpoint",
+				"type": "string",
+				"internalType": "string"
+			},
+			{
+				"name": "newBlockTime",
+				"type": "uint256",
+				"internalType": "uint256"
+			}
+		],
+		"outputs": [],
+		"stateMutability": "nonpayable"
+	},
+	{
+		"type": "event",
+		"name": "ChainRegistered",
+		"inputs": [
+			{
+				"name": "chainId",
+				"type": "uint32",
+				"indexed": true,
+				"internalType": "uint32"
+			},
+			{
+				"name": "domainId",
+				"type": "uint32",
+				"indexed": true,
+				"internalType": "uint32"
+			},
+			{
+				"name": "mailbox",
+				"type": "address",
+				"indexed": false,
+				"internalType": "address"
+			},
+			{
+				"name": "name",
+				"type": "string",
+				"indexed": false,
+				"internalType": "string"
+			}
+		],
+		"anonymous": false
+	},
+	{
+		"type": "event",
+		"name": "ChainRemoved",
+		"inputs": [
+			{
+				"name": "chainId",
+				"type": "uint32",
+				"indexed": true,
+				"internalType": "uint32"
+			}
+		],
+		"anonymous": false
+	},
+	{
+		"type": "event",
+		"name": "ChainStatusChanged",
+		"inputs": [
+			{
+				"name": "chainId",
+				"type": "uint32",
+				"indexed": true,
+				"internalType": "uint32"
+			},
+			{
+				"name": "isActive",
+				"type": "bool",
+				"indexed": false,
+				"internalType": "bool"
+			}
+		],
+		"anonymous": false
+	},
+	{
+		"type": "event",
+		"name": "ChainUpdated",
+		"inputs": [
+			{
+				"name": "chainId",
+				"type": "uint32",
+				"indexed": true,
+				"internalType": "uint32"
+			},
+			{
+				"name": "oldMailbox",
+				"type": "address",
+				"indexed": false,
+				"internalType": "address"
+			},
+			{
+				"name": "newMailbox",
+				"type": "address",
+				"indexed": false,
+				"internalType": "address"
+			}
+		],
+		"anonymous": false
+	},
+	{
+		"type": "event",
+		"name": "Initialized",
+		"inputs": [
+			{
+				"name": "version",
+				"type": "uint64",
+				"indexed": false,
+				"internalType": "uint64"
+			}
+		],
+		"anonymous": false
+	},
+	{
+		"type": "event",
+		"name": "OwnershipTransferred",
+		"inputs": [
+			{
+				"name": "previousOwner",
+				"type": "address",
+				"indexed": true,
+				"internalType": "address"
+			},
+			{
+				"name": "newOwner",
+				"type": "address",
+				"indexed": true,
+				"internalType": "address"
+			}
+		],
+		"anonymous": false
+	},
+	{
+		"type": "error",
+		"name": "ChainAlreadyExists",
+		"inputs": [
+			{
+				"name": "chainId",
+				"type": "uint32",
+				"internalType": "uint32"
+			}
+		]
+	},
+	{
+		"type": "error",
+		"name": "ChainNotFound",
+		"inputs": [
+			{
+				"name": "chainId",
+				"type": "uint32",
+				"internalType": "uint32"
+			}
+		]
+	},
+	{
+		"type": "error",
+		"name": "DomainAlreadyUsed",
+		"inputs": [
+			{
+				"name": "domainId",
+				"type": "uint32",
+				"internalType": "uint32"
+			}
+		]
+	},
+	{
+		"type": "error",
+		"name": "InvalidDomain",
+		"inputs": []
+	},
+	{
+		"type": "error",
+		"name": "InvalidInitialization",
+		"inputs": []
+	},
+	{
+		"type": "error",
+		"name": "InvalidMailbox",
+		"inputs": []
+	},
+	{
+		"type": "error",
+		"name": "NotInitializing",
+		"inputs": []
+	},
+	{
+		"type": "error",
+		"name": "OwnableInvalidOwner",
+		"inputs": [
+			{
+				"name": "owner",
+				"type": "address",
+				"internalType": "address"
+			}
+		]
+	},
+	{
+		"type": "error",
+		"name": "OwnableUnauthorizedAccount",
+		"inputs": [
+			{
+				"name": "account",
+				"type": "address",
+				"internalType": "address"
+			}
+		]
+	}
 ] as const;
