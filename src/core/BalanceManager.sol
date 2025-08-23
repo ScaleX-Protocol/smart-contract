@@ -332,7 +332,9 @@ contract BalanceManager is
     // Initialize cross-chain functionality
     function initializeCrossChain(address _mailbox, uint32 _localDomain) external onlyOwner {
         Storage storage $ = getStorage();
-        require($.mailbox == address(0), "Already initialized");
+        if ($.mailbox != address(0)) {
+            revert AlreadyInitialized();
+        }
 
         $.mailbox = _mailbox;
         $.localDomain = _localDomain;
@@ -341,7 +343,9 @@ contract BalanceManager is
     // Set TokenRegistry for synthetic token mapping
     function setTokenRegistry(address _tokenRegistry) external onlyOwner {
         Storage storage $ = getStorage();
-        require(_tokenRegistry != address(0), "Invalid TokenRegistry");
+        if (_tokenRegistry == address(0)) {
+            revert InvalidTokenRegistry();
+        }
         $.tokenRegistry = _tokenRegistry;
     }
 
@@ -355,12 +359,19 @@ contract BalanceManager is
     // Cross-chain message handler (receives deposit messages from ChainBalanceManager)
     function handle(uint32 _origin, bytes32 _sender, bytes calldata _messageBody) external payable override {
         Storage storage $ = getStorage();
-        require(msg.sender == $.mailbox, "Only mailbox");
+        if (msg.sender != $.mailbox) {
+            revert OnlyMailbox();
+        }
 
         // Verify sender is authorized ChainBalanceManager
         address expectedSender = $.chainBalanceManagers[_origin];
-        require(expectedSender != address(0), "Unknown origin chain");
-        require(_sender == bytes32(uint256(uint160(expectedSender))), "Invalid sender");
+        if (expectedSender == address(0)) {
+            revert UnknownOriginChain(_origin);
+        }
+        bytes32 expectedSenderBytes = bytes32(uint256(uint160(expectedSender)));
+        if (_sender != expectedSenderBytes) {
+            revert InvalidSender(expectedSenderBytes, _sender);
+        }
 
         // Decode message type
         uint8 messageType = abi.decode(_messageBody, (uint8));
@@ -380,16 +391,18 @@ contract BalanceManager is
 
         // Replay protection
         bytes32 messageId = keccak256(abi.encodePacked(_origin, message.user, message.nonce));
-        require(!$.processedMessages[messageId], "Message already processed");
+        if ($.processedMessages[messageId]) {
+            revert MessageAlreadyProcessed(messageId);
+        }
         $.processedMessages[messageId] = true;
 
         // Mint synthetic tokens directly to user
         Currency syntheticCurrency = Currency.wrap(message.syntheticToken);
         uint256 currencyId = syntheticCurrency.toId();
 
-        // Mint actual ERC20 synthetic tokens instead of internal accounting
+        // Mint actual ERC20 synthetic tokens to BalanceManager (vault)
         ISyntheticERC20 syntheticToken = ISyntheticERC20(message.syntheticToken);
-        syntheticToken.mint(message.user, message.amount);
+        syntheticToken.mint(address(this), message.amount);
         
         // Update internal balance tracking for CLOB system
         $.balanceOf[message.user][currencyId] += message.amount;
@@ -411,15 +424,19 @@ contract BalanceManager is
 
         Storage storage $ = getStorage();
         address targetChainBM = $.chainBalanceManagers[targetChainId];
-        require(targetChainBM != address(0), "Target chain not supported");
+        if (targetChainBM == address(0)) {
+            revert TargetChainNotSupported(targetChainId);
+        }
 
         // Burn synthetic tokens and update internal balance
         uint256 currencyId = syntheticCurrency.toId();
-        require($.balanceOf[msg.sender][currencyId] >= amount, "Insufficient balance");
+        if ($.balanceOf[msg.sender][currencyId] < amount) {
+            revert InsufficientBalance(msg.sender, currencyId, amount, $.balanceOf[msg.sender][currencyId]);
+        }
         
-        // Burn actual ERC20 synthetic tokens
+        // Burn actual ERC20 synthetic tokens from BalanceManager (vault)
         ISyntheticERC20 syntheticToken = ISyntheticERC20(Currency.unwrap(syntheticCurrency));
-        syntheticToken.burn(msg.sender, amount);
+        syntheticToken.burn(address(this), amount);
         
         // Update internal balance tracking
         $.balanceOf[msg.sender][currencyId] -= amount;
@@ -471,10 +488,95 @@ contract BalanceManager is
         return getStorage().processedMessages[messageId];
     }
 
+    // =============================================================
+    //                     LOCAL DEPOSIT FUNCTIONS
+    // =============================================================
+
+    // Deposit local tokens and mint synthetic tokens on the same chain
+    function depositLocal(
+        address token,
+        uint256 amount,
+        address recipient
+    ) external nonReentrant {
+        if (amount == 0) {
+            revert ZeroAmount();
+        }
+        if (token == address(0)) {
+            revert InvalidTokenAddress();
+        }
+        if (recipient == address(0)) {
+            revert InvalidRecipientAddress();
+        }
+
+        Storage storage $ = getStorage();
+        if ($.tokenRegistry == address(0)) {
+            revert TokenRegistryNotSet();
+        }
+
+        uint32 currentChain = _getCurrentChainId();
+
+        // Use TokenRegistry to validate local mapping (sourceChain == targetChain)
+        if (!TokenRegistry($.tokenRegistry).isTokenMappingActive(currentChain, token, currentChain)) {
+            revert TokenNotSupportedForLocalDeposits(token);
+        }
+
+        // Get synthetic token address from TokenRegistry
+        address syntheticToken = TokenRegistry($.tokenRegistry).getSyntheticToken(
+            currentChain,
+            token,
+            currentChain
+        );
+
+        // Convert amount using TokenRegistry decimal conversion
+        uint256 syntheticAmount = TokenRegistry($.tokenRegistry).convertAmountForMapping(
+            currentChain,
+            token,
+            currentChain,
+            amount,
+            true 
+        );
+
+        // Transfer real tokens to this contract (vault them)
+        IERC20(token).transferFrom(msg.sender, address(this), amount);
+
+        // Mint synthetic tokens to BalanceManager (vault)
+        ISyntheticERC20(syntheticToken).mint(address(this), syntheticAmount);
+
+        // Update internal balance tracking for CLOB system
+        uint256 currencyId = Currency.wrap(syntheticToken).toId();
+        $.balanceOf[recipient][currencyId] += syntheticAmount;
+
+        emit LocalDeposit(recipient, token, syntheticToken, amount, syntheticAmount);
+        emit Deposit(recipient, currencyId, syntheticAmount);
+    }
+
+    /**
+     * @dev Get current chain ID
+     */
+    function _getCurrentChainId() internal view returns (uint32) {
+        return uint32(block.chainid);
+    }
+
+    /**
+     * @dev Get TokenRegistry address
+     */
+    function getTokenRegistry() external view returns (address) {
+        return getStorage().tokenRegistry;
+    }
+
     // Cross-chain events
     event CrossChainDepositReceived(
         address indexed user, Currency indexed currency, uint256 amount, uint32 sourceChain
     );
     event CrossChainWithdrawSent(address indexed user, Currency indexed currency, uint256 amount, uint32 targetChain);
     event ChainBalanceManagerSet(uint32 indexed chainId, address indexed chainBalanceManager);
+    
+    // Local deposit event
+    event LocalDeposit(
+        address indexed recipient,
+        address indexed sourceToken,
+        address indexed syntheticToken,
+        uint256 sourceAmount,
+        uint256 syntheticAmount
+    );
 }
