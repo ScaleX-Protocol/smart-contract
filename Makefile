@@ -11,9 +11,6 @@ flag ?=
 # Custom network can be set via make network=<network_name>
 network ?= $(DEFAULT_NETWORK)
 
-<<<<<<< HEAD
-.PHONY: account chain compile deploy deploy-verify flatten fork format generate lint test verify upgrade upgrade-verify full-integration simple-integration simple-demo swap deploy-chain-balance-manager add-tokens-chain-balance-manager add-single-token-chain-balance-manager remove-single-token-chain-balance-manager list-tokens-chain-balance-manager test-chain-balance-manager fill-orderbook-tokens market-orderbook-tokens fill-orderbook-configurable market-orderbook-configurable send-token deploy-faucet deploy-faucet-verify setup-faucet add-faucet-tokens deposit-faucet-tokens check-balances
-=======
 # =============================================================
 #                   ESPRESSO HYPERLANE INTEGRATION
 # =============================================================
@@ -32,7 +29,6 @@ $(1))))
 endef
 
 .PHONY: account chain compile deploy deploy-verify flatten fork format generate lint test verify upgrade upgrade-verify full-integration simple-integration simple-demo swap deploy-chain-balance-manager add-tokens-chain-balance-manager add-single-token-chain-balance-manager remove-single-token-chain-balance-manager list-tokens-chain-balance-manager test-chain-balance-manager fill-orderbook-tokens market-orderbook-tokens deploy-upgradeable-gtx upgrade-gtx-contract test-espresso-integration check-env
->>>>>>> 2cb6d97 (feat: balance manager and chain balance manager with hyperlane)
 
 # Helper function to run forge script
 define forge_script
@@ -81,6 +77,22 @@ define forge_mint_tokens
 	forge script script/MintTokens.s.sol:MintTokens --rpc-url $(network) --broadcast $(flag)
 endef
 
+define forge_deploy_faucet
+	forge script script/faucet/DeployFaucet.s.sol:DeployFaucet --rpc-url $(network) --broadcast $(flag)
+endef
+
+define forge_setup_faucet
+	forge script script/faucet/SetupFaucet.s.sol:SetupFaucet --rpc-url $(network) --broadcast $(flag)
+endef
+
+define forge_add_faucet_tokens
+	forge script script/faucet/AddToken.s.sol:AddToken --rpc-url $(network) --broadcast $(flag)
+endef
+
+define forge_deposit_faucet_tokens
+	forge script script/faucet/DepositToken.s.sol:DepositToken --rpc-url $(network) --broadcast $(flag)
+endef
+
 define forge_simple_market_order_demo
 	forge script script/SimpleMarketOrderDemo.s.sol:SimpleMarketOrderDemo --rpc-url $(network) --broadcast $(flag)
 endef
@@ -105,35 +117,6 @@ define forge_test_chain_balance_manager_basic
 	forge script script/TestChainBalanceManagerBasic.s.sol:TestChainBalanceManagerBasic --rpc-url $(network) --broadcast $(flag)
 endef
 
-<<<<<<< HEAD
-define forge_send_token
-	forge script script/SendToken.s.sol:SendToken --rpc-url $(network) --broadcast $(flag)
-endef
-
-# Helper function to deploy faucet
-define forge_deploy_faucet
-	forge script script/faucet/DeployFaucet.s.sol:DeployFaucet --rpc-url $(network) --broadcast $(flag)
-endef
-
-# Helper function to setup faucet
-define forge_setup_faucet
-	forge script script/faucet/SetupFaucet.s.sol:SetupFaucet --rpc-url $(network) --broadcast $(flag)
-endef
-
-# Helper function to add tokens to faucet
-define forge_add_faucet_tokens
-	forge script script/faucet/AddToken.s.sol:AddToken --rpc-url $(network) --broadcast $(flag)
-endef
-
-# Helper function to deposit tokens to faucet
-define forge_deposit_faucet_tokens
-	forge script script/faucet/DepositToken.s.sol:DepositToken --rpc-url $(network) --broadcast $(flag)
-endef
-
-# Helper function to check token balances
-define forge_check_balances
-	forge script script/CheckTokenBalances.s.sol:CheckTokenBalances --rpc-url $(network) $(flag)
-=======
 # =============================================================
 #              NEW ESPRESSO HYPERLANE FUNCTIONS
 # =============================================================
@@ -158,7 +141,6 @@ endef
 # Test Espresso integration
 define forge_test_espresso
 	TEST_TYPE=$(1) $(2) forge script script/TestEspressoIntegration.s.sol:TestEspressoIntegration --rpc-url $(call get_rpc_url,$(3)) $(4)
->>>>>>> 2cb6d97 (feat: balance manager and chain balance manager with hyperlane)
 endef
 
 # Define a target to deploy using the specified network
@@ -425,7 +407,12 @@ upgrade-chain-balance-manager: check-env
 	@echo "⚡ Upgrading ChainBalanceManager in seconds..."
 	$(call forge_upgrade_gtx,$(PROXY_ADDRESS),ChainBalanceManager,$(NETWORK))
 
-# Test cross-chain deposit (Appchain → Rari)
+# Test cross-chain deposit (Appchain → Rari) - Working version
+deposit-appchain-to-rari: check-env
+	@echo "🔄 Depositing from Appchain to Rari..."
+	forge script script/TestAppchainToRariDeposit.s.sol:TestAppchainToRariDeposit --rpc-url https://appchain.caff.testnet.espresso.network --broadcast
+
+# Test cross-chain deposit (Appchain → Rari) - Original version
 test-deposit: check-env
 	@if [ -z "$(APPCHAIN_CHAIN_BM_PROXY)" ]; then \
 		echo "Error: Set APPCHAIN_CHAIN_BM_PROXY in .env"; \
@@ -460,49 +447,6 @@ test-balances: check-env
 
 # Define a target to display help information
 help:
-<<<<<<< HEAD
-	@echo "Makefile targets:"
-	@echo "  deploy          - Deploy contracts using the specified network"
-	@echo "  deploy-verify   - Deploy and verify contracts using the specified network"
-	@echo "  deploy-mocks    - Deploy mock contracts"
-	@echo "  deploy-mocks-verify - Deploy and verify mock contracts"
-	@echo "  fill-orderbook  - Fill mock order book"
-	@echo "  market-orderbook - Place market orders in mock order book"
-	@echo "  fill-orderbook-tokens - Fill orderbook with specific tokens (usage: make fill-orderbook-tokens token0=MOCK_TOKEN_WETH token1=MOCK_TOKEN_USDC)"
-	@echo "  market-orderbook-tokens - Place market orders with specific tokens (usage: make market-orderbook-tokens token0=MOCK_TOKEN_WETH token1=MOCK_TOKEN_USDC)"
-	@echo "  fill-orderbook-configurable - Fill orderbook with configurable parameters"
-	@echo "    Usage: make fill-orderbook-configurable buy_start_price=1900000000 buy_end_price=1980000000 sell_start_price=2000000000 sell_end_price=2100000000 price_step=10000000 num_orders=10 buy_quantity=500000000000000000 sell_quantity=400000000000000000 eth_amount=200000000000000000000 usdc_amount=400000000000"
-	@echo "  market-orderbook-configurable - Place market orders with configurable parameters"
-	@echo "    Usage: make market-orderbook-configurable num_buy_orders=3 num_sell_orders=2 eth_amount=50000000000000000000 usdc_amount=100000000000"
-	@echo "  swap            - Execute token swaps"
-	@echo "  mint-tokens     - Mint tokens to specified recipient"
-	@echo "  simple-demo     - Run simple market order demonstration"
-	@echo "  simple-integration - Run simple integration (deploy, deploy-mocks, simple-demo)"
-	@echo "  full-integration - Run full deployment and testing sequence"
-	@echo "  upgrade         - Upgrade contracts using the specified network"
-	@echo "  upgrade-verify  - Upgrade and verify contracts using the specified network"
-	@echo "  verify          - Verify contracts using the specified network"
-	@echo "  deploy-chain-balance-manager - Deploy ChainBalanceManager contract"
-	@echo "  add-tokens-chain-balance-manager - Add tokens to ChainBalanceManager whitelist"
-	@echo "  add-single-token-chain-balance-manager - Add single token (usage: make add-single-token-chain-balance-manager token=0x...)"
-	@echo "  remove-single-token-chain-balance-manager - Remove single token (usage: make remove-single-token-chain-balance-manager token=0x...)"
-	@echo "  list-tokens-chain-balance-manager - List all whitelisted tokens"
-	@echo "  test-chain-balance-manager - Run ChainBalanceManager tests"
-	@echo "  test-chain-balance-manager-unlock-claim - Test unlock/claim functionality with deployed contracts"
-	@echo "  send-token      - Send tokens with balance logging (usage: make send-token RECIPIENT_ADDRESS=0x... SEND_AMOUNT=1000 TOKEN_TYPE=USDC)"
-	@echo "  deploy-faucet    - Deploy faucet contract"
-	@echo "  deploy-faucet-verify - Deploy and verify faucet contract"
-	@echo "  setup-faucet     - Setup faucet parameters"
-	@echo "  add-faucet-tokens - Add tokens to faucet"
-	@echo "  deposit-faucet-tokens - Deposit tokens to faucet"
-	@echo "  check-balances  - Check token balances and approvals for owner address"
-	@echo "  compile         - Compile the contracts"
-	@echo "  test            - Run tests"
-	@echo "  lint            - Lint the code"
-	@echo "  generate-abi    - Generate ABI files"
-	@echo "  build           - Build the project with build info"
-	@echo "  help            - Display this help information"
-=======
 	@echo "=== GTX CLOB DEX - Upgradeable Contracts with Espresso Hyperlane ==="
 	@echo ""
 	@echo "🚀 Quick Start Commands:"
@@ -548,4 +492,3 @@ help:
 	@echo ""
 	@echo "🎯 Perfect for Accelerator Development!"
 	@echo "   Upgrade contracts in seconds, iterate at lightning speed!"
->>>>>>> 2cb6d97 (feat: balance manager and chain balance manager with hyperlane)

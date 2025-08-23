@@ -10,6 +10,8 @@ contract MintTokens is DeployHelpers {
     error InvalidRecipient();
     error TokenNotDeployed(string tokenName);
     error TokenAddressNotFound(string tokenName);
+    error ContractNotDeployed(address contractAddr, string tokenName);
+    error MintFunctionNotFound(address contractAddr, string tokenName);
 
     string private constant WETH_ADDRESS = "MOCK_TOKEN_WETH";
     string private constant USDC_ADDRESS = "MOCK_TOKEN_USDC";
@@ -62,6 +64,14 @@ contract MintTokens is DeployHelpers {
             revert TokenAddressNotFound("WBTC");
         }
 
+        validateContractDeployment(wethAddr, "WETH");
+        validateContractDeployment(usdcAddr, "USDC");
+        validateContractDeployment(wbtcAddr, "WBTC");
+
+        validateMintFunction(wethAddr, "WETH");
+        validateMintFunction(usdcAddr, "USDC");
+        validateMintFunction(wbtcAddr, "WBTC");
+
         mockWETH = MockWETH(wethAddr);
         mockUSDC = MockUSDC(usdcAddr);
         mockWBTC = MockToken(wbtcAddr);
@@ -77,5 +87,21 @@ contract MintTokens is DeployHelpers {
         mockWETH.mint(recipient, WETH_MINT_AMOUNT);
         mockUSDC.mint(recipient, USDC_MINT_AMOUNT);
         mockWBTC.mint(recipient, WBTC_MINT_AMOUNT);
+    }
+
+    function validateContractDeployment(address contractAddr, string memory tokenName) private view {
+        if (contractAddr.code.length == 0) {
+            revert ContractNotDeployed(contractAddr, tokenName);
+        }
+    }
+
+    function validateMintFunction(address contractAddr, string memory tokenName) private view {
+        bytes memory callData = abi.encodeWithSignature("mint(address,uint256)", address(0), 0);
+        
+        (bool success, ) = contractAddr.staticcall(callData);
+        
+        if (!success) {
+            revert MintFunctionNotFound(contractAddr, tokenName);
+        }
     }
 }
