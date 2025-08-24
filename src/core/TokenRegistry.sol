@@ -39,6 +39,8 @@ contract TokenRegistry is Initializable, OwnableUpgradeable, TokenRegistryStorag
         uint32 indexed targetChainId,
         bool isActive
     );
+    event FactoryUpdated(address indexed oldFactory, address indexed newFactory);
+    event UpgradeInitialized(address indexed factory, address indexed owner);
     
     // Errors
     error TokenMappingNotFound(uint32 sourceChainId, address sourceToken, uint32 targetChainId);
@@ -47,6 +49,21 @@ contract TokenRegistry is Initializable, OwnableUpgradeable, TokenRegistryStorag
     error InvalidChainId();
     error DecimalMismatch(uint8 sourceDecimals, uint8 syntheticDecimals);
     error TokenNotActive(uint32 sourceChainId, address sourceToken, uint32 targetChainId);
+    error InvalidFactory();
+    error AlreadyInitialized();
+    
+    // Modifiers
+    modifier onlyFactory() {
+        Storage storage $ = getStorage();
+        require(msg.sender == $.factory, "TokenRegistry: caller is not the factory");
+        _;
+    }
+    
+    modifier onlyOwnerOrFactory() {
+        Storage storage $ = getStorage();
+        require(msg.sender == owner() || msg.sender == $.factory, "TokenRegistry: caller is not owner or factory");
+        _;
+    }
     
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() {
@@ -61,6 +78,29 @@ contract TokenRegistry is Initializable, OwnableUpgradeable, TokenRegistryStorag
     }
     
     /**
+     * @dev Initialize upgrade with new factory and owner
+     * This preserves all existing data and adds new functionality
+     */
+    function initializeUpgrade(address _newOwner, address _factory) external {
+        Storage storage $ = getStorage();
+        
+        if ($.upgradeInitialized) {
+            revert AlreadyInitialized();
+        }
+        
+        if (_factory == address(0)) revert InvalidFactory();
+        
+        // Transfer ownership to new owner
+        _transferOwnership(_newOwner);
+        
+        // Set factory address
+        $.factory = _factory;
+        $.upgradeInitialized = true;
+        
+        emit UpgradeInitialized(_factory, _newOwner);
+    }
+    
+    /**
      * @dev Register a new token mapping between source and synthetic tokens
      */
     function registerTokenMapping(
@@ -71,7 +111,7 @@ contract TokenRegistry is Initializable, OwnableUpgradeable, TokenRegistryStorag
         string memory symbol,
         uint8 sourceDecimals,
         uint8 syntheticDecimals
-    ) external onlyOwner {
+    ) external onlyOwnerOrFactory {
         if (sourceChainId == 0 || targetChainId == 0) revert InvalidChainId();
         if (sourceToken == address(0) || syntheticToken == address(0)) revert InvalidTokenAddress();
         
@@ -117,7 +157,7 @@ contract TokenRegistry is Initializable, OwnableUpgradeable, TokenRegistryStorag
         uint32 targetChainId,
         address newSyntheticToken,
         uint8 newSyntheticDecimals
-    ) external onlyOwner {
+    ) external onlyOwnerOrFactory {
         Storage storage $ = getStorage();
         
         bytes32 mappingKey = _getMappingKey(sourceChainId, sourceToken, targetChainId);
@@ -416,4 +456,25 @@ contract TokenRegistry is Initializable, OwnableUpgradeable, TokenRegistryStorag
         
         $.chainToTokens[4661].push(0xb2e9Eabb827b78e2aC66bE17327603778D117d18);
     }
+    
+    /**
+     * @dev Set factory address (only owner)
+     */
+    function setFactory(address _factory) external onlyOwner {
+        if (_factory == address(0)) revert InvalidFactory();
+        
+        Storage storage $ = getStorage();
+        address oldFactory = $.factory;
+        $.factory = _factory;
+        
+        emit FactoryUpdated(oldFactory, _factory);
+    }
+    
+    /**
+     * @dev Get factory address
+     */
+    function getFactory() external view returns (address) {
+        return getStorage().factory;
+    }
+    
 }
