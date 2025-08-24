@@ -20,11 +20,15 @@ abstract contract ChainBalanceManagerStorage {
         mapping(address => address) sourceToSynthetic;  // sourceToken => syntheticToken address on Rari
         mapping(address => address) syntheticToSource;  // syntheticToken => sourceToken (reverse lookup)
         
-        // Hyperlane configuration
-        address mailbox;
+        // Unified messaging configuration
+        address messageHandler;              // Either mailbox (cross-chain) OR balanceManager (same-chain)
         uint32 localDomain;
         uint32 destinationDomain;           // Rari testnet domain
         address destinationBalanceManager;  // BalanceManager on Rari
+        bool isDestinationChain;            // NEW: true if this is on destination chain (Rari)
+        
+        // Legacy mailbox field for backward compatibility
+        address mailbox;
         
         // Security - User nonces for replay protection (Espresso pattern)
         mapping(address => uint256) userNonces;

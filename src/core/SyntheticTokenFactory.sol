@@ -101,8 +101,8 @@ contract SyntheticTokenFactory is Initializable, OwnableUpgradeable, SyntheticTo
             revert TokenAlreadyExists(sourceChainId, sourceToken);
         }
         
-        // Deploy new synthetic token
-        syntheticToken = address(new SyntheticToken(name, symbol, $.bridgeReceiver));
+        // Deploy new synthetic token with correct decimals
+        syntheticToken = address(new SyntheticToken(name, symbol, syntheticDecimals, $.bridgeReceiver));
         
         // Store mappings
         $.sourceToSynthetic[mappingKey] = syntheticToken;
@@ -207,6 +207,28 @@ contract SyntheticTokenFactory is Initializable, OwnableUpgradeable, SyntheticTo
         $.bridgeReceiver = newBridgeReceiver;
         
         emit BridgeReceiverUpdated(oldReceiver, newBridgeReceiver);
+    }
+    
+    /**
+     * @dev Update token mapping in TokenRegistry - for fixing decimal issues
+     */
+    function updateTokenMapping(
+        uint32 sourceChainId,
+        address sourceToken,
+        uint32 targetChainId,
+        address newSyntheticToken,
+        uint8 newSyntheticDecimals
+    ) external onlyOwner {
+        Storage storage $ = getStorage();
+        
+        // Update the mapping in TokenRegistry
+        $.tokenRegistry.updateTokenMapping(
+            sourceChainId,
+            sourceToken,
+            targetChainId,
+            newSyntheticToken,
+            newSyntheticDecimals
+        );
     }
     
     /**
