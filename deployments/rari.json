@@ -55,20 +55,34 @@
 				"deprecated": true
 			},
 			"gWETH_gUSDT": {
+				"poolId": "0x828f513e9d9ffa68b7fee59445487901fbaaf1c924bf6cbfaa6541e867f1f78a",
 				"base": "0x3ffE82D34548b9561530AFB0593d52b9E9446fC8",
 				"quote": "0xf2dc96d3e25f06e7458fF670Cf1c9218bBb71D9d",
 				"baseDecimals": 18,
 				"quoteDecimals": 6,
 				"description": "1 gWETH = X gUSDT (clean names, correct decimals)",
-				"createdAt": "1755961508"
+				"minTradeAmount": "1000000000000000",
+				"minAmountMovement": "1000000000000000", 
+				"minPriceMovement": "100",
+				"minOrderSize": "10000",
+				"createdAt": "1755961508",
+				"poolCreated": true,
+				"active": true
 			},
 			"gWBTC_gUSDT": {
+				"poolId": "0x5cb2c21d0716fd395711396f68893a3a7c909db58dc863af1173f89cb1ca5f36",
 				"base": "0xd99813A6152dBB2026b2Cd4298CF88fAC1bCf748",
 				"quote": "0xf2dc96d3e25f06e7458fF670Cf1c9218bBb71D9d",
 				"baseDecimals": 8,
 				"quoteDecimals": 6,
 				"description": "1 gWBTC = X gUSDT (clean names, correct decimals)",
-				"createdAt": "1755961508"
+				"minTradeAmount": "100000",
+				"minAmountMovement": "100000",
+				"minPriceMovement": "100", 
+				"minOrderSize": "10000",
+				"createdAt": "1755961508",
+				"poolCreated": true,
+				"active": true
 			}
 		}
 	},
