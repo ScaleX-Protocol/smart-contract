@@ -9,6 +9,7 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
 import {IChainBalanceManager} from "./interfaces/IChainBalanceManager.sol";
+import {IBalanceManager} from "./interfaces/IBalanceManager.sol";
 
 import {IMailbox} from "./interfaces/IMailbox.sol";
 import {IMessageRecipient} from "./interfaces/IMessageRecipient.sol";
@@ -39,12 +40,21 @@ contract ChainBalanceManager is
     event TokenMappingSet(address indexed sourceToken, address indexed syntheticToken);
     event NonceIncremented(address indexed user, uint256 newNonce);
     event CrossChainConfigUpdated(uint32 indexed destinationDomain, address indexed destinationBalanceManager);
+    event DestinationChainConfigUpdated(bool isDestinationChain, address messageHandler);
+    event LocalDomainUpdated(uint32 indexed oldDomain, uint32 indexed newDomain);
 
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() {
         _disableInitializers();
     }
 
+    /**
+     * @dev Initialize ChainBalanceManager for cross-chain operation only
+     * @param _owner Contract owner
+     * @param _mailbox Hyperlane mailbox for cross-chain messaging
+     * @param _destinationDomain Target chain domain (Rari: 1918988905)
+     * @param _destinationBalanceManager BalanceManager address on Rari
+     */
     function initialize(
         address _owner,
         address _mailbox,
@@ -55,18 +65,34 @@ contract ChainBalanceManager is
         __ReentrancyGuard_init();
 
         Storage storage $ = getStorage();
-        $.mailbox = _mailbox;
+        
+        // Use chain ID as domain (Hyperlane convention)
+        $.localDomain = uint32(block.chainid);
         $.destinationDomain = _destinationDomain;
         $.destinationBalanceManager = _destinationBalanceManager;
-
-        // Set local domain based on known Espresso domains
-        if (_destinationDomain == 1_918_988_905) {
-            // If destination is Rari, we're on Appchain
-            $.localDomain = 4661;
-        } else {
-            // Default to Arbitrum Sepolia
-            $.localDomain = 421_614;
+        $.isDestinationChain = false; // Always cross-chain mode
+        $.messageHandler = _mailbox;
+        $.mailbox = _mailbox;
+        
+        // Validate we're targeting a different chain (source -> destination)
+        if ($.localDomain == _destinationDomain) {
+            revert("ChainBalanceManager requires different source and destination chains");
         }
+        
+        emit DestinationChainConfigUpdated(false, _mailbox);
+        emit CrossChainConfigUpdated(_destinationDomain, _destinationBalanceManager);
+    }
+
+    /**
+     * @dev Legacy compatibility function - use main initialize instead
+     */
+    function initializeCrossChain(
+        address _owner,
+        address _mailbox,
+        uint32 _destinationDomain,
+        address _destinationBalanceManager
+    ) public initializer {
+        initialize(_owner, _mailbox, _destinationDomain, _destinationBalanceManager);
     }
 
     // Legacy interface compatibility - use overloading
@@ -88,7 +114,8 @@ contract ChainBalanceManager is
 
     modifier onlyMailbox() {
         Storage storage $ = getStorage();
-        if (msg.sender != $.mailbox) {
+        // For backward compatibility, check both mailbox and messageHandler
+        if (msg.sender != $.mailbox && msg.sender != $.messageHandler) {
             revert OnlyMailbox();
         }
         _;
@@ -123,7 +150,7 @@ contract ChainBalanceManager is
 
         $.totalDeposited[token] += amount;
 
-        // Get and increment user nonce (Espresso security pattern)
+        // Get and increment user nonce (security pattern)
         uint256 currentNonce = $.userNonces[recipient]++;
         emit NonceIncremented(recipient, $.userNonces[recipient]);
 
@@ -133,24 +160,41 @@ contract ChainBalanceManager is
             revert TokenMappingNotFound(token);
         }
 
-        // Create Espresso-style message for recipient
+        // Always cross-chain - send Hyperlane message to Rari
+        _handleCrossChainDeposit(token, syntheticToken, amount, recipient, currentNonce);
+
+        emit Deposit(msg.sender, recipient, token, amount);
+        emit BridgeToSynthetic(recipient, token, syntheticToken, amount);
+    }
+
+
+    /**
+     * @dev Handle cross-chain deposit - send Hyperlane message to Rari
+     */
+    function _handleCrossChainDeposit(
+        address token,
+        address syntheticToken,
+        uint256 amount,
+        address recipient,
+        uint256 nonce
+    ) internal {
+        Storage storage $ = getStorage();
+
+        // Create message for BalanceManager on Rari
         HyperlaneMessages.DepositMessage memory message = HyperlaneMessages.DepositMessage({
             messageType: HyperlaneMessages.DEPOSIT_MESSAGE,
             syntheticToken: syntheticToken,
             user: recipient, // Mint to recipient
             amount: amount,
             sourceChainId: $.localDomain,
-            nonce: currentNonce
+            nonce: nonce
         });
 
-        // Send cross-chain message
+        // Send cross-chain message via Hyperlane to Rari BalanceManager
         bytes memory messageBody = abi.encode(message);
         bytes32 recipientAddress = bytes32(uint256(uint160($.destinationBalanceManager)));
 
         IMailbox($.mailbox).dispatch($.destinationDomain, recipientAddress, messageBody);
-
-        emit Deposit(msg.sender, recipient, token, amount);
-        emit BridgeToSynthetic(recipient, token, syntheticToken, amount);
     }
 
 
@@ -293,9 +337,25 @@ contract ChainBalanceManager is
     /**
      * @dev Add token to whitelist
      */
-    function addToken(
+    function addWhitelistedToken(
         address token
     ) external onlyOwner {
+        Storage storage $ = getStorage();
+
+        if ($.whitelistedTokens[token]) {
+            revert TokenAlreadyWhitelisted(token);
+        }
+
+        $.whitelistedTokens[token] = true;
+        $.tokenList.push(token);
+
+        emit TokenWhitelisted(token);
+    }
+
+    /**
+     * @dev Add token to whitelist (legacy alias)  
+     */
+    function addToken(address token) external onlyOwner {
         Storage storage $ = getStorage();
 
         if ($.whitelistedTokens[token]) {
@@ -356,6 +416,16 @@ contract ChainBalanceManager is
         $.destinationBalanceManager = _destinationBalanceManager;
 
         emit CrossChainConfigUpdated(_destinationDomain, _destinationBalanceManager);
+    }
+
+    /**
+     * @dev Update local domain (fix for incorrect domain during deployment)
+     */
+    function updateLocalDomain(uint32 _localDomain) external onlyOwner {
+        Storage storage $ = getStorage();
+        uint32 oldDomain = $.localDomain;
+        $.localDomain = _localDomain;
+        emit LocalDomainUpdated(oldDomain, _localDomain);
     }
 
     // =============================================================
@@ -426,6 +496,43 @@ contract ChainBalanceManager is
         Storage storage $ = getStorage();
         return ($.destinationDomain, $.destinationBalanceManager);
     }
+
+    /**
+     * @dev Get cross-chain configuration
+     */
+    function getCrossChainInfo() external view returns (
+        address mailbox,
+        uint32 localDomain,
+        uint32 destinationDomain,
+        address destinationBalanceManager
+    ) {
+        Storage storage $ = getStorage();
+        return (
+            $.mailbox,
+            $.localDomain,
+            $.destinationDomain,
+            $.destinationBalanceManager
+        );
+    }
+
+    /**
+     * @dev Admin function to update cross-chain configuration (post-deployment)
+     */
+    function updateCrossChainConfig(
+        address _mailbox,
+        uint32 _destinationDomain,
+        address _destinationBalanceManager
+    ) external onlyOwner {
+        Storage storage $ = getStorage();
+        $.messageHandler = _mailbox;
+        $.mailbox = _mailbox;
+        $.destinationDomain = _destinationDomain;
+        $.destinationBalanceManager = _destinationBalanceManager;
+
+        emit DestinationChainConfigUpdated(false, _mailbox);
+        emit CrossChainConfigUpdated(_destinationDomain, _destinationBalanceManager);
+    }
+
 
     // =============================================================
     //                    LEGACY COMPATIBILITY

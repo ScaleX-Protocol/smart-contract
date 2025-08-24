@@ -23,6 +23,7 @@ abstract contract TokenRegistryStorage {
     }
 
     struct Storage {
+        // EXISTING STORAGE - DO NOT CHANGE ORDER TO PRESERVE DATA
         // Main mappings: keccak256(sourceChainId, sourceToken, targetChainId) => TokenMapping
         mapping(bytes32 => TokenMapping) tokenMappings;
         
@@ -31,6 +32,10 @@ abstract contract TokenRegistryStorage {
         
         // Chain to tokens enumeration: chainId => sourceToken[]
         mapping(uint32 => address[]) chainToTokens;
+        
+        // NEW STORAGE - ADDED AT END TO PRESERVE LAYOUT
+        address factory;             // SyntheticTokenFactory address for factory-only operations
+        bool upgradeInitialized;     // Flag to track upgrade initialization
     }
 
     function getStorage() internal pure returns (Storage storage $) {
