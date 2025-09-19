@@ -2,19 +2,35 @@
 pragma solidity ^0.8.26;
 
 import {OwnableUpgradeable} from "../../lib/openzeppelin-contracts-upgradeable/contracts/access/OwnableUpgradeable.sol";
-
 import {ReentrancyGuardUpgradeable} from
     "../../lib/openzeppelin-contracts-upgradeable/contracts/utils/ReentrancyGuardUpgradeable.sol";
 
 import {IBalanceManager} from "./interfaces/IBalanceManager.sol";
+
+import {IMailbox} from "./interfaces/IMailbox.sol";
+import {IMessageRecipient} from "./interfaces/IMessageRecipient.sol";
 import {Currency} from "./libraries/Currency.sol";
+
+import {HyperlaneMessages} from "./libraries/HyperlaneMessages.sol";
 import {BalanceManagerStorage} from "./storages/BalanceManagerStorage.sol";
 
+import {TokenRegistry} from "./TokenRegistry.sol";
+import {ISyntheticERC20} from "./interfaces/ISyntheticERC20.sol";
 import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {console} from "forge-std/Test.sol";
 
-contract BalanceManager is IBalanceManager, BalanceManagerStorage, OwnableUpgradeable, ReentrancyGuardUpgradeable {
+contract BalanceManager is
+    IBalanceManager,
+    IMessageRecipient,
+    BalanceManagerStorage,
+    OwnableUpgradeable,
+    ReentrancyGuardUpgradeable
+{
+    // Custom errors
+    error IncorrectEthAmount(uint256 expected, uint256 actual);
+    error EthSentForErc20Deposit();
+    error FeeExceedsTransferAmount(uint256 fee, uint256 amount);
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() {
         _disableInitializers();
@@ -27,7 +43,7 @@ contract BalanceManager is IBalanceManager, BalanceManagerStorage, OwnableUpgrad
         uint256 _feeTaker
     ) public initializer {
         __Ownable_init(_owner);
-        ReentrancyGuardUpgradeable.__ReentrancyGuard_init();
+        __ReentrancyGuard_init();
 
         Storage storage $ = getStorage();
         $.feeReceiver = _feeReceiver;
@@ -41,6 +57,12 @@ contract BalanceManager is IBalanceManager, BalanceManagerStorage, OwnableUpgrad
     ) external onlyOwner {
         getStorage().poolManager = _poolManager;
         emit PoolManagerSet(_poolManager);
+    }
+
+    function setMailbox(
+        address _mailbox
+    ) external onlyOwner {
+        getStorage().mailbox = _mailbox;
     }
 
     // Allow owner to set authorized operators (e.g., Router)
@@ -70,7 +92,7 @@ contract BalanceManager is IBalanceManager, BalanceManagerStorage, OwnableUpgrad
         return getStorage().lockedBalanceOf[user][operator][currency.toId()];
     }
 
-    function deposit(Currency currency, uint256 amount, address sender, address user) public payable nonReentrant {        
+    function deposit(Currency currency, uint256 amount, address sender, address user) public payable nonReentrant {
         if (amount == 0) {
             revert ZeroAmount();
         }
@@ -79,39 +101,24 @@ contract BalanceManager is IBalanceManager, BalanceManagerStorage, OwnableUpgrad
         if (msg.sender != sender && !$.authorizedOperators[msg.sender]) {
             revert UnauthorizedOperator(msg.sender);
         }
-        
+
         if (currency.isAddressZero()) {
-            require(msg.value == amount, "Incorrect ETH amount sent");
+            if (msg.value != amount) {
+                revert IncorrectEthAmount(amount, msg.value);
+            }
         } else {
-            require(msg.value == 0, "No ETH should be sent for ERC20 deposit");
-            
-            IERC20 token = IERC20(Currency.unwrap(currency));
-            uint256 allowance = token.allowance(sender, address(this));
-            uint256 balance = token.balanceOf(sender);
-            
-            console.log("Token allowance from sender to BalanceManager:", allowance);
-            console.log("Token balance of sender:", balance);
-            console.log("Amount to transfer:", amount);
-            
-            if (allowance < amount) {
-                console.log("INSUFFICIENT ALLOWANCE! Required:", amount, "Available:", allowance);
+            if (msg.value != 0) {
+                revert EthSentForErc20Deposit();
             }
-            if (balance < amount) {
-                console.log("INSUFFICIENT BALANCE! Required:", amount, "Available:", balance);
-            }
-            
+
             currency.transferFrom(sender, address(this), amount);
         }
 
         uint256 currencyId = currency.toId();
-        
-        uint256 balanceBefore = $.balanceOf[user][currencyId];
-        
+
         unchecked {
             $.balanceOf[user][currencyId] += amount;
         }
-        
-        uint256 balanceAfter = $.balanceOf[user][currencyId];
 
         emit Deposit(user, currencyId, amount);
     }
@@ -251,7 +258,9 @@ contract BalanceManager is IBalanceManager, BalanceManagerStorage, OwnableUpgrad
 
         // Determine fee based on the role (maker/taker)
         uint256 feeAmount = amount * $.feeTaker / _feeUnit();
-        require(feeAmount <= amount, "Fee exceeds the transfer amount");
+        if (feeAmount > amount) {
+            revert FeeExceedsTransferAmount(feeAmount, amount);
+        }
 
         // Deduct fee and update balances
         $.lockedBalanceOf[sender][msg.sender][currency.toId()] -= amount;
@@ -275,7 +284,9 @@ contract BalanceManager is IBalanceManager, BalanceManagerStorage, OwnableUpgrad
 
         // Determine fee based on the role (maker/taker)
         uint256 feeAmount = amount * $.feeMaker / _feeUnit();
-        require(feeAmount <= amount, "Fee exceeds the transfer amount");
+        if (feeAmount > amount) {
+            revert FeeExceedsTransferAmount(feeAmount, amount);
+        }
 
         // Deduct fee and update balances
         $.balanceOf[sender][currency.toId()] -= amount;
@@ -308,4 +319,269 @@ contract BalanceManager is IBalanceManager, BalanceManagerStorage, OwnableUpgrad
     function _feeUnit() private view returns (uint256) {
         return getStorage().feeUnit;
     }
+
+    // =============================================================
+    //                   CROSS-CHAIN FUNCTIONS
+    // =============================================================
+
+    // Initialize cross-chain functionality
+    function initializeCrossChain(address _mailbox, uint32 _localDomain) external onlyOwner {
+        Storage storage $ = getStorage();
+        if ($.mailbox != address(0)) {
+            revert AlreadyInitialized();
+        }
+
+        $.mailbox = _mailbox;
+        $.localDomain = _localDomain;
+
+        emit CrossChainInitialized(_mailbox, _localDomain);
+    }
+
+    // Update cross-chain configuration (for upgrades)
+    function updateCrossChainConfig(address _mailbox, uint32 _localDomain) external onlyOwner {
+        Storage storage $ = getStorage();
+
+        address oldMailbox = $.mailbox;
+        uint32 oldDomain = $.localDomain;
+
+        $.mailbox = _mailbox;
+        $.localDomain = _localDomain;
+
+        emit CrossChainConfigUpdated(oldMailbox, _mailbox, oldDomain, _localDomain);
+    }
+
+    // Set TokenRegistry for synthetic token mapping
+    function setTokenRegistry(
+        address _tokenRegistry
+    ) external onlyOwner {
+        Storage storage $ = getStorage();
+        if (_tokenRegistry == address(0)) {
+            revert InvalidTokenRegistry();
+        }
+        $.tokenRegistry = _tokenRegistry;
+    }
+
+    // Set ChainBalanceManager for a source chain
+    function setChainBalanceManager(uint32 chainId, address chainBalanceManager) external onlyOwner {
+        Storage storage $ = getStorage();
+        $.chainBalanceManagers[chainId] = chainBalanceManager;
+        emit ChainBalanceManagerSet(chainId, chainBalanceManager);
+    }
+
+    // Cross-chain message handler (receives deposit messages from ChainBalanceManager)
+    function handle(uint32 _origin, bytes32 _sender, bytes calldata _messageBody) external payable override {
+        Storage storage $ = getStorage();
+        if (msg.sender != $.mailbox) {
+            revert OnlyMailbox();
+        }
+
+        // Verify sender is authorized ChainBalanceManager
+        address expectedSender = $.chainBalanceManagers[_origin];
+        if (expectedSender == address(0)) {
+            revert UnknownOriginChain(_origin);
+        }
+        bytes32 expectedSenderBytes = bytes32(uint256(uint160(expectedSender)));
+        if (_sender != expectedSenderBytes) {
+            revert InvalidSender(expectedSenderBytes, _sender);
+        }
+
+        // Decode message type
+        uint8 messageType = abi.decode(_messageBody, (uint8));
+
+        if (messageType == HyperlaneMessages.DEPOSIT_MESSAGE) {
+            _handleDepositMessage(_origin, _messageBody);
+        } else {
+            revert("Unknown message type");
+        }
+    }
+
+    // Handle deposit notification from source chain
+    function _handleDepositMessage(uint32 _origin, bytes calldata _messageBody) internal {
+        HyperlaneMessages.DepositMessage memory message = abi.decode(_messageBody, (HyperlaneMessages.DepositMessage));
+
+        Storage storage $ = getStorage();
+
+        // Replay protection
+        bytes32 messageId = keccak256(abi.encodePacked(_origin, message.user, message.nonce));
+        if ($.processedMessages[messageId]) {
+            revert MessageAlreadyProcessed(messageId);
+        }
+        $.processedMessages[messageId] = true;
+
+        // Mint synthetic tokens directly to user
+        Currency syntheticCurrency = Currency.wrap(message.syntheticToken);
+        uint256 currencyId = syntheticCurrency.toId();
+
+        // Mint actual ERC20 synthetic tokens to BalanceManager (vault)
+        ISyntheticERC20 syntheticToken = ISyntheticERC20(message.syntheticToken);
+        syntheticToken.mint(address(this), message.amount);
+
+        // Update internal balance tracking for CLOB system
+        $.balanceOf[message.user][currencyId] += message.amount;
+
+        emit CrossChainDepositReceived(message.user, syntheticCurrency, message.amount, _origin);
+        emit Deposit(message.user, currencyId, message.amount);
+    }
+
+    // Request withdrawal to source chain (burns synthetic, sends message)
+    function requestWithdraw(
+        Currency syntheticCurrency,
+        uint256 amount,
+        uint32 targetChainId,
+        address recipient
+    ) external nonReentrant {
+        if (amount == 0) {
+            revert ZeroAmount();
+        }
+
+        Storage storage $ = getStorage();
+        address targetChainBM = $.chainBalanceManagers[targetChainId];
+        if (targetChainBM == address(0)) {
+            revert TargetChainNotSupported(targetChainId);
+        }
+
+        // Burn synthetic tokens and update internal balance
+        uint256 currencyId = syntheticCurrency.toId();
+        if ($.balanceOf[msg.sender][currencyId] < amount) {
+            revert InsufficientBalance(msg.sender, currencyId, amount, $.balanceOf[msg.sender][currencyId]);
+        }
+
+        // Burn actual ERC20 synthetic tokens from BalanceManager (vault)
+        ISyntheticERC20 syntheticToken = ISyntheticERC20(Currency.unwrap(syntheticCurrency));
+        syntheticToken.burn(address(this), amount);
+
+        // Update internal balance tracking
+        $.balanceOf[msg.sender][currencyId] -= amount;
+
+        // Get user nonce and increment
+        uint256 currentNonce = $.userNonces[msg.sender]++;
+
+        // Create withdraw message
+        HyperlaneMessages.WithdrawMessage memory message = HyperlaneMessages.WithdrawMessage({
+            messageType: HyperlaneMessages.WITHDRAW_MESSAGE,
+            syntheticToken: Currency.unwrap(syntheticCurrency),
+            recipient: recipient,
+            amount: amount,
+            targetChainId: targetChainId,
+            nonce: currentNonce
+        });
+
+        // Send cross-chain message
+        bytes memory messageBody = abi.encode(message);
+        bytes32 recipientAddress = bytes32(uint256(uint160(targetChainBM)));
+
+        IMailbox($.mailbox).dispatch(targetChainId, recipientAddress, messageBody);
+
+        emit CrossChainWithdrawSent(msg.sender, syntheticCurrency, amount, targetChainId);
+        emit Withdrawal(msg.sender, currencyId, amount);
+    }
+
+    // View functions for cross-chain
+    function getMailboxConfig() external view returns (address mailbox, uint32 localDomain) {
+        Storage storage $ = getStorage();
+        return ($.mailbox, $.localDomain);
+    }
+
+    function getChainBalanceManager(
+        uint32 chainId
+    ) external view returns (address) {
+        return getStorage().chainBalanceManagers[chainId];
+    }
+
+    function getUserNonce(
+        address user
+    ) external view returns (uint256) {
+        return getStorage().userNonces[user];
+    }
+
+    function isMessageProcessed(
+        bytes32 messageId
+    ) external view returns (bool) {
+        return getStorage().processedMessages[messageId];
+    }
+
+    // Deposit local tokens and mint synthetic tokens on the same chain
+    function depositLocal(address token, uint256 amount, address recipient) external nonReentrant {
+        if (amount == 0) {
+            revert ZeroAmount();
+        }
+        if (token == address(0)) {
+            revert InvalidTokenAddress();
+        }
+        if (recipient == address(0)) {
+            revert InvalidRecipientAddress();
+        }
+
+        Storage storage $ = getStorage();
+        if ($.tokenRegistry == address(0)) {
+            revert TokenRegistryNotSet();
+        }
+
+        uint32 currentChain = _getCurrentChainId();
+
+        // Use TokenRegistry to validate local mapping (sourceChain == targetChain)
+        if (!TokenRegistry($.tokenRegistry).isTokenMappingActive(currentChain, token, currentChain)) {
+            revert TokenNotSupportedForLocalDeposits(token);
+        }
+
+        // Get synthetic token address from TokenRegistry
+        address syntheticToken = TokenRegistry($.tokenRegistry).getSyntheticToken(currentChain, token, currentChain);
+
+        // Convert amount using TokenRegistry decimal conversion
+        uint256 syntheticAmount =
+            TokenRegistry($.tokenRegistry).convertAmountForMapping(currentChain, token, currentChain, amount, true);
+
+        // Transfer real tokens to this contract (vault them)
+        IERC20(token).transferFrom(msg.sender, address(this), amount);
+
+        // Mint synthetic tokens to BalanceManager (vault)
+        ISyntheticERC20(syntheticToken).mint(address(this), syntheticAmount);
+
+        // Update internal balance tracking for CLOB system
+        uint256 currencyId = Currency.wrap(syntheticToken).toId();
+        $.balanceOf[recipient][currencyId] += syntheticAmount;
+
+        emit LocalDeposit(recipient, token, syntheticToken, amount, syntheticAmount);
+        emit Deposit(recipient, currencyId, syntheticAmount);
+    }
+
+    /**
+     * @dev Get current chain ID
+     */
+    function _getCurrentChainId() internal view returns (uint32) {
+        return uint32(block.chainid);
+    }
+
+    /**
+     * @dev Get TokenRegistry address
+     */
+    function getTokenRegistry() external view returns (address) {
+        return getStorage().tokenRegistry;
+    }
+
+    /**
+     * @dev Get cross-chain configuration
+     */
+    function getCrossChainConfig() external view returns (address mailbox, uint32 localDomain) {
+        Storage storage $ = getStorage();
+        return ($.mailbox, $.localDomain);
+    }
+
+    // Cross-chain events
+    event CrossChainDepositReceived(
+        address indexed user, Currency indexed currency, uint256 amount, uint32 sourceChain
+    );
+    event CrossChainWithdrawSent(address indexed user, Currency indexed currency, uint256 amount, uint32 targetChain);
+    event ChainBalanceManagerSet(uint32 indexed chainId, address indexed chainBalanceManager);
+    event CrossChainInitialized(address indexed mailbox, uint32 indexed localDomain);
+    event CrossChainConfigUpdated(address indexed oldMailbox, address indexed newMailbox, uint32 oldDomain, uint32 newDomain);
+
+    // Local deposit event
+    event LocalDeposit(
+        address indexed recipient,
+        address indexed sourceToken,
+        address indexed syntheticToken,
+        uint256 sourceAmount,
+        uint256 syntheticAmount
+    );
 }
