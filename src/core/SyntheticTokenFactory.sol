@@ -101,8 +101,15 @@ contract SyntheticTokenFactory is Initializable, OwnableUpgradeable, SyntheticTo
             revert TokenAlreadyExists(sourceChainId, sourceToken);
         }
         
-        // Deploy new synthetic token with correct decimals
-        syntheticToken = address(new SyntheticToken(name, symbol, syntheticDecimals, $.bridgeReceiver));
+        // Deploy new synthetic token with correct constructor parameters
+        syntheticToken = address(new SyntheticToken(
+            name,
+            symbol, 
+            syntheticDecimals,
+            $.bridgeReceiver,  // minter
+            $.bridgeReceiver,  // burner
+            $.bridgeReceiver   // underlyingToken
+        ));
         
         // Store mappings
         $.sourceToSynthetic[mappingKey] = syntheticToken;
@@ -119,8 +126,16 @@ contract SyntheticTokenFactory is Initializable, OwnableUpgradeable, SyntheticTo
         $.allSyntheticTokens.push(syntheticToken);
         $.chainToSynthetics[sourceChainId].push(syntheticToken);
         
-        // Note: TokenRegistry registration is now handled separately by the caller
-        // This allows for better control over access permissions and deployment flow
+        // Register in TokenRegistry
+        $.tokenRegistry.registerTokenMapping(
+            sourceChainId,
+            sourceToken,
+            targetChainId,
+            syntheticToken,
+            symbol,
+            sourceDecimals,
+            syntheticDecimals
+        );
         
         emit SyntheticTokenCreated(
             syntheticToken,

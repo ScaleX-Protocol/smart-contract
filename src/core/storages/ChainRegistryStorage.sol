@@ -2,7 +2,7 @@
 pragma solidity ^0.8.26;
 
 abstract contract ChainRegistryStorage {
-    // keccak256(abi.encode(uint256(keccak256("gtx.clob.storage.chainregistry")) - 1)) & ~bytes32(uint256(0xff))
+    // keccak256(abi.encode(uint256(keccak256("scalex.clob.storage.chainregistry")) - 1)) & ~bytes32(uint256(0xff))
     bytes32 private constant STORAGE_SLOT = 0x9a2f4f6c8b3e1d5a7e9f2b4c6d8e0f1a3b5c7d9e0f2a4b6c8d0e1f3a5b7c9d00;
 
     struct ChainConfig {

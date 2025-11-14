@@ -1,11 +1,11 @@
 #!/bin/bash
 
-# GTX Faucet System - Automated Deployment Script
+# SCALEX Faucet System - Automated Deployment Script
 # Automates the complete faucet deployment and setup
 
 set -e  # Exit on any error
 
-echo "🚀 Starting GTX Faucet System Deployment..."
+echo "🚀 Starting SCALEX Faucet System Deployment..."
 
 # Colors for output
 RED='\033[0;31m'
@@ -20,19 +20,19 @@ print_step() {
 }
 
 print_success() {
-    echo -e "${GREEN}✅ $1${NC}"
+    echo -e "${GREEN}$1${NC}"
 }
 
 print_warning() {
-    echo -e "${YELLOW}⚠️  $1${NC}"
+    echo -e "${YELLOW} $1${NC}"
 }
 
 print_error() {
-    echo -e "${RED}❌ $1${NC}"
+    echo -e "${RED}$1${NC}"
 }
 
 # Default network (can be overridden by passing as argument)
-NETWORK=${1:-gtx_side_devnet}
+NETWORK=${1:-scalex_side_devnet}
 
 echo "🎯 Target Network: $NETWORK"
 echo ""
@@ -56,13 +56,13 @@ echo ""
 
 # Get RPC URL based on network
 case $NETWORK in
-    gtx_core_devnet)
-        RPC_URL="https://core-devnet.gtxdex.xyz"
-        CHAIN_NAME="GTX Core Chain"
+    scalex_core_devnet)
+        RPC_URL="https://core-devnet.scalex.money"
+        CHAIN_NAME="SCALEX Core Chain"
         ;;
-    gtx_side_devnet)
-        RPC_URL="https://side-devnet.gtxdex.xyz"
-        CHAIN_NAME="GTX Side Chain"
+    scalex_side_devnet)
+        RPC_URL="https://side-devnet.scalex.money"
+        CHAIN_NAME="SCALEX Side Chain"
         ;;
     rari_testnet)
         RPC_URL="https://rari.caff.testnet.espresso.network"
@@ -74,7 +74,7 @@ case $NETWORK in
         ;;
     *)
         print_warning "Unknown network: $NETWORK. Proceeding with provided network name..."
-        RPC_URL="https://side-devnet.gtxdex.xyz"  # Default fallback
+        RPC_URL="https://side-devnet.scalex.money"  # Default fallback
         CHAIN_NAME="Unknown Network"
         ;;
 esac
@@ -142,7 +142,7 @@ if [[ -f "$DEPLOYMENT_FILE" ]]; then
         USDC_TOKEN=$(jq -r '.MOCK_TOKEN_USDC // empty' "$DEPLOYMENT_FILE")
         
         if [[ -n "$FAUCET_PROXY" && "$FAUCET_PROXY" != "null" ]]; then
-            print_success "✅ Faucet Proxy: $FAUCET_PROXY"
+            print_success "Faucet Proxy: $FAUCET_PROXY"
             
             # Test faucet configuration
             echo "  🔍 Verifying faucet configuration..."
@@ -162,15 +162,15 @@ if [[ -f "$DEPLOYMENT_FILE" ]]; then
         fi
         
         if [[ -n "$FAUCET_BEACON" && "$FAUCET_BEACON" != "null" ]]; then
-            print_success "✅ Faucet Beacon: $FAUCET_BEACON"
+            print_success "Faucet Beacon: $FAUCET_BEACON"
         fi
         
         if [[ -n "$WETH_TOKEN" && "$WETH_TOKEN" != "null" ]]; then
-            print_success "✅ WETH Token: $WETH_TOKEN"
+            print_success "WETH Token: $WETH_TOKEN"
         fi
         
         if [[ -n "$USDC_TOKEN" && "$USDC_TOKEN" != "null" ]]; then
-            print_success "✅ USDC Token: $USDC_TOKEN"
+            print_success "USDC Token: $USDC_TOKEN"
         fi
     else
         print_warning "jq not installed. Deployment file exists but cannot parse addresses."
@@ -180,7 +180,7 @@ else
 fi
 
 echo ""
-print_success "🌟 GTX Faucet System is ready!"
+print_success "🌟 SCALEX Faucet System is ready!"
 
 echo ""
 echo "📋 Deployment Summary:"
@@ -201,8 +201,8 @@ if [[ -n "$FAUCET_PROXY" && "$FAUCET_PROXY" != "null" ]]; then
     echo ""
 fi
 
-echo "🔗 Integration with GTX System:"
-echo "  1. Deploy main GTX system: ./deploy.sh"
+echo "🔗 Integration with SCALEX System:"
+echo "  1. Deploy main SCALEX system: ./deploy.sh"
 echo "  2. Use faucet tokens for cross-chain deposits"
 echo "  3. Trade with faucet-distributed tokens"
 echo ""

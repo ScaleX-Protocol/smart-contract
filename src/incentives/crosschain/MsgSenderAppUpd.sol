@@ -18,7 +18,7 @@ abstract contract MsgSenderAppUpd is OwnableUpgradeable {
         EnumerableMap.UintToAddressMap destinationContracts;
     }
 
-    bytes32 private constant MSG_SENDER_STORAGE = keccak256("gtx.crosschain.msgsender.storage");
+    bytes32 private constant MSG_SENDER_STORAGE = keccak256("scalex.crosschain.msgsender.storage");
 
     function _getMsgSenderStorage() internal pure returns (MsgSenderStorage storage $) {
         bytes32 slot = MSG_SENDER_STORAGE;

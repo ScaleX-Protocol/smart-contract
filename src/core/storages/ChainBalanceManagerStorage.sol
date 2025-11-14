@@ -2,8 +2,8 @@
 pragma solidity ^0.8.26;
 
 abstract contract ChainBalanceManagerStorage {
-    // keccak256(abi.encode(uint256(keccak256("gtx.clob.storage.chainbalancemanager")) - 1)) & ~bytes32(uint256(0xff))
-    bytes32 private constant STORAGE_SLOT = bytes32(uint256(keccak256("gtx.clob.storage.chainbalancemanager")) - 1);
+    // keccak256(abi.encode(uint256(keccak256("scalex.clob.storage.chainbalancemanager")) - 1)) & ~bytes32(uint256(0xff))
+    bytes32 private constant STORAGE_SLOT = bytes32(uint256(keccak256("scalex.clob.storage.chainbalancemanager")) - 1);
 
     struct Storage {
         // User balances: user => token => amount (locked in vault)
@@ -11,6 +11,9 @@ abstract contract ChainBalanceManagerStorage {
         
         // Unlocked balances ready for withdrawal: user => token => amount
         mapping(address => mapping(address => uint256)) unlockedBalanceOf;
+        
+        // Locked balances: user => manager => token => amount (for lock/unlock functionality)
+        mapping(address => mapping(address => mapping(address => uint256))) lockedBalanceOf;
         
         // Whitelisted tokens
         mapping(address => bool) whitelistedTokens;
@@ -36,10 +39,6 @@ abstract contract ChainBalanceManagerStorage {
         // Security - Processed messages to prevent replay attacks
         mapping(bytes32 => bool) processedMessages;
         
-        // Additional accounting
-        mapping(address => uint256) totalDeposited;      // Total deposited per token
-        mapping(address => uint256) totalWithdrawn;      // Total withdrawn per token
-        mapping(address => uint256) totalUnlocked;       // Total unlocked per token
     }
 
     function getStorage() internal pure returns (Storage storage $) {

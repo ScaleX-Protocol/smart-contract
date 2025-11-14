@@ -9,6 +9,7 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
 import {IChainBalanceManager} from "./interfaces/IChainBalanceManager.sol";
+import {IChainBalanceManagerErrors} from "./interfaces/IChainBalanceManagerErrors.sol";
 import {IBalanceManager} from "./interfaces/IBalanceManager.sol";
 
 import {IMailbox} from "./interfaces/IMailbox.sol";
@@ -16,6 +17,45 @@ import {IMessageRecipient} from "./interfaces/IMessageRecipient.sol";
 import {Currency} from "./libraries/Currency.sol";
 import {HyperlaneMessages} from "./libraries/HyperlaneMessages.sol";
 import {ChainBalanceManagerStorage} from "./storages/ChainBalanceManagerStorage.sol";
+
+// Events
+event TokenDeposited(address indexed to, address indexed token, uint256 amount);
+event TokenWithdrawn(address indexed to, address indexed token, uint256 amount);
+
+// Errors
+error TokenNotWhitelisted(address token);
+error OnlyMailbox();
+error ZeroAmount();
+error ZeroAddress();
+error InsufficientBalance(address user, uint256 tokenId, uint256 requested, uint256 available);
+error InsufficientLockedBalance();
+error InvalidAmount();
+error EthSentForErc20Deposit();
+error DifferentChainDomains(uint32 local, uint32 destination);
+error TokenMappingNotFound(address token);
+error InvalidOrigin(uint32 origin);
+error InvalidSender(bytes32 sender);
+error MessageAlreadyProcessed(bytes32 messageId);
+error InvalidMessageType(uint256 messageType);
+error InvalidSyntheticToken(address syntheticToken);
+error InsufficientUnlockedBalance(address user, uint256 tokenId, uint256 requested, uint256 available);
+error TokenAlreadyWhitelisted(address token);
+error TokenNotFound(address token);
+
+// Events
+event DestinationChainConfigUpdated(bool isMailbox, address indexed value);
+event CrossChainConfigUpdated(uint32 indexed destinationDomain, address indexed destinationBalanceManager);
+event NonceIncremented(address indexed user, uint256 nonce);
+event Deposit(address indexed from, address indexed to, address indexed token, uint256 amount);
+event BridgeToSynthetic(address indexed to, address indexed sourceToken, address indexed syntheticToken, uint256 amount);
+event WithdrawMessageReceived(address indexed recipient, address indexed sourceToken, uint256 amount);
+event Claim(address indexed user, address indexed token, uint256 amount);
+event Withdraw(address indexed user, address indexed token, uint256 amount);
+event Unlock(address indexed user, address indexed token, uint256 amount);
+event TokenWhitelisted(address indexed token);
+event TokenRemoved(address indexed token);
+event TokenMappingSet(address indexed sourceToken, address indexed syntheticToken);
+event LocalDomainUpdated(uint32 oldDomain, uint32 newDomain);
 
 /**
  * @title ChainBalanceManager
@@ -32,17 +72,7 @@ contract ChainBalanceManager is
     using HyperlaneMessages for *;
     using SafeERC20 for IERC20;
 
-    // Additional events not in interface
-    event BridgeToSynthetic(
-        address indexed user, address indexed sourceToken, address indexed syntheticToken, uint256 amount
-    );
-    event WithdrawMessageReceived(address indexed user, address indexed token, uint256 amount);
-    event TokenMappingSet(address indexed sourceToken, address indexed syntheticToken);
-    event NonceIncremented(address indexed user, uint256 newNonce);
-    event CrossChainConfigUpdated(uint32 indexed destinationDomain, address indexed destinationBalanceManager);
-    event DestinationChainConfigUpdated(bool isDestinationChain, address messageHandler);
-    event LocalDomainUpdated(uint32 indexed oldDomain, uint32 indexed newDomain);
-
+  
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() {
         _disableInitializers();
@@ -76,7 +106,7 @@ contract ChainBalanceManager is
         
         // Validate we're targeting a different chain (source -> destination)
         if ($.localDomain == _destinationDomain) {
-            revert("ChainBalanceManager requires different source and destination chains");
+            revert DifferentChainDomains($.localDomain, _destinationDomain);
         }
         
         emit DestinationChainConfigUpdated(false, _mailbox);
@@ -97,8 +127,8 @@ contract ChainBalanceManager is
 
     // Legacy interface compatibility - use overloading
     function initialize(
-        address _owner
-    ) external override {
+        address /* _owner */
+    ) external {
         revert("Use initialize with full parameters");
     }
 
@@ -148,8 +178,6 @@ contract ChainBalanceManager is
             IERC20(token).safeTransferFrom(msg.sender, address(this), amount);
         }
 
-        $.totalDeposited[token] += amount;
-
         // Get and increment user nonce (security pattern)
         uint256 currentNonce = $.userNonces[recipient]++;
         emit NonceIncremented(recipient, $.userNonces[recipient]);
@@ -172,7 +200,7 @@ contract ChainBalanceManager is
      * @dev Handle cross-chain deposit - send Hyperlane message to Rari
      */
     function _handleCrossChainDeposit(
-        address token,
+        address /* token */,
         address syntheticToken,
         uint256 amount,
         address recipient,
@@ -252,9 +280,108 @@ contract ChainBalanceManager is
 
         // Unlock tokens for user to claim
         $.unlockedBalanceOf[message.recipient][sourceToken] += message.amount;
-        $.totalUnlocked[sourceToken] += message.amount;
-
         emit WithdrawMessageReceived(message.recipient, sourceToken, message.amount);
+    }
+
+    // =============================================================
+    //                 IChainBalanceManager INTERFACE
+    // =============================================================
+
+    function deposit(
+        address to,
+        Currency currency,
+        uint256 amount
+    ) external payable onlyWhitelistedToken(Currency.unwrap(currency)) nonReentrant returns (uint256 depositedAmount) {
+        if (amount == 0) revert ZeroAmount();
+        if (to == address(0)) revert ZeroAddress();
+        
+        Storage storage $ = getStorage();
+        address token = Currency.unwrap(currency);
+        
+        // Handle ETH deposits
+        if (token == address(0)) {
+            if (msg.value != amount) revert InvalidAmount();
+        } else {
+            if (msg.value != 0) revert EthSentForErc20Deposit();
+            IERC20(token).transferFrom(msg.sender, address(this), amount);
+        }
+        
+        $.balanceOf[to][token] += amount;
+        depositedAmount = amount;
+        
+        emit TokenDeposited(to, token, amount);
+    }
+    
+    function withdraw(
+        address to,
+        Currency currency,
+        uint256 amount
+    ) external nonReentrant {
+        if (amount == 0) revert ZeroAmount();
+        
+        Storage storage $ = getStorage();
+        address token = Currency.unwrap(currency);
+        
+        if ($.balanceOf[to][token] < amount) {
+            revert InsufficientBalance(to, uint256(uint160(token)), amount, $.balanceOf[to][token]);
+        }
+        
+        $.balanceOf[to][token] -= amount;
+        
+        // Handle ETH withdrawals
+        if (token == address(0)) {
+            (bool success, ) = payable(to).call{value: amount}("");
+            require(success, "ETH transfer failed");
+        } else {
+            IERC20(token).transfer(to, amount);
+        }
+        
+        emit TokenWithdrawn(to, token, amount);
+    }
+    
+    function lock(
+        address to,
+        Currency currency,
+        uint256 amount,
+        uint256 /* timeout */
+    ) external nonReentrant {
+        // Note: Simplified implementation - would need timeout handling
+        Storage storage $ = getStorage();
+        address token = Currency.unwrap(currency);
+        
+        if ($.balanceOf[to][token] < amount) {
+            revert InsufficientBalance(to, uint256(uint160(token)), amount, $.balanceOf[to][token]);
+        }
+        
+        $.balanceOf[to][token] -= amount;
+        // Note: Would need proper locked balance tracking with timeout
+        $.lockedBalanceOf[to][msg.sender][token] += amount;
+    }
+    
+    function unlock(
+        address to,
+        Currency currency,
+        uint256 amount,
+        address manager
+    ) external nonReentrant {
+        Storage storage $ = getStorage();
+        address token = Currency.unwrap(currency);
+        
+        if ($.lockedBalanceOf[to][manager][token] < amount) {
+            revert InsufficientLockedBalance();
+        }
+        
+        $.lockedBalanceOf[to][manager][token] -= amount;
+        $.unlockedBalanceOf[to][token] += amount;
+    }
+    
+    function getLockedBalance(
+        address user,
+        address manager,
+        Currency currency
+    ) external view returns (uint256) {
+        Storage storage $ = getStorage();
+        return $.lockedBalanceOf[user][manager][Currency.unwrap(currency)];
     }
 
     /**
@@ -274,8 +401,6 @@ contract ChainBalanceManager is
         }
 
         $.unlockedBalanceOf[msg.sender][token] -= amount;
-        $.totalWithdrawn[token] += amount;
-
         if (token == address(0)) {
             payable(msg.sender).transfer(amount);
         } else {
@@ -432,8 +557,8 @@ contract ChainBalanceManager is
     //                      VIEW FUNCTIONS
     // =============================================================
 
-    function getBalance(address user, address token) external view returns (uint256) {
-        return getStorage().balanceOf[user][token];
+    function getBalance(address user, Currency currency) external view returns (uint256) {
+        return getStorage().balanceOf[user][Currency.unwrap(currency)];
     }
 
     function getUnlockedBalance(address user, address token) external view returns (uint256) {

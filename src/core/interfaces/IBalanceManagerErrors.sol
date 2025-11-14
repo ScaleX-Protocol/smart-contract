@@ -16,6 +16,7 @@ interface IBalanceManagerErrors {
     error TokenRegistryNotSet();
     error TokenNotSupportedForLocalDeposits(address token);
     
+        
     // Cross-chain errors
     error InvalidTokenRegistry();
     error AlreadyInitialized();

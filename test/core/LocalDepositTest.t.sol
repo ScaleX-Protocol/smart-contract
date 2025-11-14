@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.26;
 
-import "@gtx/mocks/MockUSDC.sol";
-import "@gtx/mocks/MockWETH.sol";
-import "@gtxcore/BalanceManager.sol";
-import "@gtxcore/TokenRegistry.sol";
-import "@gtxcore/SyntheticTokenFactory.sol";
-import "@gtx/token/SyntheticToken.sol";
-import {Currency} from "@gtxcore/libraries/Currency.sol";
-import {IBalanceManagerErrors} from "@gtxcore/interfaces/IBalanceManagerErrors.sol";
+import "@scalex/mocks/MockUSDC.sol";
+import "@scalex/mocks/MockWETH.sol";
+import "@scalexcore/BalanceManager.sol";
+import "@scalexcore/TokenRegistry.sol";
+import "@scalexcore/SyntheticTokenFactory.sol";
+import "@scalex/token/SyntheticToken.sol";
+import {Currency} from "@scalexcore/libraries/Currency.sol";
+import {IBalanceManagerErrors} from "@scalexcore/interfaces/IBalanceManagerErrors.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {Test, console} from "forge-std/Test.sol";
 
@@ -91,8 +91,8 @@ contract LocalDepositTest is Test {
         localWETH = new MockWETH();
 
         // Deploy synthetic tokens 
-        gsUSDC = new SyntheticToken("Synthetic USDC", "gsUSDC", 6, address(balanceManager));
-        gsWETH = new SyntheticToken("Synthetic WETH", "gsWETH", 18, address(balanceManager));
+        gsUSDC = new SyntheticToken("Synthetic USDC", "gsUSDC", 6, address(balanceManager), address(balanceManager), address(0));
+        gsWETH = new SyntheticToken("Synthetic WETH", "gsWETH", 18, address(balanceManager), address(balanceManager), address(0));
 
         // Set up BalanceManager with TokenRegistry
         vm.startPrank(owner);
@@ -320,13 +320,15 @@ contract LocalDepositTest is Test {
         // Simulate cross-chain deposit (what would happen from ChainBalanceManager message)
         // Cross-chain deposits also mint to BalanceManager now
         uint256 crossChainAmount = DEPOSIT_AMOUNT_USDC;
+        vm.startPrank(address(balanceManager));
         gsUSDC.mint(address(balanceManager), crossChainAmount);
+        vm.stopPrank();
         
         // Simulate internal balance update (as BalanceManager._handleDepositMessage would do)
         // Note: In real scenario, this would be done by the message handler
         vm.store(
             address(balanceManager),
-            bytes32(uint256(keccak256("gtx.clob.storage.balancemanager")) - 1),
+            bytes32(uint256(keccak256("scalex.clob.storage.balancemanager")) - 1),
             bytes32(crossChainAmount)
         );
 

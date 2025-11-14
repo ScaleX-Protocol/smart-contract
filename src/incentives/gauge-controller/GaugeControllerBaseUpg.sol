@@ -40,7 +40,7 @@ abstract contract GaugeControllerBaseUpg is IGaugeController, OwnableUpgradeable
         mapping(address => bool) isValidMarket;
     }
 
-    bytes32 private constant GAUGE_CONTROLLER_STORAGE = keccak256("gtx.gauge.controller.storage");
+    bytes32 private constant GAUGE_CONTROLLER_STORAGE = keccak256("scalex.gauge.controller.storage");
 
     function _getGaugeControllerStorage()
         internal

@@ -1,20 +1,28 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.26;
 
-import "@gtx/mocks/MockUSDC.sol";
-import "@gtx/mocks/MockWETH.sol";
-import "@gtxcore/BalanceManager.sol";
-import {Currency} from "@gtxcore/libraries/Currency.sol";
+import "@scalex/mocks/MockUSDC.sol";
+import "@scalex/mocks/MockWETH.sol";
+import "@scalexcore/BalanceManager.sol";
+import {IBalanceManager} from "../../src/core/interfaces/IBalanceManager.sol";
+import {ITokenRegistry} from "../../src/core/interfaces/ITokenRegistry.sol";
+import {Currency} from "@scalexcore/libraries/Currency.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {Test, console} from "forge-std/Test.sol";
 
 import {BeaconDeployer} from "./helpers/BeaconDeployer.t.sol";
 import "@openzeppelin/contracts/proxy/beacon/BeaconProxy.sol";
 import "@openzeppelin/contracts/proxy/beacon/UpgradeableBeacon.sol";
+import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import {Upgrades} from "openzeppelin-foundry-upgrades/Upgrades.sol";
+import {SyntheticTokenFactory} from "../../src/factories/SyntheticTokenFactory.sol";
+import {SyntheticToken} from "../../src/token/SyntheticToken.sol";
+import {TokenRegistry} from "../../src/core/TokenRegistry.sol";
 
 contract BalanceManagerTest is Test {
-    BalanceManager private balanceManager;
+    IBalanceManager private balanceManager;
+    ITokenRegistry private tokenRegistry;
+    SyntheticTokenFactory private tokenFactory;
     address private owner = address(0x123);
     address private feeReceiver = address(0x456);
     address private user = address(0x789);
@@ -36,7 +44,7 @@ contract BalanceManagerTest is Test {
             abi.encodeCall(BalanceManager.initialize, (owner, feeReceiver, feeMaker, feeTaker))
         );
 
-        balanceManager = BalanceManager(address(beaconProxy));
+        balanceManager = IBalanceManager(payable(address(beaconProxy)));
 
         MockUSDC mockUSDC = new MockUSDC();
         MockWETH mockWETH = new MockWETH();
@@ -48,6 +56,52 @@ contract BalanceManagerTest is Test {
 
         vm.deal(user, initialBalance);
         vm.deal(operator, initialBalance);
+        
+        // Set up TokenFactory for synthetic token creation
+        tokenFactory = new SyntheticTokenFactory();
+        tokenFactory.initialize(owner, owner);
+        
+        // Deploy TokenRegistry
+        address tokenRegistryImpl = address(new TokenRegistry());
+        ERC1967Proxy tokenRegistryProxy = new ERC1967Proxy(
+            tokenRegistryImpl,
+            abi.encodeWithSelector(
+                TokenRegistry.initialize.selector,
+                owner
+            )
+        );
+        tokenRegistry = ITokenRegistry(address(tokenRegistryProxy));
+        
+        // Create synthetic tokens and set up TokenRegistry
+        vm.startPrank(owner);
+        address wethSynthetic = tokenFactory.createSyntheticToken(Currency.unwrap(weth));
+        address usdcSynthetic = tokenFactory.createSyntheticToken(Currency.unwrap(usdc));
+        
+        balanceManager.addSupportedAsset(Currency.unwrap(weth), wethSynthetic);
+        balanceManager.addSupportedAsset(Currency.unwrap(usdc), usdcSynthetic);
+        
+        // Set BalanceManager as minter and burner for synthetic tokens
+        SyntheticToken(wethSynthetic).setMinter(address(balanceManager));
+        SyntheticToken(usdcSynthetic).setMinter(address(balanceManager));
+        SyntheticToken(wethSynthetic).setBurner(address(balanceManager));
+        SyntheticToken(usdcSynthetic).setBurner(address(balanceManager));
+        
+        // Register token mappings for local deposits
+        uint32 currentChain = 31337; // Default foundry chain ID
+        tokenRegistry.registerTokenMapping(
+            currentChain, Currency.unwrap(weth), currentChain, wethSynthetic, "WETH", 18, 18
+        );
+        tokenRegistry.registerTokenMapping(
+            currentChain, Currency.unwrap(usdc), currentChain, usdcSynthetic, "USDC", 6, 6
+        );
+        
+        // Activate token mappings
+        tokenRegistry.setTokenMappingStatus(currentChain, Currency.unwrap(weth), currentChain, true);
+        tokenRegistry.setTokenMappingStatus(currentChain, Currency.unwrap(usdc), currentChain, true);
+        
+        balanceManager.setTokenFactory(address(tokenFactory));
+        balanceManager.setTokenRegistry(address(tokenRegistry));
+        vm.stopPrank();
     }
 
     function testDeposit() public {
@@ -71,8 +125,16 @@ contract BalanceManagerTest is Test {
         balanceManager.withdraw(weth, withdrawAmount);
         vm.stopPrank();
 
-        uint256 userBalance = balanceManager.getBalance(user, weth);
-        assertEq(userBalance, depositAmount - withdrawAmount);
+        // For synthetic tokens, check the synthetic token balance directly
+        // since internal balance tracking doesn't reflect synthetic token transfers
+        address syntheticToken = balanceManager.getSyntheticToken(Currency.unwrap(weth));
+        if (syntheticToken != address(0)) {
+            uint256 userBalance = IERC20(syntheticToken).balanceOf(user);
+            assertEq(userBalance, depositAmount - withdrawAmount);
+        } else {
+            uint256 userBalance = balanceManager.getBalance(user, weth);
+            assertEq(userBalance, depositAmount - withdrawAmount);
+        }
     }
 
     function testLock() public {

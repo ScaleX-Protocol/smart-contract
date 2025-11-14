@@ -24,8 +24,9 @@ library PoolIdLibrary {
         uint256 price,
         uint8 baseDecimals
     ) internal pure returns (uint256 quoteAmount) {
-        quoteAmount = (baseAmount * price) / (10 ** baseDecimals);
-        return quoteAmount;
+        assembly ("memory-safe") {
+            quoteAmount := div(mul(baseAmount, price), exp(10, baseDecimals))
+        }
     }
 
     function quoteToBase(
@@ -33,8 +34,9 @@ library PoolIdLibrary {
         uint256 price,
         uint8 quoteDecimals
     ) internal pure returns (uint256 baseAmount) {
-        baseAmount = (quoteAmount * (10 ** quoteDecimals)) / price;
-        return baseAmount;
+        assembly ("memory-safe") {
+            baseAmount := div(mul(quoteAmount, exp(10, quoteDecimals)), price)
+        }
     }
 }
 

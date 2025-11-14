@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: BUSL-1.1
 pragma solidity ^0.8.26;
 
-import {IOrderBook} from "./IOrderBook.sol";
-
 interface IOrderBookErrors {
     error SlippageTooHigh(uint256 received, uint256 minReceived);
     error InvalidSlippageTolerance(uint256 slippageBps);
@@ -23,7 +21,7 @@ interface IOrderBookErrors {
     error InsufficientBalanceRequired(uint256 requiredDeposit, uint256 userBalance);
     error OrderNotFound();
     error QueueEmpty();
-    error OrderIsNotOpenOrder(IOrderBook.Status status);
+    error OrderIsNotOpenOrder(uint8 status);
     error InvalidSideForQuoteAmount();
     error SwapHopFailed(uint256 hopIndex, uint256 receivedAmount);
     error NoValidSwapPath(address srcCurrency, address dstCurrency);

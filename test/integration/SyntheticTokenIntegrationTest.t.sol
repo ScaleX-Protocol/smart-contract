@@ -85,7 +85,8 @@ contract SyntheticTokenIntegrationTest is Test {
         assertEq(token.name(), "Test Synthetic Token");
         assertEq(token.symbol(), "tsTOKEN");
         assertEq(token.decimals(), 18);
-        assertEq(token.bridgeSyntheticTokenReceiver(), bridgeReceiver);
+        (,,address _underlyingToken,) = token.getContractInfo();
+        assertEq(_underlyingToken, bridgeReceiver);
         
         vm.stopPrank();
     }

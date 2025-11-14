@@ -72,6 +72,90 @@ contract TokenRegistry is Initializable, OwnableUpgradeable, TokenRegistryStorag
     
     function initialize(address _owner) public initializer {
         __Ownable_init(_owner);
+        _initializeDefaultMappings();
+    }
+    
+    /**
+     * @dev Initialize default token mappings for testing
+     */
+    function _initializeDefaultMappings() internal {
+        getStorage(); // Access storage to satisfy compiler
+        
+        // Appchain (4661) to Rari (1918988905) mappings
+        // USDC -> gsUSDC
+        _registerMappingInternal(
+            4661, // Appchain
+            0x1362Dd75d8F1579a0Ebd62DF92d8F3852C3a7516, // USDC
+            1918988905, // Rari
+            0x8bA339dDCC0c7140dC6C2E268ee37bB308cd4C68, // gsUSDC
+            "gsUSDC",
+            6, // USDC decimals
+            6  // gsUSDC decimals
+        );
+        
+        // WETH -> gsWETH
+        _registerMappingInternal(
+            4661, // Appchain
+            0x02950119C4CCD1993f7938A55B8Ab8384C3CcE4F, // WETH
+            1918988905, // Rari
+            0x8a469384D5D0a4E44bA3D5754b2D1383B5C4F0C7, // gsWETH
+            "gsWETH",
+            18, // WETH decimals
+            18  // gsWETH decimals
+        );
+        
+        // WBTC -> gsWBTC
+        _registerMappingInternal(
+            4661, // Appchain
+            0xb2e9Eabb827b78e2aC66bE17327603778D117d18, // WBTC
+            1918988905, // Rari
+            0x8F4e69C0B0f1a0c3A6E0c7b1D3E5f9A2b4d6e8F0, // gsWBTC
+            "gsWBTC",
+            8, // WBTC decimals
+            8  // gsWBTC decimals
+        );
+    }
+    
+    /**
+     * @dev Internal function to register a token mapping without access control
+     */
+    function _registerMappingInternal(
+        uint32 sourceChainId,
+        address sourceToken,
+        uint32 targetChainId,
+        address syntheticToken,
+        string memory symbol,
+        uint8 sourceDecimals,
+        uint8 syntheticDecimals
+    ) internal {
+        Storage storage $ = getStorage();
+        
+        bytes32 mappingKey = _getMappingKey(sourceChainId, sourceToken, targetChainId);
+        
+        // Store the mapping
+        $.tokenMappings[mappingKey] = TokenMapping({
+            sourceChainId: sourceChainId,
+            sourceToken: sourceToken,
+            targetChainId: targetChainId,
+            syntheticToken: syntheticToken,
+            symbol: symbol,
+            sourceDecimals: sourceDecimals,
+            syntheticDecimals: syntheticDecimals,
+            isActive: true,
+            registeredAt: block.timestamp
+        });
+        
+        // Add to reverse mapping for lookups
+        bytes32 reverseKey = _getReverseMappingKey(targetChainId, syntheticToken);
+        $.reverseMappings[reverseKey] = ReverseMapping({
+            sourceChainId: sourceChainId,
+            sourceToken: sourceToken
+        });
+        
+        // Add to chain mappings for enumeration
+        $.chainToTokens[sourceChainId].push(sourceToken);
+        
+        emit TokenMappingRegistered(sourceChainId, sourceToken, targetChainId, syntheticToken, symbol);
     }
     
     /**

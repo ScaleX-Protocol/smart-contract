@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.26;
 
-import "@gtx/mocks/MockUSDC.sol";
-import "@gtx/mocks/MockWETH.sol";
+import "@scalex/mocks/MockUSDC.sol";
+import "@scalex/mocks/MockWETH.sol";
 import "../../src/core/ChainBalanceManager.sol";
 import "../../src/core/interfaces/IChainBalanceManagerErrors.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
@@ -12,6 +12,15 @@ import {BeaconDeployer} from "./helpers/BeaconDeployer.t.sol";
 import "@openzeppelin/contracts/proxy/beacon/BeaconProxy.sol";
 import "@openzeppelin/contracts/proxy/beacon/UpgradeableBeacon.sol";
 import {Upgrades} from "openzeppelin-foundry-upgrades/Upgrades.sol";
+
+contract MockMailbox {
+    event Dispatch(uint32 destinationDomain, bytes32 recipient, bytes message);
+    
+    function dispatch(uint32 destinationDomain, bytes32 recipient, bytes calldata messageBody) external payable returns (bytes32) {
+        emit Dispatch(destinationDomain, recipient, messageBody);
+        return keccak256(messageBody);
+    }
+}
 
 contract ChainBalanceManagerTest is Test {
     ChainBalanceManager private chainBalanceManager;
@@ -29,10 +38,14 @@ contract ChainBalanceManagerTest is Test {
 
     function setUp() public {
         BeaconDeployer beaconDeployer = new BeaconDeployer();
+        MockMailbox mockMailbox = new MockMailbox();
+        address mockDestinationBalanceManager = address(0x888);
+        uint32 destinationDomain = 1918988905; // Rari domain
+        
         (BeaconProxy beaconProxy,) = beaconDeployer.deployUpgradeableContract(
             address(new ChainBalanceManager()),
             owner,
-            abi.encodeWithSignature("initialize(address,address,uint32,address)", owner, address(0), 0, address(0))
+            abi.encodeWithSignature("initialize(address,address,uint32,address)", owner, address(mockMailbox), destinationDomain, mockDestinationBalanceManager)
         );
 
         chainBalanceManager = ChainBalanceManager(address(beaconProxy));
@@ -103,9 +116,9 @@ contract ChainBalanceManagerTest is Test {
         uint256 depositAmount = 5 ether;
         
         vm.prank(user1);
-        chainBalanceManager.deposit{value: depositAmount}(address(0), depositAmount, user1);
+        chainBalanceManager.deposit{value: depositAmount}(user1, Currency.wrap(address(0)), depositAmount);
         
-        assertEq(chainBalanceManager.getBalance(user1, address(0)), depositAmount);
+        assertEq(chainBalanceManager.getBalance(user1, Currency.wrap(address(0))), depositAmount);
         assertEq(address(chainBalanceManager).balance, depositAmount);
     }
 
@@ -119,9 +132,9 @@ contract ChainBalanceManagerTest is Test {
         mockUSDC.approve(address(chainBalanceManager), depositAmount);
         
         vm.prank(user1);
-        chainBalanceManager.deposit(address(mockUSDC), depositAmount, user1);
+        chainBalanceManager.deposit(user1, Currency.wrap(address(mockUSDC)), depositAmount);
         
-        assertEq(chainBalanceManager.getBalance(user1, address(mockUSDC)), depositAmount);
+        assertEq(chainBalanceManager.getBalance(user1, Currency.wrap(address(mockUSDC))), depositAmount);
         assertEq(mockUSDC.balanceOf(address(chainBalanceManager)), depositAmount);
     }
 
@@ -133,13 +146,13 @@ contract ChainBalanceManagerTest is Test {
         
         vm.prank(user1);
         vm.expectRevert(abi.encodeWithSelector(IChainBalanceManagerErrors.TokenNotWhitelisted.selector, address(mockUSDC)));
-        chainBalanceManager.deposit(address(mockUSDC), depositAmount, user1);
+        chainBalanceManager.deposit(user1, Currency.wrap(address(mockUSDC)), depositAmount);
     }
 
     function test_DepositRevertIfZeroAmount() public {
         vm.prank(user1);
         vm.expectRevert(IChainBalanceManagerErrors.ZeroAmount.selector);
-        chainBalanceManager.deposit(address(0), 0, user1);
+        chainBalanceManager.deposit(user1, Currency.wrap(address(0)), 0);
     }
 
     function test_DepositRevertIfZeroRecipient() public {
@@ -147,17 +160,17 @@ contract ChainBalanceManagerTest is Test {
         
         vm.prank(user1);
         vm.expectRevert(IChainBalanceManagerErrors.ZeroAddress.selector);
-        chainBalanceManager.deposit{value: depositAmount}(address(0), depositAmount, address(0));
+        chainBalanceManager.deposit{value: depositAmount}(address(0), Currency.wrap(address(0)), depositAmount);
     }
 
     function test_DepositForAnotherUser() public {
         uint256 depositAmount = 5 ether;
         
         vm.prank(user1);
-        chainBalanceManager.deposit{value: depositAmount}(address(0), depositAmount, user2);
+        chainBalanceManager.deposit{value: depositAmount}(user2, Currency.wrap(address(0)), depositAmount);
         
-        assertEq(chainBalanceManager.getBalance(user1, address(0)), 0);
-        assertEq(chainBalanceManager.getBalance(user2, address(0)), depositAmount);
+        assertEq(chainBalanceManager.getBalance(user1, Currency.wrap(address(0))), 0);
+        assertEq(chainBalanceManager.getBalance(user2, Currency.wrap(address(0))), depositAmount);
         assertEq(address(chainBalanceManager).balance, depositAmount);
     }
 
@@ -167,7 +180,7 @@ contract ChainBalanceManagerTest is Test {
         
         // Deposit first
         vm.prank(user1);
-        chainBalanceManager.deposit{value: depositAmount}(address(0), depositAmount, user1);
+        chainBalanceManager.deposit{value: depositAmount}(user1, Currency.wrap(address(0)), depositAmount);
         
         uint256 userBalanceBefore = user1.balance;
         
@@ -175,7 +188,7 @@ contract ChainBalanceManagerTest is Test {
         vm.prank(owner);
         chainBalanceManager.unlock(address(0), unlockAmount, user1);
         
-        assertEq(chainBalanceManager.getBalance(user1, address(0)), depositAmount - unlockAmount);
+        assertEq(chainBalanceManager.getBalance(user1, Currency.wrap(address(0))), depositAmount - unlockAmount);
         assertEq(chainBalanceManager.getUnlockedBalance(user1, address(0)), unlockAmount);
         
         // User claims unlocked tokens
@@ -198,7 +211,7 @@ contract ChainBalanceManagerTest is Test {
         mockUSDC.approve(address(chainBalanceManager), depositAmount);
         
         vm.prank(user1);
-        chainBalanceManager.deposit(address(mockUSDC), depositAmount, user1);
+        chainBalanceManager.deposit(user1, Currency.wrap(address(mockUSDC)), depositAmount);
         
         uint256 userBalanceBefore = mockUSDC.balanceOf(user1);
         
@@ -206,7 +219,7 @@ contract ChainBalanceManagerTest is Test {
         vm.prank(owner);
         chainBalanceManager.unlock(address(mockUSDC), unlockAmount, user1);
         
-        assertEq(chainBalanceManager.getBalance(user1, address(mockUSDC)), depositAmount - unlockAmount);
+        assertEq(chainBalanceManager.getBalance(user1, Currency.wrap(address(mockUSDC))), depositAmount - unlockAmount);
         assertEq(chainBalanceManager.getUnlockedBalance(user1, address(mockUSDC)), unlockAmount);
         
         // User claims unlocked tokens
@@ -221,7 +234,7 @@ contract ChainBalanceManagerTest is Test {
         uint256 depositAmount = 5 ether;
         
         vm.prank(user1);
-        chainBalanceManager.deposit{value: depositAmount}(address(0), depositAmount, user1);
+        chainBalanceManager.deposit{value: depositAmount}(user1, Currency.wrap(address(0)), depositAmount);
         
         vm.prank(notOwner);
         vm.expectRevert();
@@ -233,7 +246,7 @@ contract ChainBalanceManagerTest is Test {
         uint256 unlockAmount = 10 ether;
         
         vm.prank(user1);
-        chainBalanceManager.deposit{value: depositAmount}(address(0), depositAmount, user1);
+        chainBalanceManager.deposit{value: depositAmount}(user1, Currency.wrap(address(0)), depositAmount);
         
         vm.prank(owner);
         vm.expectRevert();
@@ -259,7 +272,7 @@ contract ChainBalanceManagerTest is Test {
         
         // Deposit and unlock
         vm.prank(user1);
-        chainBalanceManager.deposit{value: depositAmount}(address(0), depositAmount, user1);
+        chainBalanceManager.deposit{value: depositAmount}(user1, Currency.wrap(address(0)), depositAmount);
         
         vm.prank(owner);
         chainBalanceManager.unlock(address(0), unlockAmount, user1);
@@ -278,7 +291,7 @@ contract ChainBalanceManagerTest is Test {
         
         // Deposit and unlock
         vm.prank(user1);
-        chainBalanceManager.deposit{value: depositAmount}(address(0), depositAmount, user1);
+        chainBalanceManager.deposit{value: depositAmount}(user1, Currency.wrap(address(0)), depositAmount);
         
         vm.prank(owner);
         chainBalanceManager.unlock(address(0), unlockAmount, user1);
@@ -307,21 +320,21 @@ contract ChainBalanceManagerTest is Test {
         
         // Deposit
         vm.prank(user1);
-        chainBalanceManager.deposit{value: depositAmount}(address(0), depositAmount, user1);
+        chainBalanceManager.deposit{value: depositAmount}(user1, Currency.wrap(address(0)), depositAmount);
         
         // First unlock
         vm.prank(owner);
         chainBalanceManager.unlock(address(0), firstUnlock, user1);
         
         assertEq(chainBalanceManager.getUnlockedBalance(user1, address(0)), firstUnlock);
-        assertEq(chainBalanceManager.getBalance(user1, address(0)), depositAmount - firstUnlock);
+        assertEq(chainBalanceManager.getBalance(user1, Currency.wrap(address(0))), depositAmount - firstUnlock);
         
         // Second unlock
         vm.prank(owner);
         chainBalanceManager.unlock(address(0), secondUnlock, user1);
         
         assertEq(chainBalanceManager.getUnlockedBalance(user1, address(0)), firstUnlock + secondUnlock);
-        assertEq(chainBalanceManager.getBalance(user1, address(0)), depositAmount - firstUnlock - secondUnlock);
+        assertEq(chainBalanceManager.getBalance(user1, Currency.wrap(address(0))), depositAmount - firstUnlock - secondUnlock);
     }
 
     function test_WithdrawETH() public {
@@ -330,7 +343,7 @@ contract ChainBalanceManagerTest is Test {
         
         // Deposit first
         vm.prank(user1);
-        chainBalanceManager.deposit{value: depositAmount}(address(0), depositAmount, user1);
+        chainBalanceManager.deposit{value: depositAmount}(user1, Currency.wrap(address(0)), depositAmount);
         
         uint256 userBalanceBefore = user1.balance;
         
@@ -338,7 +351,7 @@ contract ChainBalanceManagerTest is Test {
         vm.prank(owner);
         chainBalanceManager.withdraw(address(0), withdrawAmount, user1);
         
-        assertEq(chainBalanceManager.getBalance(user1, address(0)), depositAmount - withdrawAmount);
+        assertEq(chainBalanceManager.getBalance(user1, Currency.wrap(address(0))), depositAmount - withdrawAmount);
         assertEq(user1.balance, userBalanceBefore + withdrawAmount);
     }
 
@@ -354,7 +367,7 @@ contract ChainBalanceManagerTest is Test {
         mockUSDC.approve(address(chainBalanceManager), depositAmount);
         
         vm.prank(user1);
-        chainBalanceManager.deposit(address(mockUSDC), depositAmount, user1);
+        chainBalanceManager.deposit(user1, Currency.wrap(address(mockUSDC)), depositAmount);
         
         uint256 userBalanceBefore = mockUSDC.balanceOf(user1);
         
@@ -362,7 +375,7 @@ contract ChainBalanceManagerTest is Test {
         vm.prank(owner);
         chainBalanceManager.withdraw(address(mockUSDC), withdrawAmount, user1);
         
-        assertEq(chainBalanceManager.getBalance(user1, address(mockUSDC)), depositAmount - withdrawAmount);
+        assertEq(chainBalanceManager.getBalance(user1, Currency.wrap(address(mockUSDC))), depositAmount - withdrawAmount);
         assertEq(mockUSDC.balanceOf(user1), userBalanceBefore + withdrawAmount);
     }
 
@@ -370,7 +383,7 @@ contract ChainBalanceManagerTest is Test {
         uint256 depositAmount = 5 ether;
         
         vm.prank(user1);
-        chainBalanceManager.deposit{value: depositAmount}(address(0), depositAmount, user1);
+        chainBalanceManager.deposit{value: depositAmount}(user1, Currency.wrap(address(0)), depositAmount);
         
         vm.prank(notOwner);
         vm.expectRevert();
@@ -382,7 +395,7 @@ contract ChainBalanceManagerTest is Test {
         uint256 withdrawAmount = 10 ether;
         
         vm.prank(user1);
-        chainBalanceManager.deposit{value: depositAmount}(address(0), depositAmount, user1);
+        chainBalanceManager.deposit{value: depositAmount}(user1, Currency.wrap(address(0)), depositAmount);
         
         vm.prank(owner);
         vm.expectRevert();
@@ -403,7 +416,7 @@ contract ChainBalanceManagerTest is Test {
         
         // Deposit
         vm.prank(user1);
-        chainBalanceManager.deposit{value: depositAmount}(address(0), depositAmount, user1);
+        chainBalanceManager.deposit{value: depositAmount}(user1, Currency.wrap(address(0)), depositAmount);
         
         uint256 userBalanceBefore = user1.balance;
         
@@ -411,7 +424,7 @@ contract ChainBalanceManagerTest is Test {
         vm.prank(owner);
         chainBalanceManager.withdraw(address(0), withdrawAmount, user1);
         
-        uint256 balanceAfterWithdraw = chainBalanceManager.getBalance(user1, address(0));
+        uint256 balanceAfterWithdraw = chainBalanceManager.getBalance(user1, Currency.wrap(address(0)));
         uint256 userBalanceAfterWithdraw = user1.balance;
         
         // Test unlock/claim method (controlled)
@@ -421,7 +434,7 @@ contract ChainBalanceManagerTest is Test {
         vm.prank(user1);
         chainBalanceManager.claim(address(0), claimAmount);
         
-        uint256 finalBalance = chainBalanceManager.getBalance(user1, address(0));
+        uint256 finalBalance = chainBalanceManager.getBalance(user1, Currency.wrap(address(0)));
         uint256 finalUserBalance = user1.balance;
         
         // Verify both methods work correctly
@@ -436,13 +449,13 @@ contract ChainBalanceManagerTest is Test {
         uint256 depositAmount2 = 7 ether;
         
         vm.prank(user1);
-        chainBalanceManager.deposit{value: depositAmount1}(address(0), depositAmount1, user1);
+        chainBalanceManager.deposit{value: depositAmount1}(user1, Currency.wrap(address(0)), depositAmount1);
         
         vm.prank(user2);
-        chainBalanceManager.deposit{value: depositAmount2}(address(0), depositAmount2, user2);
+        chainBalanceManager.deposit{value: depositAmount2}(user2, Currency.wrap(address(0)), depositAmount2);
         
-        assertEq(chainBalanceManager.getBalance(user1, address(0)), depositAmount1);
-        assertEq(chainBalanceManager.getBalance(user2, address(0)), depositAmount2);
+        assertEq(chainBalanceManager.getBalance(user1, Currency.wrap(address(0))), depositAmount1);
+        assertEq(chainBalanceManager.getBalance(user2, Currency.wrap(address(0))), depositAmount2);
         assertEq(address(chainBalanceManager).balance, depositAmount1 + depositAmount2);
     }
 

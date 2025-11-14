@@ -18,7 +18,7 @@ import "../utils/DeployHelpers.s.sol";
  *   LOCAL_TOKEN      - Address of local token to map (optional, uses deployment file)
  *
  * Usage Examples:
- *   TOKEN_SYMBOL=USDC DEPOSIT_AMOUNT=1000000000 forge script script/LocalDeposit.s.sol:LocalDeposit --rpc-url https://core-devnet.gtxdex.xyz --broadcast
+ *   TOKEN_SYMBOL=USDC DEPOSIT_AMOUNT=1000000000 forge script script/LocalDeposit.s.sol:LocalDeposit --rpc-url https://core-devnet.scalex.money --broadcast
  *   TOKEN_SYMBOL=WETH LOCAL_TOKEN=0x123... DEPOSIT_AMOUNT=1000000000000000000 forge script script/LocalDeposit.s.sol:LocalDeposit --rpc-url $RPC_URL --broadcast
  */
 contract LocalDeposit is DeployHelpers {
@@ -105,11 +105,11 @@ contract LocalDeposit is DeployHelpers {
     
     function _loadContracts() internal {
         // Load core contracts from deployed mapping
-        require(deployed["PROXY_TOKENREGISTRY"].isSet, "TokenRegistry not found in deployments");
-        require(deployed["PROXY_BALANCEMANAGER"].isSet, "BalanceManager not found in deployments");
+        require(deployed["TokenRegistry"].isSet, "TokenRegistry not found in deployments");
+        require(deployed["BalanceManager"].isSet, "BalanceManager not found in deployments");
         
-        tokenRegistry = TokenRegistry(deployed["PROXY_TOKENREGISTRY"].addr);
-        balanceManager = BalanceManager(deployed["PROXY_BALANCEMANAGER"].addr);
+        tokenRegistry = TokenRegistry(deployed["TokenRegistry"].addr);
+        balanceManager = BalanceManager(deployed["BalanceManager"].addr);
         
         console.log("TokenRegistry:", address(tokenRegistry));
         console.log("BalanceManager:", address(balanceManager));

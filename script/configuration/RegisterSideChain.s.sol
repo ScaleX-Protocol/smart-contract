@@ -9,7 +9,7 @@ import "../utils/DeployHelpers.s.sol";
 /**
  * @title Register Side Chain
  * @dev Registers side chain in ChainRegistry for cross-chain operations
- * Usage: SIDE_CHAIN=gtx-anvil-2 forge script script/RegisterSideChain.s.sol:RegisterSideChain --rpc-url https://core-devnet.gtxdex.xyz --broadcast
+ * Usage: SIDE_CHAIN=scalex-anvil-2 forge script script/RegisterSideChain.s.sol:RegisterSideChain --rpc-url https://core-devnet.scalex.money --broadcast
  */
 contract RegisterSideChain is DeployHelpers {
     
@@ -84,7 +84,7 @@ contract RegisterSideChain is DeployHelpers {
         try vm.envString("SIDE_NAME") returns (string memory name) {
             sideChainName = name;
         } catch {
-            sideChainName = "GTX Side Chain";
+            sideChainName = "ScaleX Side Chain";
         }
     }
     

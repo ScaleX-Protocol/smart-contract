@@ -3,7 +3,7 @@ pragma solidity ^0.8.26;
 
 import "../utils/DeployHelpers.s.sol";
 import "../../src/core/BalanceManager.sol";
-import "../../src/core/GTXRouter.sol";
+import "../../src/core/ScaleXRouter.sol";
 import "../../src/core/PoolManager.sol";
 import "../../src/core/libraries/Pool.sol";
 
@@ -16,14 +16,14 @@ contract FillMockOrderBook is Script, DeployHelpers {
     // Contract address keys
     string constant BALANCE_MANAGER_ADDRESS = "BalanceManager";
     string constant POOL_MANAGER_ADDRESS = "PoolManager";
-    string constant GTX_ROUTER_ADDRESS = "GTXRouter";
+    string constant ScaleX_ROUTER_ADDRESS = "ScaleXRouter";
     string constant WETH_ADDRESS = "gsWETH";
     string constant USDC_ADDRESS = "gsUSDC";
 
     // Core contracts
     BalanceManager balanceManager;
     PoolManager poolManager;
-    GTXRouter gtxRouter;
+    ScaleXRouter scalexRouter;
     PoolManagerResolver poolManagerResolver;
 
     // Tokens
@@ -46,15 +46,28 @@ contract FillMockOrderBook is Script, DeployHelpers {
         // Load core contracts - try new naming first, fallback to old naming
         address bmAddr = deployed["PROXY_BALANCEMANAGER"].isSet ? deployed["PROXY_BALANCEMANAGER"].addr : deployed[BALANCE_MANAGER_ADDRESS].addr;
         address pmAddr = deployed["PROXY_POOLMANAGER"].isSet ? deployed["PROXY_POOLMANAGER"].addr : deployed[POOL_MANAGER_ADDRESS].addr;
-        address routerAddr = deployed["PROXY_ROUTER"].isSet ? deployed["PROXY_ROUTER"].addr : deployed[GTX_ROUTER_ADDRESS].addr;
+        address routerAddr = deployed["PROXY_ROUTER"].isSet ? deployed["PROXY_ROUTER"].addr : deployed[ScaleX_ROUTER_ADDRESS].addr;
         
         balanceManager = BalanceManager(bmAddr);
         poolManager = PoolManager(pmAddr);
-        gtxRouter = GTXRouter(routerAddr);
+        scalexRouter = ScaleXRouter(routerAddr);
 
-        // Load tokens
-        tokenWETH = IERC20(deployed[WETH_ADDRESS].addr);
-        tokenUSDC = IERC20(deployed[USDC_ADDRESS].addr);
+        // Load tokens - use actual deployed tokens instead of synthetic ones
+        if (deployed["WETH"].isSet) {
+            tokenWETH = IERC20(deployed["WETH"].addr);
+        } else if (deployed[WETH_ADDRESS].isSet) {
+            tokenWETH = IERC20(deployed[WETH_ADDRESS].addr);
+        } else {
+            revert("WETH token not found in deployments");
+        }
+        
+        if (deployed["USDC"].isSet) {
+            tokenUSDC = IERC20(deployed["USDC"].addr);
+        } else if (deployed[USDC_ADDRESS].isSet) {
+            tokenUSDC = IERC20(deployed[USDC_ADDRESS].addr);
+        } else {
+            revert("USDC token not found in deployments");
+        }
     }
 
     function run() public {
@@ -108,22 +121,37 @@ contract FillMockOrderBook is Script, DeployHelpers {
     function fillETHUSDCOrderBook() private {
         console.log("\n=== Filling ETH/USDC Order Book ===");
 
-        // Get synthetic tokens for trading 
-        address gsWETH = deployed["gsWETH"].addr;
-        address gsUSDC = deployed["gsUSDC"].addr;
+        // Get deployed tokens for trading 
+        address wethAddr = deployed["WETH"].addr;
+        address usdcAddr = deployed["USDC"].addr;
         
-        Currency synthWeth = Currency.wrap(gsWETH);
-        Currency synthUsdc = Currency.wrap(gsUSDC);
+        Currency weth = Currency.wrap(wethAddr);
+        Currency usdc = Currency.wrap(usdcAddr);
 
-        // Create PoolKey and check if pool exists
-        PoolKey memory poolKey = poolManager.createPoolKey(synthWeth, synthUsdc);
-        IPoolManager.Pool memory pool = poolManager.getPool(poolKey);
+        console.log("Looking for existing WETH/USDC pool...");
+        
+        // Try to get existing pool - don't try to create one
+        PoolKey memory poolKey = poolManager.createPoolKey(weth, usdc);
+        IPoolManager.Pool memory pool;
+        
+        try poolManager.getPool(poolKey) returns (IPoolManager.Pool memory retrievedPool) {
+            pool = retrievedPool;
+            console.log("[OK] Found existing WETH/USDC pool successfully");
+        } catch {
+            console.log("[WARNING] No WETH/USDC pool found");
+            console.log("[INFO] Pool creation requires special permissions");
+            console.log("[INFO] Try running 'make create-trading-pools' first");
+            console.log("[INFO] Continuing with basic token setup for demonstration...");
+            return;
+        }
         
         console.log("Pool baseCurrency:", Currency.unwrap(pool.baseCurrency));
         console.log("Pool quoteCurrency:", Currency.unwrap(pool.quoteCurrency));
+        console.log("Pool orderBook:", address(pool.orderBook));
 
-        // Setup sender with funds and make local deposits for BalanceManager
-        // _setupFunds(200e18, 400_000e6); // 200 ETH, 400,000 USDC
+        // Setup sender with funds
+        _setupFunds(200e18, 400_000e6); // 200 ETH, 400,000 USDC
+        // Note: _makeLocalDeposits temporarily disabled due to TokenRegistryNotSet issues
         // _makeLocalDeposits(100e18, 500_000e6); // Deposit 100 ETH, 500,000 USDC to BalanceManager
 
         // Place BUY orders (bids) - ascending price from 1900 to 1980
@@ -192,7 +220,7 @@ contract FillMockOrderBook is Script, DeployHelpers {
         // Load core contracts
         balanceManager = BalanceManager(deployed[BALANCE_MANAGER_ADDRESS].addr);
         poolManager = PoolManager(deployed[POOL_MANAGER_ADDRESS].addr);
-        gtxRouter = GTXRouter(deployed[GTX_ROUTER_ADDRESS].addr);
+        scalexRouter = ScaleXRouter(deployed[ScaleX_ROUTER_ADDRESS].addr);
 
         // Use the provided tokens instead of hardcoded ones
         tokenWETH = MockWETH(payable(token0Address));
@@ -246,9 +274,9 @@ contract FillMockOrderBook is Script, DeployHelpers {
             console.log("USDC minting failed - using existing supply");
         }
 
-        // Approve tokens for both GTX router and BalanceManager (higher amounts for multiple orders)
-        bool wethApprovalRouter = IERC20(address(tokenWETH)).approve(address(gtxRouter), ethAmount * 2);
-        bool usdcApprovalRouter = IERC20(address(tokenUSDC)).approve(address(gtxRouter), usdcAmount * 2);
+        // Approve tokens for both ScaleX router and BalanceManager (higher amounts for multiple orders)
+        bool wethApprovalRouter = IERC20(address(tokenWETH)).approve(address(scalexRouter), ethAmount * 2);
+        bool usdcApprovalRouter = IERC20(address(tokenUSDC)).approve(address(scalexRouter), usdcAmount * 2);
         bool wethApprovalBM = IERC20(address(tokenWETH)).approve(address(balanceManager), ethAmount * 2);
         bool usdcApprovalBM = IERC20(address(tokenUSDC)).approve(address(balanceManager), usdcAmount * 2);
 
@@ -262,12 +290,12 @@ contract FillMockOrderBook is Script, DeployHelpers {
         console.log("Final USDC balance:", tokenUSDC.balanceOf(msg.sender) / 1e6, "USDC");
         console.log(
             "Final WETH allowance:",
-            IERC20(address(tokenWETH)).allowance(msg.sender, address(gtxRouter)) / 1e18,
+            IERC20(address(tokenWETH)).allowance(msg.sender, address(scalexRouter)) / 1e18,
             "ETH"
         );
         console.log(
             "Final USDC allowance:",
-            IERC20(address(tokenUSDC)).allowance(msg.sender, address(gtxRouter)) / 1e6,
+            IERC20(address(tokenUSDC)).allowance(msg.sender, address(scalexRouter)) / 1e6,
             "USDC"
         );
         console.log("Funds setup complete\n");
@@ -293,14 +321,12 @@ contract FillMockOrderBook is Script, DeployHelpers {
         console.log("BalanceManager WETH balance:", wethBalance / 1e18, "ETH");
         console.log("BalanceManager USDC balance:", usdcBalance / 1e6, "USDC");
         
-        // Also check synthetic balances (might be 0 if not mapped)
-        address gsWETH = deployed["gsWETH"].addr;
-        address gsUSDC = deployed["gsUSDC"].addr;
-        uint256 syntheticWethBalance = balanceManager.getBalance(msg.sender, Currency.wrap(gsWETH));
-        uint256 syntheticUsdcBalance = balanceManager.getBalance(msg.sender, Currency.wrap(gsUSDC));
+        // Check token balances in BalanceManager
+        uint256 bmWethBalance = balanceManager.getBalance(msg.sender, Currency.wrap(address(tokenWETH)));
+        uint256 bmUsdcBalance = balanceManager.getBalance(msg.sender, Currency.wrap(address(tokenUSDC)));
         
-        console.log("BalanceManager gsWETH balance:", syntheticWethBalance / 1e18, "ETH");
-        console.log("BalanceManager gsUSDC balance:", syntheticUsdcBalance / 1e6, "USDC");
+        console.log("BalanceManager WETH balance:", bmWethBalance / 1e18, "ETH");
+        console.log("BalanceManager USDC balance:", bmUsdcBalance / 1e6, "USDC");
         console.log("Local deposits complete\n");
     }
 
@@ -331,7 +357,7 @@ contract FillMockOrderBook is Script, DeployHelpers {
 
             // Check user balances before placing order
             uint256 usdcBalance = tokenUSDC.balanceOf(msg.sender);
-            uint256 usdcAllowance = IERC20(address(tokenUSDC)).allowance(msg.sender, address(gtxRouter));
+            uint256 usdcAllowance = IERC20(address(tokenUSDC)).allowance(msg.sender, address(scalexRouter));
 
             console.log("User USDC balance:", usdcBalance, "(raw)");
             console.log("User USDC balance:", usdcBalance / 1e6, "USDC");
@@ -339,7 +365,7 @@ contract FillMockOrderBook is Script, DeployHelpers {
             console.log("USDC allowance:", usdcAllowance / 1e6, "USDC");
 
             console.log("Placing limit order...");
-            uint48 orderId = gtxRouter.placeLimitOrder(
+            uint48 orderId = scalexRouter.placeLimitOrder(
                 pool, currentPrice, quantity, IOrderBook.Side.BUY, IOrderBook.TimeInForce.GTC, 0
             );
 
@@ -377,7 +403,7 @@ contract FillMockOrderBook is Script, DeployHelpers {
 
             // Check user balances before placing order
             uint256 wethBalance = tokenWETH.balanceOf(msg.sender);
-            uint256 wethAllowance = IERC20(address(tokenWETH)).allowance(msg.sender, address(gtxRouter));
+            uint256 wethAllowance = IERC20(address(tokenWETH)).allowance(msg.sender, address(scalexRouter));
 
             console.log("User WETH balance:", wethBalance, "(raw)");
             console.log("User WETH balance:", wethBalance / 1e18, "ETH");
@@ -385,7 +411,7 @@ contract FillMockOrderBook is Script, DeployHelpers {
             console.log("WETH allowance:", wethAllowance / 1e18, "ETH");
 
             console.log("Placing limit order...");
-            uint48 orderId = gtxRouter.placeLimitOrder(
+            uint48 orderId = scalexRouter.placeLimitOrder(
                 pool, currentPrice, quantity, IOrderBook.Side.SELL, IOrderBook.TimeInForce.GTC, 0
             );
 
@@ -408,8 +434,8 @@ contract FillMockOrderBook is Script, DeployHelpers {
         IPoolManager.Pool memory pool = poolManagerResolver.getPool(weth, usdc, address(poolManager));
 
         // Check best prices
-        IOrderBook.PriceVolume memory bestBuy = gtxRouter.getBestPrice(weth, usdc, IOrderBook.Side.BUY);
-        IOrderBook.PriceVolume memory bestSell = gtxRouter.getBestPrice(weth, usdc, IOrderBook.Side.SELL);
+        IOrderBook.PriceVolume memory bestBuy = scalexRouter.getBestPrice(weth, usdc, IOrderBook.Side.BUY);
+        IOrderBook.PriceVolume memory bestSell = scalexRouter.getBestPrice(weth, usdc, IOrderBook.Side.SELL);
 
         console.log("Best BUY price:", bestBuy.price);
         console.log("USDC with volume:", bestBuy.volume, "ETH\n");
@@ -434,7 +460,7 @@ contract FillMockOrderBook is Script, DeployHelpers {
     }
 
     function _checkPriceLevel(Currency base, Currency quote, IOrderBook.Side side, uint128 price) private {
-        (uint48 orderCount, uint256 totalVolume) = gtxRouter.getOrderQueue(base, quote, side, price);
+        (uint48 orderCount, uint256 totalVolume) = scalexRouter.getOrderQueue(base, quote, side, price);
         string memory sideStr = side == IOrderBook.Side.BUY ? "BUY" : "SELL";
 
         console.log("Price level", price, "USDC -", sideStr);
@@ -444,7 +470,7 @@ contract FillMockOrderBook is Script, DeployHelpers {
     }
 
     function _checkOrderDetails(Currency base, Currency quote, uint48 orderId, string memory label) private {
-        IOrderBook.Order memory order = gtxRouter.getOrder(base, quote, orderId);
+        IOrderBook.Order memory order = scalexRouter.getOrder(base, quote, orderId);
 
         console.log("\nOrder details for", label);
         console.log("order (ID:", orderId, "):");
@@ -487,13 +513,13 @@ contract FillMockOrderBook is Script, DeployHelpers {
         require(buyOrderIds.length > 0, "No BUY orders were placed");
 
         // Check best BUY price exists
-        IOrderBook.PriceVolume memory bestBuy = gtxRouter.getBestPrice(base, quote, IOrderBook.Side.BUY);
+        IOrderBook.PriceVolume memory bestBuy = scalexRouter.getBestPrice(base, quote, IOrderBook.Side.BUY);
         require(bestBuy.price > 0, "No best BUY price found");
         require(bestBuy.volume > 0, "No volume at best BUY price");
 
         // Verify each placed order exists and has valid data
         for (uint256 i = 0; i < buyOrderIds.length; i++) {
-            IOrderBook.Order memory order = gtxRouter.getOrder(base, quote, buyOrderIds[i]);
+            IOrderBook.Order memory order = scalexRouter.getOrder(base, quote, buyOrderIds[i]);
             require(order.id == buyOrderIds[i], "Order ID mismatch");
             require(order.user == msg.sender, "Order user mismatch");
             require(order.side == IOrderBook.Side.BUY, "Order side mismatch");
@@ -501,7 +527,7 @@ contract FillMockOrderBook is Script, DeployHelpers {
 
             // Check that there's still some volume at this price level (may be partially filled)
             (uint48 orderCount, uint256 totalVolume) =
-                gtxRouter.getOrderQueue(base, quote, IOrderBook.Side.BUY, order.price);
+                scalexRouter.getOrderQueue(base, quote, IOrderBook.Side.BUY, order.price);
             require(orderCount > 0, string(abi.encodePacked("No orders at price ", uint2str(order.price))));
             require(totalVolume > 0, string(abi.encodePacked("No volume at price ", uint2str(order.price))));
         }
@@ -512,7 +538,7 @@ contract FillMockOrderBook is Script, DeployHelpers {
     function _verifySellOrdersPlaced(Currency base, Currency quote) private {
         console.log("Checking SELL orders...");
 
-        IOrderBook.PriceVolume memory bestSell = gtxRouter.getBestPrice(base, quote, IOrderBook.Side.SELL);
+        IOrderBook.PriceVolume memory bestSell = scalexRouter.getBestPrice(base, quote, IOrderBook.Side.SELL);
 
         if (sellOrderIds.length == 0) {
             console.log("No SELL orders placed");
@@ -523,7 +549,7 @@ contract FillMockOrderBook is Script, DeployHelpers {
 
             // Verify each placed sell order exists and has valid data
             for (uint256 i = 0; i < sellOrderIds.length; i++) {
-                IOrderBook.Order memory order = gtxRouter.getOrder(base, quote, sellOrderIds[i]);
+                IOrderBook.Order memory order = scalexRouter.getOrder(base, quote, sellOrderIds[i]);
                 require(order.id == sellOrderIds[i], "SELL order ID mismatch");
                 require(order.user == msg.sender, "SELL order user mismatch");
                 require(order.side == IOrderBook.Side.SELL, "SELL order side mismatch");
@@ -531,7 +557,7 @@ contract FillMockOrderBook is Script, DeployHelpers {
 
                 // Check that there's still some volume at this price level (may be partially filled)
                 (uint48 orderCount, uint256 totalVolume) =
-                    gtxRouter.getOrderQueue(base, quote, IOrderBook.Side.SELL, order.price);
+                    scalexRouter.getOrderQueue(base, quote, IOrderBook.Side.SELL, order.price);
                 require(orderCount > 0, string(abi.encodePacked("No SELL orders at price ", uint2str(order.price))));
                 require(totalVolume > 0, string(abi.encodePacked("No SELL volume at price ", uint2str(order.price))));
             }
@@ -543,8 +569,8 @@ contract FillMockOrderBook is Script, DeployHelpers {
     function _verifyOrderBookStructure(Currency base, Currency quote) private {
         console.log("Checking orderbook structure...");
 
-        IOrderBook.PriceVolume memory bestBuy = gtxRouter.getBestPrice(base, quote, IOrderBook.Side.BUY);
-        IOrderBook.PriceVolume memory bestSell = gtxRouter.getBestPrice(base, quote, IOrderBook.Side.SELL);
+        IOrderBook.PriceVolume memory bestBuy = scalexRouter.getBestPrice(base, quote, IOrderBook.Side.BUY);
+        IOrderBook.PriceVolume memory bestSell = scalexRouter.getBestPrice(base, quote, IOrderBook.Side.SELL);
 
         // Verify BUY side exists
         require(bestBuy.price > 0, "No BUY orders in orderbook");
@@ -558,7 +584,7 @@ contract FillMockOrderBook is Script, DeployHelpers {
 
         // Verify order IDs are valid and orders exist
         for (uint256 i = 0; i < buyOrderIds.length; i++) {
-            IOrderBook.Order memory order = gtxRouter.getOrder(base, quote, buyOrderIds[i]);
+            IOrderBook.Order memory order = scalexRouter.getOrder(base, quote, buyOrderIds[i]);
             require(order.id == buyOrderIds[i], "Order ID mismatch");
             require(order.user == msg.sender, "Order user mismatch");
             require(order.side == IOrderBook.Side.BUY, "Order side mismatch");

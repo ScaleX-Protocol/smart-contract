@@ -3,7 +3,7 @@ pragma solidity ^0.8.26;
 
 import "../utils/DeployHelpers.s.sol";
 import "../../src/core/BalanceManager.sol";
-import "../../src/core/GTXRouter.sol";
+import "../../src/core/ScaleXRouter.sol";
 import "../../src/core/PoolManager.sol";
 
 import "../../src/mocks/MockToken.sol";
@@ -15,14 +15,14 @@ contract MarketOrderBook is Script, DeployHelpers {
    // Contract address keys
    string constant BALANCE_MANAGER_ADDRESS = "PROXY_BALANCEMANAGER";
    string constant POOL_MANAGER_ADDRESS = "PROXY_POOLMANAGER";
-   string constant GTX_ROUTER_ADDRESS = "PROXY_ROUTER";
+   string constant ScaleX_ROUTER_ADDRESS = "PROXY_ROUTER";
    string constant WETH_ADDRESS = "gsWETH";
    string constant USDC_ADDRESS = "gsUSDC";
 
    // Core contracts
    BalanceManager balanceManager;
    PoolManager poolManager;
-   GTXRouter gtxRouter;
+   ScaleXRouter scalexRouter;
    PoolManagerResolver poolManagerResolver;
 
    // Synthetic tokens
@@ -48,7 +48,7 @@ contract MarketOrderBook is Script, DeployHelpers {
        // Load core contracts
        balanceManager = BalanceManager(deployed[BALANCE_MANAGER_ADDRESS].addr);
        poolManager = PoolManager(deployed[POOL_MANAGER_ADDRESS].addr);
-       gtxRouter = GTXRouter(deployed[GTX_ROUTER_ADDRESS].addr);
+       scalexRouter = ScaleXRouter(deployed[ScaleX_ROUTER_ADDRESS].addr);
 
        // Load synthetic tokens
        synthWETH = IERC20(deployed[WETH_ADDRESS].addr);
@@ -156,11 +156,11 @@ contract MarketOrderBook is Script, DeployHelpers {
            uint128 depositAmount = (estimatedPrice * quantity) / 1e18;
            
            // Calculate minimum output amount with 5% slippage tolerance
-           uint128 minOutAmount = gtxRouter.calculateMinOutAmountForMarket(
+           uint128 minOutAmount = scalexRouter.calculateMinOutAmountForMarket(
                pool, 0, IOrderBook.Side.BUY, 500 // 5% slippage - use 0 since using BalanceManager funds
            );
            
-           (uint48 orderId, uint128 filled) = gtxRouter.placeMarketOrder(
+           (uint48 orderId, uint128 filled) = scalexRouter.placeMarketOrder(
                pool,
                quantity,
                IOrderBook.Side.BUY,
@@ -196,11 +196,11 @@ contract MarketOrderBook is Script, DeployHelpers {
            uint128 depositAmount = quantity;
            
            // Calculate minimum output amount with 5% slippage tolerance
-           uint128 minOutAmount = gtxRouter.calculateMinOutAmountForMarket(
+           uint128 minOutAmount = scalexRouter.calculateMinOutAmountForMarket(
                pool, 0, IOrderBook.Side.SELL, 500 // 5% slippage - use 0 since using BalanceManager funds
            );
            
-           (uint48 orderId, uint128 filled) = gtxRouter.placeMarketOrder(
+           (uint48 orderId, uint128 filled) = scalexRouter.placeMarketOrder(
                pool,
                quantity,
                IOrderBook.Side.SELL,
@@ -238,8 +238,8 @@ contract MarketOrderBook is Script, DeployHelpers {
        console.log("\n--- Order Book State After Market Orders ---");
 
        // Check best prices
-       IOrderBook.PriceVolume memory bestBuy = gtxRouter.getBestPrice(weth, usdc, IOrderBook.Side.BUY);
-       IOrderBook.PriceVolume memory bestSell = gtxRouter.getBestPrice(weth, usdc, IOrderBook.Side.SELL);
+       IOrderBook.PriceVolume memory bestBuy = scalexRouter.getBestPrice(weth, usdc, IOrderBook.Side.BUY);
+       IOrderBook.PriceVolume memory bestSell = scalexRouter.getBestPrice(weth, usdc, IOrderBook.Side.SELL);
 
        console.log("Best BUY price:", bestBuy.price, "USDC");
        console.log("Volume at best BUY:", bestBuy.volume, "ETH\n");
@@ -252,7 +252,7 @@ contract MarketOrderBook is Script, DeployHelpers {
    }
 
    function _checkOrderDetails(Currency base, Currency quote, uint48 orderId, string memory label) private {
-       IOrderBook.Order memory order = gtxRouter.getOrder(base, quote, orderId);
+       IOrderBook.Order memory order = scalexRouter.getOrder(base, quote, orderId);
 
        console.log("\nOrder details for", label);
        console.log("Order ID:", orderId);
@@ -381,8 +381,8 @@ contract MarketOrderBook is Script, DeployHelpers {
        // 2. Market orders themselves might be filled and removed
        // 3. Orderbook should still be in valid state
        
-       IOrderBook.PriceVolume memory bestBuy = gtxRouter.getBestPrice(base, quote, IOrderBook.Side.BUY);
-       IOrderBook.PriceVolume memory bestSell = gtxRouter.getBestPrice(base, quote, IOrderBook.Side.SELL);
+       IOrderBook.PriceVolume memory bestBuy = scalexRouter.getBestPrice(base, quote, IOrderBook.Side.BUY);
+       IOrderBook.PriceVolume memory bestSell = scalexRouter.getBestPrice(base, quote, IOrderBook.Side.SELL);
        
        // If there are any orders left, they should be valid
        if (bestBuy.price > 0) {
@@ -400,7 +400,7 @@ contract MarketOrderBook is Script, DeployHelpers {
        
        // Verify placed market orders are in reasonable state
        for (uint256 i = 0; i < marketBuyOrderIds.length; i++) {
-           IOrderBook.Order memory order = gtxRouter.getOrder(base, quote, marketBuyOrderIds[i]);
+           IOrderBook.Order memory order = scalexRouter.getOrder(base, quote, marketBuyOrderIds[i]);
            // Market orders should either be filled (and removed) or partially filled
            require(order.user == deployerAddress || order.id == 0, "Market order has wrong user or invalid state");
        }

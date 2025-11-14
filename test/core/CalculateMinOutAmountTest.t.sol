@@ -2,29 +2,37 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.26;
 
-import "@gtx/mocks/MockToken.sol";
-import "@gtx/mocks/MockUSDC.sol";
-import "@gtx/mocks/MockWETH.sol";
-import "@gtxcore/BalanceManager.sol";
-import "@gtxcore/GTXRouter.sol";
-import "@gtxcore/OrderBook.sol";
-import "@gtxcore/PoolManager.sol";
-import {IOrderBook} from "@gtxcore/interfaces/IOrderBook.sol";
-import {IOrderBookErrors} from "@gtxcore/interfaces/IOrderBookErrors.sol";
-import {IPoolManager} from "@gtxcore/interfaces/IPoolManager.sol";
-import {Currency} from "@gtxcore/libraries/Currency.sol";
-import {PoolKey} from "@gtxcore/libraries/Pool.sol";
+import "@scalex/mocks/MockToken.sol";
+import "@scalex/mocks/MockUSDC.sol";
+import "@scalex/mocks/MockWETH.sol";
+import "@scalexcore/BalanceManager.sol";
+import {IBalanceManager} from "../../src/core/interfaces/IBalanceManager.sol";
+import {ITokenRegistry} from "../../src/core/interfaces/ITokenRegistry.sol";
+import "@scalexcore/ScaleXRouter.sol";
+import "@scalexcore/OrderBook.sol";
+import "@scalexcore/PoolManager.sol";
+import {IOrderBook} from "@scalexcore/interfaces/IOrderBook.sol";
+import {IOrderBookErrors} from "@scalexcore/interfaces/IOrderBookErrors.sol";
+import {IPoolManager} from "@scalexcore/interfaces/IPoolManager.sol";
+import {Currency} from "@scalexcore/libraries/Currency.sol";
+import {PoolKey} from "@scalexcore/libraries/Pool.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 import {BeaconDeployer} from "./helpers/BeaconDeployer.t.sol";
 import "@openzeppelin/contracts/proxy/beacon/BeaconProxy.sol";
 import "@openzeppelin/contracts/proxy/beacon/UpgradeableBeacon.sol";
+import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import {Test, console} from "forge-std/Test.sol";
+import {SyntheticTokenFactory} from "../../src/factories/SyntheticTokenFactory.sol";
+import {SyntheticToken} from "../../src/token/SyntheticToken.sol";
+import {TokenRegistry} from "../../src/core/TokenRegistry.sol";
 
 contract CalculateMinOutAmountTest is Test {
-    GTXRouter private gtxRouter;
+    ScaleXRouter private scalexRouter;
     PoolManager private poolManager;
-    BalanceManager private balanceManager;
+    IBalanceManager private balanceManager;
+    ITokenRegistry private tokenRegistry;
+    SyntheticTokenFactory private tokenFactory;
 
     address private owner = address(0x1);
     address private feeReceiver = address(0x2);
@@ -51,7 +59,7 @@ contract CalculateMinOutAmountTest is Test {
             owner,
             abi.encodeCall(BalanceManager.initialize, (owner, feeReceiver, feeMaker, feeTaker))
         );
-        balanceManager = BalanceManager(address(balanceManagerProxy));
+        balanceManager = IBalanceManager(payable(address(balanceManagerProxy)));
 
         IBeacon orderBookBeacon = new UpgradeableBeacon(address(new OrderBook()), owner);
         address orderBookBeaconAddress = address(orderBookBeacon);
@@ -64,17 +72,32 @@ contract CalculateMinOutAmountTest is Test {
         poolManager = PoolManager(address(poolManagerProxy));
 
         (BeaconProxy routerProxy,) = beaconDeployer.deployUpgradeableContract(
-            address(new GTXRouter()),
+            address(new ScaleXRouter()),
             owner,
-            abi.encodeCall(GTXRouter.initialize, (address(poolManager), address(balanceManager)))
+            abi.encodeCall(ScaleXRouter.initialize, (address(poolManager), address(balanceManager)))
         );
-        gtxRouter = GTXRouter(address(routerProxy));
+        scalexRouter = ScaleXRouter(address(routerProxy));
 
         mockWETH = new MockWETH();
         mockUSDC = new MockUSDC();
 
         usdc = Currency.wrap(address(mockUSDC));
         weth = Currency.wrap(address(mockWETH));
+
+        // Set up TokenFactory and TokenRegistry
+        tokenFactory = new SyntheticTokenFactory();
+        tokenFactory.initialize(owner, owner);
+        
+        // Deploy TokenRegistry
+        address tokenRegistryImpl = address(new TokenRegistry());
+        ERC1967Proxy tokenRegistryProxy = new ERC1967Proxy(
+            tokenRegistryImpl,
+            abi.encodeWithSelector(
+                TokenRegistry.initialize.selector,
+                owner
+            )
+        );
+        tokenRegistry = ITokenRegistry(address(tokenRegistryProxy));
 
         // Initialize default trading rules
         defaultTradingRules = IOrderBook.TradingRules({
@@ -86,10 +109,40 @@ contract CalculateMinOutAmountTest is Test {
 
         // Setup contracts
         vm.startPrank(owner);
+        
+        // Create synthetic tokens and set up TokenRegistry
+        address wethSynthetic = tokenFactory.createSyntheticToken(Currency.unwrap(weth));
+        address usdcSynthetic = tokenFactory.createSyntheticToken(Currency.unwrap(usdc));
+        
+        balanceManager.addSupportedAsset(Currency.unwrap(weth), wethSynthetic);
+        balanceManager.addSupportedAsset(Currency.unwrap(usdc), usdcSynthetic);
+        
+        // Set BalanceManager as minter and burner for synthetic tokens
+        SyntheticToken(wethSynthetic).setMinter(address(balanceManager));
+        SyntheticToken(usdcSynthetic).setMinter(address(balanceManager));
+        SyntheticToken(wethSynthetic).setBurner(address(balanceManager));
+        SyntheticToken(usdcSynthetic).setBurner(address(balanceManager));
+        
+        // Register token mappings for local deposits
+        uint32 currentChain = 31337; // Default foundry chain ID
+        tokenRegistry.registerTokenMapping(
+            currentChain, Currency.unwrap(weth), currentChain, wethSynthetic, "WETH", 18, 18
+        );
+        tokenRegistry.registerTokenMapping(
+            currentChain, Currency.unwrap(usdc), currentChain, usdcSynthetic, "USDC", 6, 6
+        );
+        
+        // Activate token mappings
+        tokenRegistry.setTokenMappingStatus(currentChain, Currency.unwrap(weth), currentChain, true);
+        tokenRegistry.setTokenMappingStatus(currentChain, Currency.unwrap(usdc), currentChain, true);
+        
+        balanceManager.setTokenFactory(address(tokenFactory));
+        balanceManager.setTokenRegistry(address(tokenRegistry));
+        
         balanceManager.setPoolManager(address(poolManager));
         balanceManager.setAuthorizedOperator(address(poolManager), true);
         balanceManager.setAuthorizedOperator(address(routerProxy), true);
-        poolManager.setRouter(address(gtxRouter));
+        poolManager.setRouter(address(scalexRouter));
         poolManager.addCommonIntermediary(usdc);
         poolManager.createPool(weth, usdc, defaultTradingRules);
         vm.stopPrank();
@@ -113,13 +166,13 @@ contract CalculateMinOutAmountTest is Test {
 
         // Place multiple sell orders at different prices to create a realistic order book
         // Order 1: 1 ETH at 2000 USDC
-        gtxRouter.placeLimitOrder(pool, 2000e6, 1e18, IOrderBook.Side.SELL, IOrderBook.TimeInForce.GTC, 1e18);
+        scalexRouter.placeLimitOrder(pool, 2000e6, 1e18, IOrderBook.Side.SELL, IOrderBook.TimeInForce.GTC, 1e18);
 
         // Order 2: 1 ETH at 2010 USDC
-        gtxRouter.placeLimitOrder(pool, 2010e6, 1e18, IOrderBook.Side.SELL, IOrderBook.TimeInForce.GTC, 1e18);
+        scalexRouter.placeLimitOrder(pool, 2010e6, 1e18, IOrderBook.Side.SELL, IOrderBook.TimeInForce.GTC, 1e18);
 
         // Order 3: 1 ETH at 2020 USDC
-        gtxRouter.placeLimitOrder(pool, 2020e6, 1e18, IOrderBook.Side.SELL, IOrderBook.TimeInForce.GTC, 1e18);
+        scalexRouter.placeLimitOrder(pool, 2020e6, 1e18, IOrderBook.Side.SELL, IOrderBook.TimeInForce.GTC, 1e18);
 
         vm.stopPrank();
     }
@@ -134,7 +187,7 @@ contract CalculateMinOutAmountTest is Test {
         uint256 slippageBps = 500; // 5% slippage
 
         uint128 minOutAmount =
-            gtxRouter.calculateMinOutAmountForMarket(pool, quoteAmount, IOrderBook.Side.BUY, slippageBps);
+            scalexRouter.calculateMinOutAmountForMarket(pool, quoteAmount, IOrderBook.Side.BUY, slippageBps);
 
         console.log("Quote amount:", quoteAmount);
         console.log("Min out amount (with 5% slippage):", minOutAmount);
@@ -164,7 +217,7 @@ contract CalculateMinOutAmountTest is Test {
         uint256 slippageBps = 300; // 3% slippage
 
         uint128 minOutAmount =
-            gtxRouter.calculateMinOutAmountForMarket(pool, quoteAmount, IOrderBook.Side.BUY, slippageBps);
+            scalexRouter.calculateMinOutAmountForMarket(pool, quoteAmount, IOrderBook.Side.BUY, slippageBps);
 
         console.log("Large quote amount:", quoteAmount);
         console.log("Min out amount (multiple levels):", minOutAmount);
@@ -193,7 +246,7 @@ contract CalculateMinOutAmountTest is Test {
         // Calculate minimum output with 2% slippage tolerance
         uint256 slippageBps = 200; // 2%
         uint128 minOutAmount =
-            gtxRouter.calculateMinOutAmountForMarket(pool, depositAmount, IOrderBook.Side.BUY, slippageBps);
+            scalexRouter.calculateMinOutAmountForMarket(pool, depositAmount, IOrderBook.Side.BUY, slippageBps);
 
         console.log("Deposit amount:", depositAmount);
         console.log("Calculated min out amount:", minOutAmount);
@@ -206,7 +259,7 @@ contract CalculateMinOutAmountTest is Test {
         console.log("Initial WETH balance:", initialWETHBalance);
 
         // Place market order with deposit using calculated min out amount
-        (uint48 orderId, uint128 filled) = gtxRouter.placeMarketOrder(
+        (uint48 orderId, uint128 filled) = scalexRouter.placeMarketOrder(
             pool,
             uint128(depositAmount), // Quote amount for BUY orders
             IOrderBook.Side.BUY,
@@ -247,7 +300,7 @@ contract CalculateMinOutAmountTest is Test {
 
         IPoolManager.Pool memory pool = _getPool(weth, usdc);
 
-        uint128 minOutAmount = gtxRouter.calculateMinOutAmountForMarket(pool, 0, IOrderBook.Side.BUY, 500);
+        uint128 minOutAmount = scalexRouter.calculateMinOutAmountForMarket(pool, 0, IOrderBook.Side.BUY, 500);
         assertEq(minOutAmount, 0, "Min out amount should be 0 for zero input");
     }
 
@@ -258,14 +311,14 @@ contract CalculateMinOutAmountTest is Test {
 
         // Test with very high slippage (should revert)
         vm.expectRevert(abi.encodeWithSelector(IOrderBookErrors.InvalidSlippageTolerance.selector, 11_000));
-        gtxRouter.calculateMinOutAmountForMarket(pool, 1000e6, IOrderBook.Side.BUY, 11_000); // 110%
+        scalexRouter.calculateMinOutAmountForMarket(pool, 1000e6, IOrderBook.Side.BUY, 11_000); // 110%
     }
 
     function testCalculateMinOutAmountNoLiquidity() public {
         // Don't setup liquidity
         IPoolManager.Pool memory pool = _getPool(weth, usdc);
 
-        uint128 minOutAmount = gtxRouter.calculateMinOutAmountForMarket(pool, 1000e6, IOrderBook.Side.SELL, 500);
+        uint128 minOutAmount = scalexRouter.calculateMinOutAmountForMarket(pool, 1000e6, IOrderBook.Side.SELL, 500);
         assertEq(minOutAmount, 0, "Min out amount should be 0 when no liquidity");
     }
 
@@ -280,10 +333,10 @@ contract CalculateMinOutAmountTest is Test {
         IERC20(Currency.unwrap(usdc)).approve(address(balanceManager), depositAmount);
 
         // Calculate a realistic min out for CLOB (with 0.5% slippage)
-        uint128 realisticMinOut = gtxRouter.calculateMinOutAmountForMarket(pool, depositAmount, IOrderBook.Side.BUY, 50); // 0.5%
+        uint128 realisticMinOut = scalexRouter.calculateMinOutAmountForMarket(pool, depositAmount, IOrderBook.Side.BUY, 50); // 0.5%
 
         // This should succeed with realistic CLOB slippage
-        (uint48 orderId1, uint128 filled1) = gtxRouter.placeMarketOrder(
+        (uint48 orderId1, uint128 filled1) = scalexRouter.placeMarketOrder(
             pool,
             uint128(depositAmount), // Quote amount for BUY orders
             IOrderBook.Side.BUY,
@@ -299,7 +352,7 @@ contract CalculateMinOutAmountTest is Test {
         
         // Now try with an unrealistically high min out amount
         vm.expectRevert(); // Should revert due to SlippageTooHigh
-        gtxRouter.placeMarketOrder(
+        scalexRouter.placeMarketOrder(
             pool,
             uint128(depositAmount), // Quote amount for BUY orders
             IOrderBook.Side.BUY,
@@ -321,9 +374,9 @@ contract CalculateMinOutAmountTest is Test {
         IERC20(Currency.unwrap(usdc)).approve(address(balanceManager), depositAmount);
 
         // Test very tight slippage tolerances that would be impossible in AMMs
-        uint128 minOut_01pct = gtxRouter.calculateMinOutAmountForMarket(pool, depositAmount, IOrderBook.Side.BUY, 10); // 0.1%
-        uint128 minOut_05pct = gtxRouter.calculateMinOutAmountForMarket(pool, depositAmount, IOrderBook.Side.BUY, 50); // 0.5%
-        uint128 minOut_1pct = gtxRouter.calculateMinOutAmountForMarket(pool, depositAmount, IOrderBook.Side.BUY, 100); // 1%
+        uint128 minOut_01pct = scalexRouter.calculateMinOutAmountForMarket(pool, depositAmount, IOrderBook.Side.BUY, 10); // 0.1%
+        uint128 minOut_05pct = scalexRouter.calculateMinOutAmountForMarket(pool, depositAmount, IOrderBook.Side.BUY, 50); // 0.5%
+        uint128 minOut_1pct = scalexRouter.calculateMinOutAmountForMarket(pool, depositAmount, IOrderBook.Side.BUY, 100); // 1%
 
         console.log("Min out with 0.1% slippage:", minOut_01pct);
         console.log("Min out with 0.5% slippage:", minOut_05pct);
@@ -334,7 +387,7 @@ contract CalculateMinOutAmountTest is Test {
         assertTrue(minOut_05pct > minOut_1pct, "0.5% slippage should give higher min out than 1%");
 
         // Test that very low slippage (0.1%) still works in CLOB
-        (uint48 orderId, uint128 filled) = gtxRouter.placeMarketOrder(
+        (uint48 orderId, uint128 filled) = scalexRouter.placeMarketOrder(
             pool,
             uint128(depositAmount), // Quote amount for BUY orders
             IOrderBook.Side.BUY,
@@ -360,9 +413,9 @@ contract CalculateMinOutAmountTest is Test {
         IERC20(Currency.unwrap(usdc)).approve(address(balanceManager), 10_000e6);
 
         // Place buy orders at different prices
-        gtxRouter.placeLimitOrder(pool, 1990e6, 1e18, IOrderBook.Side.BUY, IOrderBook.TimeInForce.GTC, 1990e6);
-        gtxRouter.placeLimitOrder(pool, 1980e6, 1e18, IOrderBook.Side.BUY, IOrderBook.TimeInForce.GTC, 1980e6);
-        gtxRouter.placeLimitOrder(pool, 1970e6, 1e18, IOrderBook.Side.BUY, IOrderBook.TimeInForce.GTC, 1970e6);
+        scalexRouter.placeLimitOrder(pool, 1990e6, 1e18, IOrderBook.Side.BUY, IOrderBook.TimeInForce.GTC, 1990e6);
+        scalexRouter.placeLimitOrder(pool, 1980e6, 1e18, IOrderBook.Side.BUY, IOrderBook.TimeInForce.GTC, 1980e6);
+        scalexRouter.placeLimitOrder(pool, 1970e6, 1e18, IOrderBook.Side.BUY, IOrderBook.TimeInForce.GTC, 1970e6);
         vm.stopPrank();
 
         // Test selling 1 ETH
@@ -371,7 +424,7 @@ contract CalculateMinOutAmountTest is Test {
 
         // Test SELL market order calculation
         uint128 minQuoteFromSell =
-            gtxRouter.calculateMinOutAmountForMarket(pool, baseAmount, IOrderBook.Side.SELL, slippageBps);
+            scalexRouter.calculateMinOutAmountForMarket(pool, baseAmount, IOrderBook.Side.SELL, slippageBps);
 
         console.log("Base amount to sell:", baseAmount);
         console.log("Min quote from sell:", minQuoteFromSell);
@@ -388,9 +441,9 @@ contract CalculateMinOutAmountTest is Test {
 
         // Test BUY side
         uint256 quoteAmount = 1000e6; // 1000 USDC
-        uint128 minBaseFromBuy = gtxRouter.calculateMinOutAmountForMarket(pool, quoteAmount, IOrderBook.Side.BUY, 200); // 2%
+        uint128 minBaseFromBuy = scalexRouter.calculateMinOutAmountForMarket(pool, quoteAmount, IOrderBook.Side.BUY, 200); // 2%
         uint128 minBaseFromMarket =
-            gtxRouter.calculateMinOutAmountForMarket(pool, quoteAmount, IOrderBook.Side.BUY, 200);
+            scalexRouter.calculateMinOutAmountForMarket(pool, quoteAmount, IOrderBook.Side.BUY, 200);
 
         assertEq(minBaseFromBuy, minBaseFromMarket, "Both BUY calls should return same result");
 
@@ -398,14 +451,14 @@ contract CalculateMinOutAmountTest is Test {
         vm.startPrank(buyer);
         mockUSDC.mint(buyer, 5000e6);
         IERC20(Currency.unwrap(usdc)).approve(address(balanceManager), 5000e6);
-        gtxRouter.placeLimitOrder(pool, 1990e6, 2e18, IOrderBook.Side.BUY, IOrderBook.TimeInForce.GTC, 3980e6); // 2 * 1990
+        scalexRouter.placeLimitOrder(pool, 1990e6, 2e18, IOrderBook.Side.BUY, IOrderBook.TimeInForce.GTC, 3980e6); // 2 * 1990
         vm.stopPrank();
 
         // Test SELL side
         uint256 baseAmount = 1e18; // 1 ETH
-        uint128 minQuoteFromSell = gtxRouter.calculateMinOutAmountForMarket(pool, baseAmount, IOrderBook.Side.SELL, 200); // 2%
+        uint128 minQuoteFromSell = scalexRouter.calculateMinOutAmountForMarket(pool, baseAmount, IOrderBook.Side.SELL, 200); // 2%
         uint128 minQuoteFromMarket2 =
-            gtxRouter.calculateMinOutAmountForMarket(pool, baseAmount, IOrderBook.Side.SELL, 200);
+            scalexRouter.calculateMinOutAmountForMarket(pool, baseAmount, IOrderBook.Side.SELL, 200);
 
         assertEq(minQuoteFromSell, minQuoteFromMarket2, "Both SELL calls should return same result");
 
@@ -419,16 +472,16 @@ contract CalculateMinOutAmountTest is Test {
         IPoolManager.Pool memory pool = _getPool(weth, usdc);
 
         // Test zero input
-        uint128 result1 = gtxRouter.calculateMinOutAmountForMarket(pool, 0, IOrderBook.Side.BUY, 500);
+        uint128 result1 = scalexRouter.calculateMinOutAmountForMarket(pool, 0, IOrderBook.Side.BUY, 500);
         assertEq(result1, 0, "Zero input should return zero output");
 
         // Test high slippage tolerance (should revert)
         vm.expectRevert(abi.encodeWithSelector(IOrderBookErrors.InvalidSlippageTolerance.selector, 10_001));
-        gtxRouter.calculateMinOutAmountForMarket(pool, 1000e6, IOrderBook.Side.BUY, 10_001);
+        scalexRouter.calculateMinOutAmountForMarket(pool, 1000e6, IOrderBook.Side.BUY, 10_001);
 
         // Test with no liquidity on opposite side
         IPoolManager.Pool memory emptyPool = _getPool(weth, usdc);
-        uint128 result2 = gtxRouter.calculateMinOutAmountForMarket(emptyPool, 1000e6, IOrderBook.Side.SELL, 500);
+        uint128 result2 = scalexRouter.calculateMinOutAmountForMarket(emptyPool, 1000e6, IOrderBook.Side.SELL, 500);
         // Should return 0 since there are no buy orders for selling into
         assertEq(result2, 0, "No liquidity should return zero output");
     }

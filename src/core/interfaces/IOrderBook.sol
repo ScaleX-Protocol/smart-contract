@@ -46,6 +46,8 @@ interface IOrderBook is IOrderBookErrors {
         Status status;
         OrderType orderType;
         Side side;
+        bool autoRepay;
+        bool autoBorrow; 
     }
 
     struct MatchContext {
@@ -121,6 +123,21 @@ interface IOrderBook is IOrderBookErrors {
 
     event TradingRulesUpdated(PoolId indexed poolId, IOrderBook.TradingRules newRules);
 
+    event AutoRepaymentExecuted(
+        address indexed user,
+        address indexed debtToken,
+        uint256 repayAmount,
+        uint256 savings,
+        uint256 timestamp
+    );
+
+    event AutoRepaymentFailed(
+        address indexed user,
+        address indexed debtToken,
+        uint256 attemptedAmount,
+        uint256 timestamp
+    );
+
     function initialize(
         address poolManager,
         address balanceManager,
@@ -137,14 +154,16 @@ interface IOrderBook is IOrderBookErrors {
         uint128 quantity,
         Side side,
         address user,
-        TimeInForce timeInForce
+        TimeInForce timeInForce,
+        bool autoRepay,
+        bool autoBorrow
     ) external returns (uint48 orderId);
 
     function getOrder(
         uint48 orderId
     ) external view returns (Order memory order);
 
-    function placeMarketOrder(uint128 quantity, Side side, address user) external returns (uint48, uint128);
+    function placeMarketOrder(uint128 quantity, Side side, address user, bool autoRepay, bool autoBorrow) external returns (uint48, uint128);
 
     function cancelOrder(uint48 orderId, address user) external;
 

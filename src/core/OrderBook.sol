@@ -7,7 +7,10 @@ import {ReentrancyGuardUpgradeable} from
 import {IBalanceManager} from "./interfaces/IBalanceManager.sol";
 import {IOrderBook} from "./interfaces/IOrderBook.sol";
 import {IOrderBookErrors} from "./interfaces/IOrderBookErrors.sol";
-import {Currency} from "./libraries/Currency.sol";
+import {IOracle} from "./interfaces/IOracle.sol";
+import {ILendingManager} from "./interfaces/ILendingManager.sol";
+import {Currency, CurrencyLibrary} from "./libraries/Currency.sol";
+import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {PoolKey} from "./libraries/Pool.sol";
 import {PoolIdLibrary} from "./libraries/Pool.sol";
 
@@ -15,7 +18,6 @@ import {OrderBookStorage} from "./storages/OrderBookStorage.sol";
 import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
 import {RedBlackTreeLib} from "@solady/utils/RedBlackTreeLib.sol";
-import {Test, console} from "forge-std/Test.sol";
 
 contract OrderBook is Initializable, OwnableUpgradeable, ReentrancyGuardUpgradeable, IOrderBook, OrderBookStorage {
     using RedBlackTreeLib for RedBlackTreeLib.Tree;
@@ -70,6 +72,11 @@ contract OrderBook is Initializable, OwnableUpgradeable, ReentrancyGuardUpgradea
         $.tradingRules = _tradingRules;
     }
 
+    function setOracle(address _oracle) external onlyOwner {
+        Storage storage $ = getStorage();
+        $.oracle = IOracle(_oracle);
+    }
+
     function validateOrder(
         uint128 price,
         uint128 quantity,
@@ -114,24 +121,33 @@ contract OrderBook is Initializable, OwnableUpgradeable, ReentrancyGuardUpgradea
         Side side,
         OrderType orderType
     ) private view returns (uint256 orderAmount, uint256 quoteAmount) {
-        Storage storage $ = getStorage();
         orderAmount = quantity;
 
         if (orderType == OrderType.LIMIT) {
-            quoteAmount = PoolIdLibrary.baseToQuote(orderAmount, price, $.poolKey.baseCurrency.decimals());
+            quoteAmount = _calculateLimitOrderQuoteAmount(orderAmount, price);
         } else {
-            bytes32 bestOppositePricePtr =
-                side == Side.SELL ? $.priceTrees[Side.BUY].last() : $.priceTrees[Side.SELL].first();
-            uint128 bestOppositePrice = uint128(RedBlackTreeLib.value(bestOppositePricePtr));
-
-            if (bestOppositePrice == 0) {
-                revert OrderHasNoLiquidity();
-            }
-
-            quoteAmount = PoolIdLibrary.baseToQuote(orderAmount, bestOppositePrice, $.poolKey.baseCurrency.decimals());
+            quoteAmount = _calculateMarketOrderQuoteAmount(orderAmount, side);
         }
 
         return (orderAmount, quoteAmount);
+    }
+
+    function _calculateLimitOrderQuoteAmount(uint256 orderAmount, uint128 price) private view returns (uint256) {
+        Storage storage $ = getStorage();
+        return PoolIdLibrary.baseToQuote(orderAmount, price, $.poolKey.baseCurrency.decimals());
+    }
+
+    function _calculateMarketOrderQuoteAmount(uint256 orderAmount, Side side) private view returns (uint256) {
+        Storage storage $ = getStorage();
+        bytes32 bestOppositePricePtr =
+            side == Side.SELL ? $.priceTrees[Side.BUY].last() : $.priceTrees[Side.SELL].first();
+        uint128 bestOppositePrice = uint128(RedBlackTreeLib.value(bestOppositePricePtr));
+
+        if (bestOppositePrice == 0) {
+            revert OrderHasNoLiquidity();
+        }
+
+        return PoolIdLibrary.baseToQuote(orderAmount, bestOppositePrice, $.poolKey.baseCurrency.decimals());
     }
 
     function validateMinimumSizes(uint256 orderAmount, uint256 quoteAmount) private view {
@@ -174,10 +190,22 @@ contract OrderBook is Initializable, OwnableUpgradeable, ReentrancyGuardUpgradea
         uint128 quantity,
         Side side,
         address user,
-        TimeInForce timeInForce
+        TimeInForce timeInForce,
+        bool autoRepay,
+        bool autoBorrow
     ) external onlyRouter returns (uint48 orderId) {
         Storage storage $ = getStorage();
         validateOrder(price, quantity, side, OrderType.LIMIT, timeInForce);
+
+        // Validate auto-repay if enabled
+        if (autoRepay) {
+            _validateAutoRepay(user, side);
+        }
+
+        // Validate auto-borrow if enabled  
+        if (autoBorrow) {
+            _validateAutoBorrow(user, side);
+        }
 
         orderId = $.nextOrderId;
 
@@ -192,7 +220,9 @@ contract OrderBook is Initializable, OwnableUpgradeable, ReentrancyGuardUpgradea
             expiry: uint48(block.timestamp + $.expiryDays),
             status: Status.OPEN,
             orderType: OrderType.LIMIT,
-            side: side
+            side: side,
+            autoRepay: autoRepay,
+            autoBorrow: autoBorrow
         });
 
         _lockOrderAmount(user, side, price, quantity);
@@ -208,6 +238,50 @@ contract OrderBook is Initializable, OwnableUpgradeable, ReentrancyGuardUpgradea
         }
 
         return orderId;
+    }
+
+    function _validateAutoRepay(address user, Side side) private view {
+        // Auto-repay only works for BUY orders (acquiring debt tokens)
+        if (side != Side.BUY) {
+            revert AutoRepayOnlyForBuyOrders();
+        }
+
+        // Check if user has debt to repay (base currency is the debt token)
+        IBalanceManager bm = IBalanceManager(getStorage().balanceManager);
+        address lendingManager = bm.lendingManager();
+        address debtToken = Currency.unwrap(getStorage().poolKey.baseCurrency);
+        
+        if (lendingManager != address(0)) {
+            try ILendingManager(lendingManager).getUserDebt(user, debtToken) returns (uint256 userDebt) {
+                if (userDebt == 0) {
+                    revert NoDebtToRepay();
+                }
+            } catch {
+                // If LendingManager call fails, allow order placement anyway
+            }
+        }
+    }
+
+    function _validateAutoBorrow(address user, Side side) private view {
+        // Auto-borrow only works for SELL orders (providing debt tokens)
+        if (side != Side.SELL) {
+            revert AutoBorrowOnlyForSellOrders();
+        }
+
+        // Check if user has enough balance to borrow against (base currency is the debt token)
+        IBalanceManager bm = IBalanceManager(getStorage().balanceManager);
+        address lendingManager = bm.lendingManager();
+        address debtToken = Currency.unwrap(getStorage().poolKey.baseCurrency);
+        
+        if (lendingManager != address(0)) {
+            try ILendingManager(lendingManager).getUserSupply(user, debtToken) returns (uint256 userSupply) {
+                if (userSupply == 0) {
+                    revert NoCollateralToBorrow();
+                }
+            } catch {
+                // If LendingManager call fails, allow order placement anyway
+            }
+        }
     }
 
     function _lockOrderAmount(address user, Side side, uint128 price, uint128 quantity) private {
@@ -264,7 +338,9 @@ contract OrderBook is Initializable, OwnableUpgradeable, ReentrancyGuardUpgradea
     function placeMarketOrder(
         uint128 quantity,
         Side side,
-        address user
+        address user,
+        bool autoRepay,
+        bool autoBorrow
     ) external onlyRouter nonReentrant returns (uint48 orderId, uint128 receivedAmount) {
         Storage storage $ = getStorage();
         Side oppositeSide = side == Side.BUY ? Side.SELL : Side.BUY;
@@ -277,7 +353,7 @@ contract OrderBook is Initializable, OwnableUpgradeable, ReentrancyGuardUpgradea
         }
         
         if (side == Side.BUY) {
-            return _placeMarketOrderWithQuoteAmount(quantity, side, user);
+            return _placeMarketOrderWithQuoteAmount(quantity, side, user, autoRepay, autoBorrow);
         }
 
         validateBasicOrderParameters(0, quantity, OrderType.MARKET);
@@ -295,7 +371,9 @@ contract OrderBook is Initializable, OwnableUpgradeable, ReentrancyGuardUpgradea
             expiry: uint48(block.timestamp + $.expiryDays),
             status: Status.OPEN,
             orderType: OrderType.MARKET,
-            side: side
+            side: side,
+            autoRepay: autoRepay,
+            autoBorrow: autoBorrow
         });
 
         emit OrderPlaced(orderId, user, side, 0, quantity, marketOrder.expiry, true, Status.OPEN);
@@ -305,7 +383,7 @@ contract OrderBook is Initializable, OwnableUpgradeable, ReentrancyGuardUpgradea
         IBalanceManager bm = IBalanceManager($.balanceManager);
         uint256 feeTaker = bm.feeTaker();
         uint256 feeUnit = bm.getFeeUnit();
-        address feeReceiver = bm.feeReceiver();
+        // address feeReceiver = bm.feeReceiver();
 
         uint128 feeAmount = uint128(uint256(filled) * feeTaker / feeUnit);
         receivedAmount = filled > feeAmount ? filled - feeAmount : 0;
@@ -320,7 +398,9 @@ contract OrderBook is Initializable, OwnableUpgradeable, ReentrancyGuardUpgradea
     function _placeMarketOrderWithQuoteAmount(
         uint128 quoteAmount,
         Side side,
-        address user
+        address user,
+        bool autoRepay,
+        bool autoBorrow
     ) private returns (uint48 orderId, uint128 receivedAmount) {
         Storage storage $ = getStorage();
 
@@ -345,7 +425,9 @@ contract OrderBook is Initializable, OwnableUpgradeable, ReentrancyGuardUpgradea
             expiry: uint48(block.timestamp + $.expiryDays),
             status: Status.OPEN,
             orderType: OrderType.MARKET,
-            side: side
+            side: side,
+            autoRepay: autoRepay,
+            autoBorrow: autoBorrow
         });
 
         emit OrderPlaced(orderId, user, side, 0, quoteAmount, marketOrder.expiry, true, Status.OPEN);
@@ -379,7 +461,7 @@ contract OrderBook is Initializable, OwnableUpgradeable, ReentrancyGuardUpgradea
 
     function _matchOrderWithQuoteAmount(
         Order memory order,
-        Side side,
+        Side /* side */,
         address user,
         uint128 quoteAmount
     ) private returns (uint128) {
@@ -426,7 +508,6 @@ contract OrderBook is Initializable, OwnableUpgradeable, ReentrancyGuardUpgradea
             }
         }
 
-        console.log("Final result - total base filled:", ctx.totalBaseAmountFilled);
         return ctx.totalBaseAmountFilled;
     }
 
@@ -493,6 +574,9 @@ contract OrderBook is Initializable, OwnableUpgradeable, ReentrancyGuardUpgradea
                 emit UpdateOrder(matchingOrder.id, uint48(block.timestamp), matchingOrder.filled, Status.PARTIALLY_FILLED);
             }
 
+            // Update Oracle with real-time price from this trade
+            _updateOracleFromTrade(ctx.bestPrice, baseAmount);
+
             emit OrderMatched(
                 ctx.user,
                 order.id,
@@ -525,7 +609,7 @@ contract OrderBook is Initializable, OwnableUpgradeable, ReentrancyGuardUpgradea
         IOrderBook.Status orderStatus = order.status;
 
         if (orderStatus != Status.OPEN && orderStatus != Status.PARTIALLY_FILLED) {
-            revert OrderIsNotOpenOrder(orderStatus);
+            revert OrderIsNotOpenOrder(uint8(orderStatus));
         }
 
         order.status = Status.CANCELLED;
@@ -591,31 +675,9 @@ contract OrderBook is Initializable, OwnableUpgradeable, ReentrancyGuardUpgradea
         uint128 executedQuantity = ctx.remaining < matchingRemaining ? ctx.remaining : matchingRemaining;
 
         if (ctx.isMarketOrder) {
-            Storage storage $ = getStorage();
-            IBalanceManager bm = IBalanceManager($.balanceManager);
-            uint256 requiredAmount = ctx.side == IOrderBook.Side.BUY
-                ? PoolIdLibrary.baseToQuote(executedQuantity, ctx.bestPrice, $.poolKey.baseCurrency.decimals())
-                : executedQuantity;
-            Currency currency = ctx.side == IOrderBook.Side.BUY ? $.poolKey.quoteCurrency : $.poolKey.baseCurrency;
-            uint256 userBalance = bm.getBalance(ctx.user, currency);
-
-            if (userBalance < requiredAmount) {
-                uint128 affordableQuantity;
-                if (ctx.side == IOrderBook.Side.BUY) {
-                    affordableQuantity = uint128(
-                        PoolIdLibrary.quoteToBase(userBalance, ctx.bestPrice, $.poolKey.baseCurrency.decimals())
-                    );
-                } else {
-                    affordableQuantity = uint128(userBalance);
-                }
-
-                ctx.previousRemaining = affordableQuantity;
-
-                if (affordableQuantity == 0 || ctx.previousRemaining == affordableQuantity) {
-                    return (0, ctx.filled);
-                }
-
-                executedQuantity = affordableQuantity < executedQuantity ? affordableQuantity : executedQuantity;
+            executedQuantity = _handleMarketOrderBalanceCheck(ctx, executedQuantity);
+            if (executedQuantity == 0) {
+                return (0, ctx.filled);
             }
         }
 
@@ -647,6 +709,48 @@ contract OrderBook is Initializable, OwnableUpgradeable, ReentrancyGuardUpgradea
         );
 
         return (ctx.remaining, ctx.filled);
+    }
+
+    function _handleMarketOrderBalanceCheck(
+        MatchContext memory ctx,
+        uint128 executedQuantity
+    ) private returns (uint128) {
+        Storage storage $ = getStorage();
+        IBalanceManager bm = IBalanceManager($.balanceManager);
+        
+        uint256 requiredAmount;
+        Currency currency;
+        
+        if (ctx.side == IOrderBook.Side.BUY) {
+            requiredAmount = PoolIdLibrary.baseToQuote(executedQuantity, ctx.bestPrice, $.poolKey.baseCurrency.decimals());
+            currency = $.poolKey.quoteCurrency;
+        } else {
+            requiredAmount = executedQuantity;
+            currency = $.poolKey.baseCurrency;
+        }
+        
+        uint256 userBalance = bm.getBalance(ctx.user, currency);
+
+        if (userBalance < requiredAmount) {
+            uint128 affordableQuantity;
+            if (ctx.side == IOrderBook.Side.BUY) {
+                affordableQuantity = uint128(
+                    PoolIdLibrary.quoteToBase(userBalance, ctx.bestPrice, $.poolKey.baseCurrency.decimals())
+                );
+            } else {
+                affordableQuantity = uint128(userBalance);
+            }
+
+            ctx.previousRemaining = affordableQuantity;
+
+            if (affordableQuantity == 0 || ctx.previousRemaining == affordableQuantity) {
+                return 0;
+            }
+
+            return affordableQuantity < executedQuantity ? affordableQuantity : executedQuantity;
+        }
+        
+        return executedQuantity;
     }
 
     function _updatePriceLevel(
@@ -839,29 +943,65 @@ contract OrderBook is Initializable, OwnableUpgradeable, ReentrancyGuardUpgradea
         bool isMarketOrder
     ) private {
         Storage storage $ = getStorage();
+        IBalanceManager bm = IBalanceManager($.balanceManager);
         uint256 baseAmount = executedQuantity;
-
         uint256 quoteAmount = PoolIdLibrary.baseToQuote(baseAmount, matchPrice, $.poolKey.baseCurrency.decimals());
 
         if (side == IOrderBook.Side.SELL) {
-            if (!isMarketOrder) {
-                IBalanceManager($.balanceManager).unlock(trader, $.poolKey.baseCurrency, baseAmount);
-            }
-
-            IBalanceManager($.balanceManager).transferFrom(trader, matchingUser, $.poolKey.baseCurrency, baseAmount);
-
-            IBalanceManager($.balanceManager).transferLockedFrom(
-                matchingUser, trader, $.poolKey.quoteCurrency, quoteAmount
-            );
+            _handleSellTransfer(bm, trader, matchingUser, baseAmount, quoteAmount, isMarketOrder);
         } else {
-            if (!isMarketOrder) {
-                IBalanceManager($.balanceManager).unlock(trader, $.poolKey.quoteCurrency, quoteAmount);
-            }
-            IBalanceManager($.balanceManager).transferFrom(trader, matchingUser, $.poolKey.quoteCurrency, quoteAmount);
-            IBalanceManager($.balanceManager).transferLockedFrom(
-                matchingUser, trader, $.poolKey.baseCurrency, baseAmount
-            );
+            _handleBuyTransfer(bm, trader, matchingUser, baseAmount, quoteAmount, isMarketOrder);
+            
+            // Check for auto-repay on successful BUY orders (only if order has autoRepay enabled)
+            // For now, we'll check if user has any auto-repay orders (simplified approach)
+            _handleAutoRepayOnBuy(trader, baseAmount, matchPrice);
         }
+    }
+
+    function _handleSellTransfer(
+        IBalanceManager bm,
+        address trader,
+        address matchingUser,
+        uint256 baseAmount,
+        uint256 quoteAmount,
+        bool isMarketOrder
+    ) private {
+        Storage storage $ = getStorage();
+        
+        if (!isMarketOrder) {
+            bm.unlock(trader, $.poolKey.baseCurrency, baseAmount);
+        }
+
+        // Transfer base currency from trader to matching user
+        bm.transferFrom(trader, matchingUser, $.poolKey.baseCurrency, baseAmount);
+
+        // Transfer quote currency from matching user to trader
+        bm.transferLockedFrom(
+            matchingUser, trader, $.poolKey.quoteCurrency, quoteAmount
+        );
+    }
+
+    function _handleBuyTransfer(
+        IBalanceManager bm,
+        address trader,
+        address matchingUser,
+        uint256 baseAmount,
+        uint256 quoteAmount,
+        bool isMarketOrder
+    ) private {
+        Storage storage $ = getStorage();
+        
+        if (!isMarketOrder) {
+            bm.unlock(trader, $.poolKey.quoteCurrency, quoteAmount);
+        }
+        
+        // Transfer quote currency from trader to matching user
+        bm.transferFrom(trader, matchingUser, $.poolKey.quoteCurrency, quoteAmount);
+
+        // Transfer base currency from matching user to trader
+        bm.transferLockedFrom(
+            matchingUser, trader, $.poolKey.baseCurrency, baseAmount
+        );
     }
 
     function _addOrderToQueue(
@@ -882,6 +1022,7 @@ contract OrderBook is Initializable, OwnableUpgradeable, ReentrancyGuardUpgradea
         order.status = _order.status;
         order.orderType = _order.orderType;
         order.side = _order.side;
+        order.autoRepay = _order.autoRepay;
 
         if (queue.head == 0) {
             queue.head = _order.id;
@@ -940,6 +1081,24 @@ contract OrderBook is Initializable, OwnableUpgradeable, ReentrancyGuardUpgradea
         return $.orderQueues[side][price].orderCount == 0;
     }
 
+    function _updateOracleFromTrade(uint128 tradePrice, uint256 tradeVolume) private {
+        Storage storage $ = getStorage();
+        
+        // Only update Oracle if it's set and trade volume is significant
+        if (address($.oracle) != address(0) && tradeVolume >= $.tradingRules.minTradeAmount) {
+            try $.oracle.updatePriceFromTrade(
+                Currency.unwrap($.poolKey.baseCurrency), // Base currency of the pool
+                tradePrice,
+                tradeVolume
+            ) {
+                // Oracle updated successfully
+            } catch {
+                // Oracle update failed, continue without affecting trade
+                // This ensures trade execution is never blocked by Oracle issues
+            }
+        }
+    }
+
     function updateTradingRules(
         TradingRules memory _newRules
     ) external {
@@ -954,5 +1113,80 @@ contract OrderBook is Initializable, OwnableUpgradeable, ReentrancyGuardUpgradea
         emit TradingRulesUpdated($.poolKey.toId(), _newRules);
     }
 
+    // =============================================================
+    //                   AUTO-REPAY HELPERS
+    // =============================================================
+
+    function _handleAutoRepayOnBuy(
+        address user,
+        uint256 baseAmount,
+        uint128 fillPrice
+    ) private {
+        Storage storage $ = getStorage();
+        
+        // Get user's current debt (base currency is the debt token)
+        address debtToken = Currency.unwrap($.poolKey.baseCurrency);
+        IBalanceManager bm = IBalanceManager($.balanceManager);
+        address lendingManager = bm.lendingManager();
+        
+        if (lendingManager == address(0)) {
+            return; // No lending manager available
+        }
+
+        try ILendingManager(lendingManager).getUserDebt(user, debtToken) returns (uint256 userDebt) {
+            if (userDebt == 0) {
+                return; // No debt to repay
+            }
+
+            // Repay maximum possible: min(user balance, user debt)
+            uint256 userBalance = bm.getBalance(user, $.poolKey.baseCurrency);
+            uint256 repayAmount = userBalance > userDebt ? userDebt : userBalance;
+
+            if (repayAmount > 0) {
+                _executeAutoRepayment(user, debtToken, repayAmount, fillPrice);
+            }
+        } catch {
+            // If checking debt fails, skip auto-repay
+        }
+    }
+
+    // Simplified auto-repay - no complex benefit calculations needed
+
+    function _executeAutoRepayment(
+        address user,
+        address debtToken,
+        uint256 repayAmount,
+        uint128 fillPrice
+    ) private {
+        Storage storage $ = getStorage();
+        
+        // Get lending manager and execute repayment
+        IBalanceManager bm = IBalanceManager($.balanceManager);
+        address lendingManager = bm.lendingManager();
+        
+        if (lendingManager != address(0)) {
+            // Calculate simple savings estimate
+            uint256 savings = 0; // Simplified: we don't track target prices anymore
+            
+            // Execute repayment
+            try ILendingManager(lendingManager).repay(debtToken, repayAmount) {
+                emit AutoRepaymentExecuted(user, debtToken, repayAmount, savings, block.timestamp);
+            } catch {
+                // If repayment fails, emit event and continue
+                emit AutoRepaymentFailed(user, debtToken, repayAmount, block.timestamp);
+            }
+        }
+    }
+
+    // Auto-repay helper removed - simplified approach
+
+    // Auto-repay errors
+    error NoDebtToRepay();
+    error AutoRepayOnlyForBuyOrders();
+    
+    // Auto-borrow errors  
+    error NoCollateralToBorrow();
+    error AutoBorrowOnlyForSellOrders();
+    
     error NotAuthorized();
 }

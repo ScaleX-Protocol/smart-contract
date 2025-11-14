@@ -9,7 +9,7 @@ import "../utils/DeployHelpers.s.sol";
 /**
  * @title Update Side Chain Mappings
  * @dev Updates ChainBalanceManager token mappings on side chain
- * Usage: SIDE_CHAIN=gtx-anvil-2 make update-side-chain-mappings network=gtx_side_devnet
+ * Usage: SIDE_CHAIN=scalex-anvil-2 make update-side-chain-mappings network=scalex_side_devnet
  */
 contract UpdateSideChainMappings is DeployHelpers {
     

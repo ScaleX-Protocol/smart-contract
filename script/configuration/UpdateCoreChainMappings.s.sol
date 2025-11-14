@@ -10,7 +10,7 @@ import "../utils/DeployHelpers.s.sol";
 /**
  * @title Update Core Chain Mappings
  * @dev Updates core chain token mappings for cross-chain operations
- * Usage: SIDE_CHAIN=gtx-anvil-2 forge script script/UpdateCoreChainMappings.s.sol:UpdateCoreChainMappings --rpc-url https://core-devnet.gtxdex.xyz --broadcast
+ * Usage: SIDE_CHAIN=scalex-anvil-2 forge script script/UpdateCoreChainMappings.s.sol:UpdateCoreChainMappings --rpc-url https://core-devnet.scalex.money --broadcast
  */
 contract UpdateCoreChainMappings is DeployHelpers {
     
@@ -123,7 +123,7 @@ contract UpdateCoreChainMappings is DeployHelpers {
         // Initialize token info (synthetic addresses will be loaded separately)
         tokens.push(TokenInfo({
             symbol: "gsUSDC",
-            name: "GTX Synthetic USDC",
+            name: "ScaleX Synthetic USDC",
             decimals: 6,
             sideChainAddress: sideUSDC,
             syntheticAddress: address(0)
@@ -131,7 +131,7 @@ contract UpdateCoreChainMappings is DeployHelpers {
         
         tokens.push(TokenInfo({
             symbol: "gsWETH", 
-            name: "GTX Synthetic WETH",
+            name: "ScaleX Synthetic WETH",
             decimals: 18,
             sideChainAddress: sideWETH,
             syntheticAddress: address(0)
@@ -139,7 +139,7 @@ contract UpdateCoreChainMappings is DeployHelpers {
         
         tokens.push(TokenInfo({
             symbol: "gsWBTC",
-            name: "GTX Synthetic WBTC", 
+            name: "ScaleX Synthetic WBTC", 
             decimals: 8,
             sideChainAddress: sideWBTC,
             syntheticAddress: address(0)
@@ -171,7 +171,7 @@ contract UpdateCoreChainMappings is DeployHelpers {
                 }
             } catch {
                 console.log("# ERROR: Synthetic token %s not found in deployment", token.symbol);
-                console.log("# SOLUTION: Run 'make deploy-core-chain-tokens network=gtx_core_devnet' first");
+                console.log("# SOLUTION: Run 'make deploy-core-chain-tokens network=scalex_core_devnet' first");
                 revert(string.concat("DEPLOYMENT FAILED: Synthetic token ", token.symbol, " not found. Deploy tokens first."));
             }
         }

@@ -1,0 +1,44 @@
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.26;
+
+interface IOracle {
+    // Price querying functions
+    function getSpotPrice(address token) external view returns (uint256);
+    function getTWAP(address token, uint256 window) external view returns (uint256);
+    
+    // Status functions
+    function isPriceStale(address token) external view returns (bool);
+    function hasSufficientHistory(address token, uint256 window) external view returns (bool);
+    
+    // Oracle health check
+    function getOracleHealth(address token) external view returns (
+        bool healthy,
+        uint256 confidence,
+        bool stale, 
+        bool hasHistory,
+        string memory issue
+    );
+    
+    // Token management
+    function addToken(address token, uint256 priceId) external;
+    function removeToken(address token) external;
+    function getAllSupportedTokens() external view returns (address[] memory supportedTokens);
+    function addAllSupportedTokens() external;
+    
+    // OrderBook integration
+    function updateOrderBook(address orderBook) external;
+    
+    // Constants
+    function MAX_HISTORY_SIZE() external view returns (uint256);
+    function STALE_PRICE_DELAY() external view returns (uint256);
+    function MIN_TRADE_VOLUME() external view returns (uint256);
+    
+    // Trade-based price updates
+    function updatePriceFromTrade(address token, uint128 price, uint256 volume) external;
+    
+    // Manual price updates
+    function updatePrice(address token) external;
+    
+    // Token registry management
+    function updateTokenRegistry(address tokenRegistry) external;
+}

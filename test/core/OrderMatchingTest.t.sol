@@ -1,25 +1,31 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.26;
 
-import {BalanceManager} from "@gtxcore/BalanceManager.sol";
-import "@gtxcore/interfaces/IOrderBook.sol";
+import {BalanceManager} from "@scalexcore/BalanceManager.sol";
+import {IBalanceManager} from "../../src/core/interfaces/IBalanceManager.sol";
+import {ITokenRegistry} from "../../src/core/interfaces/ITokenRegistry.sol";
+import "@scalexcore/interfaces/IOrderBook.sol";
 import {BeaconDeployer} from "./helpers/BeaconDeployer.t.sol";
 import "@openzeppelin/contracts/proxy/beacon/BeaconProxy.sol";
 import "@openzeppelin/contracts/proxy/beacon/UpgradeableBeacon.sol";
 
-import {Currency} from "@gtxcore/libraries/Currency.sol";
+import {Currency} from "@scalexcore/libraries/Currency.sol";
 import {ERC20Mock} from "@openzeppelin/contracts/mocks/token/ERC20Mock.sol";
 
-import {MockToken} from "@gtx/mocks/MockToken.sol";
-import {GTXRouter} from "@gtxcore/GTXRouter.sol";
-import {OrderBook} from "@gtxcore/OrderBook.sol";
-import {IPoolManager} from "@gtxcore/interfaces/IPoolManager.sol";
+import {MockToken} from "@scalex/mocks/MockToken.sol";
+import {ScaleXRouter} from "@scalexcore/ScaleXRouter.sol";
+import {OrderBook} from "@scalexcore/OrderBook.sol";
+import {IPoolManager} from "@scalexcore/interfaces/IPoolManager.sol";
 
-import {PoolKey} from "@gtxcore/libraries/Pool.sol";
+import {PoolKey} from "@scalexcore/libraries/Pool.sol";
 
-import {PoolManager} from "@gtxcore/PoolManager.sol";
+import {PoolManager} from "@scalexcore/PoolManager.sol";
 import {Test, console} from "forge-std/Test.sol";
 import {Upgrades} from "openzeppelin-foundry-upgrades/Upgrades.sol";
+import {SyntheticTokenFactory} from "../../src/factories/SyntheticTokenFactory.sol";
+import {SyntheticToken} from "../../src/token/SyntheticToken.sol";
+import {TokenRegistry} from "../../src/core/TokenRegistry.sol";
+import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 
 contract OrderMatchingTest is Test {
     OrderBook public orderBook;
@@ -44,9 +50,11 @@ contract OrderMatchingTest is Test {
     uint256 lotSize = 1e18; // Example lot size
     uint256 maxOrderAmount = 500e18; // Example max order amount
 
-    GTXRouter router;
+    ScaleXRouter router;
     PoolManager poolManager;
-    BalanceManager balanceManager;
+    IBalanceManager balanceManager;
+    ITokenRegistry tokenRegistry;
+    SyntheticTokenFactory tokenFactory;
 
     function setUp() public {
         baseTokenAddress = address(new MockToken("WETH", "WETH", 18));
@@ -87,7 +95,22 @@ contract OrderMatchingTest is Test {
                     (owner, owner, feeMaker, feeTaker)
                 )
             );
-        balanceManager = BalanceManager(address(balanceManagerProxy));
+        balanceManager = IBalanceManager(payable(address(balanceManagerProxy)));
+
+        // Set up TokenFactory and TokenRegistry
+        tokenFactory = new SyntheticTokenFactory();
+        tokenFactory.initialize(owner, owner);
+        
+        // Deploy TokenRegistry
+        address tokenRegistryImpl = address(new TokenRegistry());
+        ERC1967Proxy tokenRegistryProxy = new ERC1967Proxy(
+            tokenRegistryImpl,
+            abi.encodeWithSelector(
+                TokenRegistry.initialize.selector,
+                owner
+            )
+        );
+        tokenRegistry = ITokenRegistry(address(tokenRegistryProxy));
 
         IBeacon orderBookBeacon = new UpgradeableBeacon(
             address(new OrderBook()),
@@ -111,16 +134,46 @@ contract OrderMatchingTest is Test {
         poolManager = PoolManager(address(poolManagerProxy));
 
         (BeaconProxy routerProxy, ) = beaconDeployer.deployUpgradeableContract(
-            address(new GTXRouter()),
+            address(new ScaleXRouter()),
             owner,
             abi.encodeCall(
-                GTXRouter.initialize,
+                ScaleXRouter.initialize,
                 (address(poolManager), address(balanceManager))
             )
         );
-        router = GTXRouter(address(routerProxy));
+        router = ScaleXRouter(address(routerProxy));
 
         vm.startPrank(owner);
+        
+        // Create synthetic tokens and set up TokenRegistry
+        address baseSynthetic = tokenFactory.createSyntheticToken(baseTokenAddress);
+        address quoteSynthetic = tokenFactory.createSyntheticToken(quoteTokenAddress);
+        
+        balanceManager.addSupportedAsset(baseTokenAddress, baseSynthetic);
+        balanceManager.addSupportedAsset(quoteTokenAddress, quoteSynthetic);
+        
+        // Set BalanceManager as minter and burner for synthetic tokens
+        SyntheticToken(baseSynthetic).setMinter(address(balanceManager));
+        SyntheticToken(quoteSynthetic).setMinter(address(balanceManager));
+        SyntheticToken(baseSynthetic).setBurner(address(balanceManager));
+        SyntheticToken(quoteSynthetic).setBurner(address(balanceManager));
+        
+        // Register token mappings for local deposits
+        uint32 currentChain = 31337; // Default foundry chain ID
+        tokenRegistry.registerTokenMapping(
+            currentChain, baseTokenAddress, currentChain, baseSynthetic, "WETH", 18, 18
+        );
+        tokenRegistry.registerTokenMapping(
+            currentChain, quoteTokenAddress, currentChain, quoteSynthetic, "USDC", 6, 6
+        );
+        
+        // Activate token mappings
+        tokenRegistry.setTokenMappingStatus(currentChain, baseTokenAddress, currentChain, true);
+        tokenRegistry.setTokenMappingStatus(currentChain, quoteTokenAddress, currentChain, true);
+        
+        balanceManager.setTokenFactory(address(tokenFactory));
+        balanceManager.setTokenRegistry(address(tokenRegistry));
+        
         balanceManager.setPoolManager(address(poolManager));
         balanceManager.setAuthorizedOperator(address(poolManager), true);
         balanceManager.setAuthorizedOperator(address(routerProxy), true);

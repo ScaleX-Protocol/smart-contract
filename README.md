@@ -1,52 +1,75 @@
-# 🚀 CLOB DEX - Cross-Chain Decentralized Exchange
+# 🚀 ScaleX - Unified CLOB DEX-Lending Protocol
 
-> 🌉 Multi-chain CLOB with unified liquidity across Espresso testnet
+> 💰 Unified CLOB DEX-Lending protocol with automated yield generation and portfolio-backed borrowing
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Hyperlane](https://img.shields.io/badge/CrossChain-Hyperlane-green)](https://hyperlane.xyz)
-[![Status](https://img.shields.io/badge/Status-OPERATIONAL-brightgreen)](docs/CROSS_CHAIN_STATUS.md)
-[![Espresso](https://img.shields.io/badge/Network-Espresso-purple)](https://docs.espresso.network)
+[![Status](https://img.shields.io/badge/Status-OPERATIONAL-brightgreen)](README.md)
 
 ## 🌟 Vision
 
-A unified cross-chain trading hub powered by Central Limit Order Book (CLOB) technology. Bridge assets from multiple chains and trade with unified liquidity on Rari testnet, bringing together the best of CEX performance and DEX trustlessness.
+A revolutionary DeFi protocol that seamlessly combines CLOB trading with integrated lending. ScaleX enables **zero-capital trading** through auto-borrow/auto-repay mechanisms while users earn yield on deposits. Place limit orders without owning assets and let the system automatically handle borrowing and repayment. ScaleX brings together the best of CEX performance, DEX trustlessness, and innovative lending integration in a single protocol.
 
 ## 🎯 **System Status: OPERATIONAL** ✅
 
-The cross-chain CLOB DEX is **fully deployed and working**! 
+The ScaleX unified CLOB DEX-Lending protocol is **fully deployed and working**!
 
-- 🌉 **Cross-chain messaging**: ENABLED via Hyperlane
-- 🔄 **Token bridging**: OPERATIONAL (USDT → gsUSDT)  
-- 📊 **CLOB trading**: READY on Rari testnet
-- 🔍 **Message tracking**: [Hyperlane Explorer](https://hyperlane-explorer.gtxdex.xyz/)
+- 📊 **CLOB trading**: Operational with advanced order book
+- 💰 **Auto-yield generation**: Deposits automatically lent for yield
+- 🏦 **Portfolio-backed borrowing**: Borrow against your deposited assets
+- 🔒 **Liquidity management**: Unified liquidity across lending and trading
 
-📋 [View detailed status report](docs/CROSS_CHAIN_STATUS.md)
+📋 [View detailed documentation](docs/ARCHITECTURE_OVERVIEW.md)
 
-## 🏗️ Cross-Chain Architecture
+## 🏗️ ScaleX Protocol Architecture
 
 ```
-┌─────────────────────┐    Hyperlane Bridge    ┌──────────────────────────┐
-│   SOURCE CHAINS     │ ─────────────────────► │     RARI TRADING HUB     │
-│                     │                        │                          │
-│ • Appchain (4661)   │   Message Dispatch     │ • BalanceManager         │
-│ • Arbitrum Sepolia  │ ◄───────────────────── │ • PoolManager            │
-│ • Rise Sepolia      │   Withdrawal Flow      │ • OrderBook (RB-Tree)    │
-│                     │                        │ • Router                 │
-│ ChainBalanceManager │                        │                          │
-│ • Lock USDT/WETH    │                        │ Synthetic Tokens:        │
-│ • Bridge to gsTokens│                        │ • gsUSDT, gsWETH, gsWBTC │
-│ • Handle withdraws  │                        │                          │
-└─────────────────────┘                        └──────────────────────────┘
+┌─────────────────────────────────────────────────────────────┐
+│                   SCALEX PROTOCOL                           │
+│                                                             │
+│  ┌─────────────────┐  ┌─────────────────┐  ┌──────────────┐ │
+│  │   CLOB Engine   │  │  Lending Engine │  │   Oracle     │ │
+│  │                 │  │                 │  │   System     │ │
+│  │ • OrderBook     │  │ • LendingManager│  │ • PriceFeed  │ │
+│  │ • SCALEXRouter     │  │ • YieldTracker  │  │ • TokenReg   │ │
+│  │ • PoolManager   │  │ • Liquidator    │  │              │ │
+│  └─────────────────┘  └─────────────────┘  └──────────────┘  │
+│           │                       │                       │
+│           └───────────────────────┼───────────────────────┘
+│                                   │
+│  ┌─────────────────────────────────┼─────────────────────────┐
+│  │           BALANCEMANAGER       │                         │
+│  │  ┌─────────────────────────────┴─────────────────────────┐│
+│  │  │           USER ACCOUNTS & PORTFOLIOS                 ││
+│  │  │ • Auto-yield on deposits                              ││
+│  │  │ • Portfolio-backed borrowing                         ││
+│  │  │ • Unified balance management                          ││
+│  │  └───────────────────────────────────────────────────────┘│
+│  └───────────────────────────────────────────────────────────┘
+└─────────────────────────────────────────────────────────────┘
 ```
 
 ### **Core Components**
-- **ChainBalanceManager**: Source chain vault contracts for token locking
-- **BalanceManager**: Rari trading account manager with cross-chain message handling
-- **PoolManager**: Trading pair management and pool deployments  
-- **OrderBook**: CLOB with Red-Black Tree for efficient order matching
-- **Router**: User-friendly trading interface and swap execution
+- **BalanceManager**: Unified account management with auto-yield and borrowing capabilities
+- **OrderBook**: High-performance CLOB with Red-Black Tree for efficient order matching
+- **SCALEXRouter**: User-friendly interface for trading and lending operations
+- **LendingManager**: Automated lending protocol with yield generation
+- **Oracle**: Real-time price feeds for accurate asset valuation and liquidation
 
 ## 💎 Core Features
+
+### 💰 Automated Lending & Yield Generation
+
+- **Auto-Lend on Deposit**: All deposited assets are automatically lent out to generate yield
+- **Real-time Yield Tracking**: Continuously accrue and track yield earnings for all depositors
+- **Dynamic Interest Rates**: Market-driven interest rates based on supply and demand
+- **Portfolio-Backed Borrowing**: Borrow against your deposited portfolio with automated health monitoring
+
+### 🚀 Revolutionary CLOB-Lending Integration
+
+- **🔄 Auto-Borrow for Limit Orders**: Place limit orders without owning the assets! ScaleX automatically borrows from the lending protocol when your order executes
+- **⚡ Auto-Repay on Order Match**: When your sell orders are filled, ScaleX automatically repays your debt from the lending protocol using the proceeds
+- **📈 Zero-Capital Trading**: Start trading immediately without needing to pre-fund your account - just maintain sufficient collateral
+- **🎯 Smart Debt Management**: Automatically optimize borrowing and repayment to minimize interest costs while maximizing trading opportunities
 
 ### 🗃️ Optimized Order Management
 
@@ -90,21 +113,28 @@ The cross-chain CLOB DEX is **fully deployed and working**!
   mapping(Side => mapping(uint128 => OrderQueue)) private orderQueues;
   ```
 
-### 💰 Sophisticated Balance Management
+### 💰 Unified Balance & Portfolio Management
 
 - **Balance Tracking**: Per-user balance tracking for multiple currencies
   ```solidity
   mapping(address => mapping(uint256 => uint256)) private balanceOf;
   ```
 
+- **Auto-Yield Integration**: Deposits automatically enter lending pools
+  ```solidity
+  mapping(address => mapping(uint256 => uint256)) private depositedBalance;
+  mapping(address => mapping(uint256 => uint256)) private earnedYield;
+  ```
+
+- **Portfolio-Backed Borrowing**: Borrow against your total portfolio value
+  ```solidity
+  mapping(address => mapping(uint256 => uint256)) private borrowedAmount;
+  mapping(address => uint256) private healthFactor;
+  ```
+
 - **Order Lock System**: Balance locking prevents double-spending
   ```solidity
   mapping(address => mapping(address => mapping(uint256 => uint256))) private lockedBalanceOf;
-  ```
-
-- **Operator Authorization**: Controlled access to manage user funds
-  ```solidity
-  mapping(address => bool) private authorizedOperators;
   ```
 
 ## ⛽ Gas Optimization Techniques
@@ -130,12 +160,18 @@ The cross-chain CLOB DEX is **fully deployed and working**!
     - Atomicity in balance operations
     - Authorization checks for operators
 
-2. **Order Integrity**
+2. **Lending Protocol Security**
+    - Automated health factor monitoring
+    - Real-time liquidation protection
+    - Over-collateralization requirements for borrowing
+    - Interest rate risk management
+
+3. **Order Integrity**
     - Order ownership validation
     - Expiration handling
     - Time-in-force constraints enforcement
 
-3. **Access Control**
+4. **Access Control**
     - Router authorization for order operations
     - Owner-only configuration changes
     - Operator-limited permissions
@@ -176,13 +212,13 @@ The implementation ensures efficient order management while maintaining robust s
 The contract addresses are stored in JSON files under the `deployments/<chain_id>.json`. Example folder:
 
 - 🔗 **Local Development**: `deployments/31337.json` (Anvil network)
-- 🌐 **GTX Dev Network**: `deployments/31338.json` (GTX Development)
+- 🌐 **SCALEX Dev Network**: `deployments/31337.json` (SCALEX Development)
 - 🚀 **Rise Network**: `deployments/11155931.json` (Rise Sepolia)
 - 🌟 **Pharos Network**: `deployments/50002.json` (Pharos Devnet)
 
 To access contract addresses for a specific network:
 1. Locate the appropriate JSON file for your target network
-2. Parse the JSON to find the contract you need (e.g., `GTXRouter`, `PoolManager`)
+2. Parse the JSON to find the contract you need (e.g., `SCALEXRouter`, `PoolManager`)
 3. Use the address in your frontend or for contract interactions
 
 ## 📜 Contract ABIs
@@ -223,42 +259,64 @@ Before proceeding, ensure you have the following installed:
 
 3. Duplicate the `.env.example` file in the root directory, rename it to `.env`, and set the required variables.
 
-## 🚀 Quick Start - Cross-Chain Trading
+## 🚀 Quick Start - Zero-Capital Trading with Auto-Borrow
 
-### **Step 1: Bridge Assets to Rari**
+### **Step 1: Deposit Collateral (Auto-Yield Enabled)**
 ```solidity
-// On Appchain: Deposit USDT for cross-chain bridging
-chainBalanceManager.deposit(
-    0x1362Dd75d8F1579a0Ebd62DF92d8F3852C3a7516, // USDT address
+// Deposit USDT - automatically starts earning yield
+balanceManager.deposit(
+    USDT_ADDRESS,  // Your token address
     amount,
     recipient
 );
+// Yield automatically starts accruing!
 ```
 
-### **Step 2: Trade on Rari**
-```solidity  
-// On Rari: Trade synthetic tokens
-router.swapExactIn(
-    gsUSDT,    // 0x3d17BF5d39A96d5B4D76b40A7f74c0d02d2fadF7
-    gsWETH,    // 0xC7A1777e80982E01e07406e6C6E8B30F5968F836  
-    amount,
-    minOut
+### **Step 2: Place Limit Orders WITHOUT Owning Assets! 🚀**
+```solidity
+// Place a BUY order for WETH without having USDT!
+// ScaleX auto-borrows when your order is matched
+router.placeLimitOrder(
+    WETH,      // Asset you want to buy
+    USDT,      // Asset you're selling (will be auto-borrowed)
+    price,     // Your desired price
+    quantity,  // Amount of WETH you want
+    true       // enableAutoBorrow: true
 );
 ```
 
-### **Step 3: Monitor Bridge Status**
-- **Hyperlane Explorer**: https://hyperlane-explorer.gtxdex.xyz/
-- **Test Transaction**: [View Message](https://hyperlane-explorer.gtxdex.xyz/message/0xfcadbcd23563cb0230070d9ead7f78a0c0e468c7a7d3c674858afc60ca0a013a)
+### **Step 4: Watch the Magic Happen! ✨**
+
+- 🔄 **Order Matched**: ScaleX automatically borrows funds to fulfill your order
+- 💰 **Order Filled**: When your sell orders execute, debt is auto-repaid from proceeds
+- 📊 **Interest Optimization**: System minimizes borrowing time to reduce interest costs
+- 🔒 **Risk Management**: Health factor monitoring ensures safe operation at all times
+
+## 🎯 Why ScaleX is Revolutionary
+
+### **Traditional DEX vs ScaleX**
+| Feature | Traditional DEX | ScaleX |
+|---------|----------------|--------|
+| **Require Assets to Trade** | Yes | **No - Auto-Borrow!** |
+| **Yield on Deposits** | No | **Auto-Yield** |
+| **Manual Debt Management** | N/A | **Auto-Repay** |
+| **Capital Efficiency** | Low | **Maximum** |
+
+### **Use Cases Enabled**
+- 🚀 **Zero-Capital Trading**: Start trading immediately with just collateral
+- 📈 **Leverage Trading**: Borrow to amplify positions without manual management
+- ⚡ **Flash Trading**: Execute arbitrage without pre-funding
+- 🔄 **Automated Strategies**: Let the system handle borrowing/repayment while you focus on prices
 
 ### **Contract Addresses**
 
-| Network | Contract | Address |
-|---------|----------|---------|
-| **Appchain** | ChainBalanceManager | `0x27D0Dd86F00b59aD528f1D9B699847A588fbA2C7` |
-| **Appchain** | USDT | `0x1362Dd75d8F1579a0Ebd62DF92d8F3852C3a7516` |
-| **Rari** | BalanceManager | `0xd7fEF09a6cBd62E3f026916CDfE415b1e64f4Eb5` |
-| **Rari** | gsUSDT | `0x3d17BF5d39A96d5B4D76b40A7f74c0d02d2fadF7` |
-| **Rari** | Router | `0xF38489749c3e65c82a9273c498A8c6614c34754b` |
+| Network | Contract | Description |
+|---------|----------|-------------|
+| **Local** | BalanceManager | `0xd7fEF09a6cBd62E3f026916CDfE415b1e64f4Eb5` |
+| **Local** | SCALEXRouter | `0xF38489749c3e65c82a9273c498A8c6614c34754b` |
+| **Local** | OrderBook | `0x...` |
+| **Local** | LendingManager | `0x...` |
+| **Local** | Oracle | `0x...` |
 
 ---
 
@@ -268,9 +326,8 @@ For complete deployment instructions, see **[📋 DEPLOYMENT.md](docs/DEPLOYMENT
 
 ### Quick Deployment
 ```bash
-# Deploy and validate the complete two-chain system
+# Deploy and validate the ScaleX protocol
 make validate-deployment           # Validate core deployment
-make validate-cross-chain-deposit  # Validate cross-chain system
 ```
 
 ### Single Network Deployment

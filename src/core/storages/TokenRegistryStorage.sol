@@ -2,7 +2,7 @@
 pragma solidity ^0.8.26;
 
 abstract contract TokenRegistryStorage {
-    // keccak256(abi.encode(uint256(keccak256("gtx.clob.storage.tokenregistry")) - 1)) & ~bytes32(uint256(0xff))
+    // keccak256(abi.encode(uint256(keccak256("scalex.clob.storage.tokenregistry")) - 1)) & ~bytes32(uint256(0xff))
     bytes32 private constant STORAGE_SLOT = 0x7b3f8e9c2d1a5b7e9f3c5a8d1f4b7e0c3a6d9e2f5b8e1c4a7d0f3b6c9e2d5a00;
 
     struct TokenMapping {

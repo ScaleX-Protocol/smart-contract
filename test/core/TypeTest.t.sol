@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.26;
 
-import "@gtxcore/libraries/Currency.sol";
-import "@gtxcore/libraries/Pool.sol";
+import "@scalexcore/libraries/Currency.sol";
+import "@scalexcore/libraries/Pool.sol";
 import "forge-std/Test.sol";
 
 contract TypeTest is Test {

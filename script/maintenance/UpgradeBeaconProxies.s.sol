@@ -57,7 +57,7 @@ contract UpgradeBeaconProxies is DeployHelpers {
             revert("Router beacon address not found in deployments");
         }
 
-        Upgrades.upgradeBeacon(routerBeacon, "GTXRouterV2.sol");
+        Upgrades.upgradeBeacon(routerBeacon, "ScaleXRouterV2.sol");
         console.log("Upgraded Router beacon to V2");
     }
 }

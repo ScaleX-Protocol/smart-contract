@@ -12,7 +12,7 @@ const contractsToExtract = [
     'SyntheticTokenFactory',
     'ChainRegistry',
     'PoolManager',
-    'GTXRouter',
+    'SCALEXRouter',
     'OrderBook',
     'UpgradeableBeacon',
     'BeaconProxy',
@@ -108,7 +108,7 @@ function extractABI(contractName) {
     const artifactPath = path.join(__dirname, 'out', `${contractName}.sol`, `${contractName}.json`);
     
     if (!fs.existsSync(artifactPath)) {
-        console.log(`❌ Artifact not found: ${artifactPath}`);
+        console.log(`Artifact not found: ${artifactPath}`);
         return null;
     }
     
@@ -117,11 +117,11 @@ function extractABI(contractName) {
         const abi = artifact.abi;
         
         if (!abi || !Array.isArray(abi)) {
-            console.log(`❌ No valid ABI found in ${artifactPath}`);
+            console.log(`No valid ABI found in ${artifactPath}`);
             return null;
         }
         
-        console.log(`✅ Extracted ${abi.length} ABI entries for ${contractName}`);
+        console.log(`Extracted ${abi.length} ABI entries for ${contractName}`);
         
         // Show first few function names for verification
         const functions = abi.filter(item => item.type === 'function').map(item => item.name);
@@ -130,7 +130,7 @@ function extractABI(contractName) {
         return abi;
         
     } catch (error) {
-        console.log(`❌ Error reading ${artifactPath}:`, error.message);
+        console.log(`Error reading ${artifactPath}:`, error.message);
         return null;
     }
 }
@@ -146,7 +146,7 @@ function writeABIFile(contractName, abi) {
     const content = formatABI(contractName, abi);
     
     fs.writeFileSync(outputPath, content, 'utf8');
-    console.log(`✅ Written ${contractName}ABI.ts`);
+    console.log(`Written ${contractName}ABI.ts`);
 }
 
 function updateIndexFile() {
@@ -156,7 +156,7 @@ function updateIndexFile() {
     ).join('\n');
     
     fs.writeFileSync(indexPath, exports + '\n', 'utf8');
-    console.log('✅ Updated index.ts');
+    console.log('Updated index.ts');
 }
 
 function validateExistingABI(contractName) {
@@ -211,13 +211,13 @@ for (const contractName of contractsToExtract) {
     const validation = validateExistingABI(contractName);
     
     if (!validation.exists) {
-        console.log('   ❌ No existing ABI file');
+        console.log('   No existing ABI file');
     } else if (validation.valid) {
-        console.log('   ✅ Existing ABI matches compiled contract');
+        console.log('   Existing ABI matches compiled contract');
         console.log(`   📊 Functions: ${validation.totalReal} total`);
         continue; // Skip re-extraction for valid ABIs
     } else {
-        console.log('   ❌ Existing ABI does NOT match compiled contract');
+        console.log('   Existing ABI does NOT match compiled contract');
         if (validation.error) {
             console.log(`   💥 Error: ${validation.error}`);
         } else {
@@ -236,6 +236,6 @@ for (const contractName of contractsToExtract) {
 console.log('\n🔧 Updating index file...');
 updateIndexFile();
 
-console.log('\n✅ ABI extraction and validation complete!');
+console.log('\nABI extraction and validation complete!');
 console.log('\n📋 Summary: All ABIs have been extracted from compiled contracts and validated.');
 console.log('🎯 Next: Check the updated ABIs and test frontend integration.');

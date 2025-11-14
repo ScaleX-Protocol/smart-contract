@@ -12,7 +12,7 @@ import {
 	SyntheticTokenFactoryABI,
 	ChainRegistryABI,
 	PoolManagerABI,
-	GTXRouterABI,
+	SCALEXRouterABI,
 	OrderBookABI,
 	UpgradeableBeaconABI,
 	BeaconProxyABI,
@@ -67,7 +67,7 @@ export const deployedContracts: DeployedContracts = {
 		},
 		Router: {
 			address: "0xF38489749c3e65c82a9273c498A8c6614c34754b",
-			abi: GTXRouterABI,
+			abi: SCALEXRouterABI,
 		},
 		BalanceManagerBeacon: {
 			address: "0xF1A53bC852bB9e139a8200003B55164592695395",

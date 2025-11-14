@@ -17,7 +17,7 @@ interface DeployedContracts {
 
 export const deployedContracts: DeployedContracts = {
   31337: {
-    GTXRouter: {
+    SCALEXRouter: {
       address: "0xdc64a140aa3e981100a9beca4e685f962f0cf6c9",
       abi: [
         {
@@ -1081,16 +1081,16 @@ export const deployedContracts: DeployedContracts = {
         },
       ],
       inheritedFunctions: {
-        batchCancelOrders: "src/core/interfaces/IGTXRouter.sol",
-        calculateMinOutAmountForMarket: "src/core/interfaces/IGTXRouter.sol",
-        cancelOrder: "src/core/interfaces/IGTXRouter.sol",
-        getBestPrice: "src/core/interfaces/IGTXRouter.sol",
-        getNextBestPrices: "src/core/interfaces/IGTXRouter.sol",
-        getOrder: "src/core/interfaces/IGTXRouter.sol",
-        getOrderQueue: "src/core/interfaces/IGTXRouter.sol",
-        placeLimitOrder: "src/core/interfaces/IGTXRouter.sol",
-        placeMarketOrder: "src/core/interfaces/IGTXRouter.sol",
-        withdraw: "src/core/interfaces/IGTXRouter.sol",
+        batchCancelOrders: "src/core/interfaces/ISCALEXRouter.sol",
+        calculateMinOutAmountForMarket: "src/core/interfaces/ISCALEXRouter.sol",
+        cancelOrder: "src/core/interfaces/ISCALEXRouter.sol",
+        getBestPrice: "src/core/interfaces/ISCALEXRouter.sol",
+        getNextBestPrices: "src/core/interfaces/ISCALEXRouter.sol",
+        getOrder: "src/core/interfaces/ISCALEXRouter.sol",
+        getOrderQueue: "src/core/interfaces/ISCALEXRouter.sol",
+        placeLimitOrder: "src/core/interfaces/ISCALEXRouter.sol",
+        placeMarketOrder: "src/core/interfaces/ISCALEXRouter.sol",
+        withdraw: "src/core/interfaces/ISCALEXRouter.sol",
         owner:
           "lib/openzeppelin-contracts-upgradeable/contracts/access/OwnableUpgradeable.sol",
         renounceOwnership:
@@ -1101,7 +1101,7 @@ export const deployedContracts: DeployedContracts = {
     },
   },
   11155931: {
-    GTXRouter: {
+    SCALEXRouter: {
       address: "0x8ae6fde2da2716f31a44b393f5ac627dc1d10ef1",
       abi: [
         {
@@ -2165,16 +2165,16 @@ export const deployedContracts: DeployedContracts = {
         },
       ],
       inheritedFunctions: {
-        batchCancelOrders: "src/core/interfaces/IGTXRouter.sol",
-        calculateMinOutAmountForMarket: "src/core/interfaces/IGTXRouter.sol",
-        cancelOrder: "src/core/interfaces/IGTXRouter.sol",
-        getBestPrice: "src/core/interfaces/IGTXRouter.sol",
-        getNextBestPrices: "src/core/interfaces/IGTXRouter.sol",
-        getOrder: "src/core/interfaces/IGTXRouter.sol",
-        getOrderQueue: "src/core/interfaces/IGTXRouter.sol",
-        placeLimitOrder: "src/core/interfaces/IGTXRouter.sol",
-        placeMarketOrder: "src/core/interfaces/IGTXRouter.sol",
-        withdraw: "src/core/interfaces/IGTXRouter.sol",
+        batchCancelOrders: "src/core/interfaces/ISCALEXRouter.sol",
+        calculateMinOutAmountForMarket: "src/core/interfaces/ISCALEXRouter.sol",
+        cancelOrder: "src/core/interfaces/ISCALEXRouter.sol",
+        getBestPrice: "src/core/interfaces/ISCALEXRouter.sol",
+        getNextBestPrices: "src/core/interfaces/ISCALEXRouter.sol",
+        getOrder: "src/core/interfaces/ISCALEXRouter.sol",
+        getOrderQueue: "src/core/interfaces/ISCALEXRouter.sol",
+        placeLimitOrder: "src/core/interfaces/ISCALEXRouter.sol",
+        placeMarketOrder: "src/core/interfaces/ISCALEXRouter.sol",
+        withdraw: "src/core/interfaces/ISCALEXRouter.sol",
         owner:
           "lib/openzeppelin-contracts-upgradeable/contracts/access/OwnableUpgradeable.sol",
         renounceOwnership:

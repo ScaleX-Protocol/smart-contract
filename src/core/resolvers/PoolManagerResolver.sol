@@ -5,7 +5,7 @@ import {IPoolManager} from "../interfaces/IPoolManager.sol";
 import {Currency} from "../libraries/Currency.sol";
 import {PoolKey} from "../libraries/Pool.sol";
 
-/// @title GTXPoolManagerResolver - Resolver contract for the GTX Pool Manager
+/// @title ScaleXPoolManagerResolver - Resolver contract for the ScaleX Pool Manager
 /// @notice Provides functions to resolve the pool address for a given base and quote currency
 contract PoolManagerResolver {
     constructor() {}

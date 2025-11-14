@@ -3,7 +3,7 @@ pragma solidity ^0.8.26;
 
 import {Script, console} from "forge-std/Script.sol";
 import "../../src/core/BalanceManager.sol";
-import "../../src/core/GTXRouter.sol";
+import "../../src/core/ScaleXRouter.sol";
 import "../../src/core/PoolManager.sol";
 import "../utils/DeployHelpers.s.sol";
 
@@ -21,7 +21,7 @@ contract DiagnoseMarketOrder is DeployHelpers {
         
         // Load contracts
         BalanceManager balanceManager = BalanceManager(deployed["PROXY_BALANCEMANAGER"].addr);
-        GTXRouter gtxRouter = GTXRouter(deployed["PROXY_ROUTER"].addr);
+        ScaleXRouter scalexRouter = ScaleXRouter(deployed["PROXY_ROUTER"].addr);
         PoolManager poolManager = PoolManager(deployed["PROXY_POOLMANAGER"].addr);
         
         // Load synthetic tokens
@@ -46,8 +46,8 @@ contract DiagnoseMarketOrder is DeployHelpers {
         console.log("gsUSDC balance:", usdcBalance);
         
         // Check orderbook state
-        IOrderBook.PriceVolume memory bestBuy = gtxRouter.getBestPrice(weth, usdc, IOrderBook.Side.BUY);
-        IOrderBook.PriceVolume memory bestSell = gtxRouter.getBestPrice(weth, usdc, IOrderBook.Side.SELL);
+        IOrderBook.PriceVolume memory bestBuy = scalexRouter.getBestPrice(weth, usdc, IOrderBook.Side.BUY);
+        IOrderBook.PriceVolume memory bestSell = scalexRouter.getBestPrice(weth, usdc, IOrderBook.Side.SELL);
         
         console.log("Best BUY price:", bestBuy.price);
         console.log("Best BUY volume:", bestBuy.volume);
@@ -67,11 +67,11 @@ contract DiagnoseMarketOrder is DeployHelpers {
         console.log("Attempting market SELL with quantity:", tinyQuantity);
         
         if (wethBalance >= tinyQuantity) {
-            try gtxRouter.calculateMinOutAmountForMarket(pool, 0, IOrderBook.Side.SELL, 1000) returns (uint128 minOut) {
+            try scalexRouter.calculateMinOutAmountForMarket(pool, 0, IOrderBook.Side.SELL, 1000) returns (uint128 minOut) {
                 console.log("Min out calculated:", minOut);
                 
                 // Attempt the market order
-                try gtxRouter.placeMarketOrder(pool, tinyQuantity, IOrderBook.Side.SELL, 0, minOut) returns (uint48 orderId, uint128 filled) {
+                try scalexRouter.placeMarketOrder(pool, tinyQuantity, IOrderBook.Side.SELL, 0, minOut) returns (uint48 orderId, uint128 filled) {
                     console.log("[SUCCESS] Market order placed!");
                     console.log("Order ID:", orderId);
                     console.log("Filled:", filled);
@@ -92,7 +92,7 @@ contract DiagnoseMarketOrder is DeployHelpers {
         // Test 2: Check specific price level
         console.log("\n=== TEST 2: Check Price Level Details ===");
         if (bestBuy.price > 0) {
-            (uint48 orderCount, uint256 totalVolume) = gtxRouter.getOrderQueue(weth, usdc, IOrderBook.Side.BUY, bestBuy.price);
+            (uint48 orderCount, uint256 totalVolume) = scalexRouter.getOrderQueue(weth, usdc, IOrderBook.Side.BUY, bestBuy.price);
             console.log("Orders at best price:", orderCount);
             console.log("Total volume at best price:", totalVolume);
             
@@ -100,7 +100,7 @@ contract DiagnoseMarketOrder is DeployHelpers {
             if (orderCount > 0) {
                 console.log("=== Checking individual orders ===");
                 for (uint256 i = 1; i <= (orderCount < 3 ? orderCount : 3); i++) {
-                    try gtxRouter.getOrder(weth, usdc, uint48(i)) returns (IOrderBook.Order memory order) {
+                    try scalexRouter.getOrder(weth, usdc, uint48(i)) returns (IOrderBook.Order memory order) {
                         console.log("Order", i, "- Price:", order.price);
                         console.log("Order", i, "- Quantity:", order.quantity);
                         console.log("Order", i, "- Filled:", order.filled);
