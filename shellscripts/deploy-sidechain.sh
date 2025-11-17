@@ -349,7 +349,7 @@ validate_deployment
 create_deployment_summary
 
 echo ""
-print_success "🎉 Side Chain Deployment completed successfully!"
+print_success " Side Chain Deployment completed successfully!"
 
 echo ""
 print_step "📋 Deployment Summary:"

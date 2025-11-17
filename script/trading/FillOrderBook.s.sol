@@ -33,6 +33,9 @@ contract FillMockOrderBook is Script, DeployHelpers {
     // Track order IDs for verification
     uint48[] buyOrderIds;
     uint48[] sellOrderIds;
+    
+    // Store the actual deployer address for verification
+    address deployerAddress;
 
     function setUp() public {
         loadDeployments();
@@ -52,7 +55,7 @@ contract FillMockOrderBook is Script, DeployHelpers {
         poolManager = PoolManager(pmAddr);
         scalexRouter = ScaleXRouter(routerAddr);
 
-        // Load tokens - use actual deployed tokens instead of synthetic ones
+        // Load regular tokens for funding (will be converted to synthetic)
         if (deployed["WETH"].isSet) {
             tokenWETH = IERC20(deployed["WETH"].addr);
         } else if (deployed[WETH_ADDRESS].isSet) {
@@ -72,6 +75,7 @@ contract FillMockOrderBook is Script, DeployHelpers {
 
     function run() public {
         uint256 deployerPrivateKey = getDeployerKey();
+        deployerAddress = vm.addr(deployerPrivateKey);
         vm.startBroadcast(deployerPrivateKey);
 
         fillETHUSDCOrderBook();
@@ -96,6 +100,7 @@ contract FillMockOrderBook is Script, DeployHelpers {
         uint256 usdcAmount
     ) public {
         uint256 deployerPrivateKey = getDeployerKey();
+        deployerAddress = vm.addr(deployerPrivateKey);
         vm.startBroadcast(deployerPrivateKey);
 
         fillETHUSDCOrderBookConfigurable(
@@ -121,9 +126,9 @@ contract FillMockOrderBook is Script, DeployHelpers {
     function fillETHUSDCOrderBook() private {
         console.log("\n=== Filling ETH/USDC Order Book ===");
 
-        // Get deployed tokens for trading 
-        address wethAddr = deployed["WETH"].addr;
-        address usdcAddr = deployed["USDC"].addr;
+        // Get deployed synthetic tokens for trading 
+        address wethAddr = deployed["gsWETH"].addr;
+        address usdcAddr = deployed["gsUSDC"].addr;
         
         Currency weth = Currency.wrap(wethAddr);
         Currency usdc = Currency.wrap(usdcAddr);
@@ -145,12 +150,22 @@ contract FillMockOrderBook is Script, DeployHelpers {
             return;
         }
         
+        // Verify pool has valid addresses
+        if (Currency.unwrap(pool.baseCurrency) == address(0) || Currency.unwrap(pool.quoteCurrency) == address(0)) {
+            console.log("[ERROR] Pool has invalid currency addresses");
+            console.log("Base currency:", Currency.unwrap(pool.baseCurrency));
+            console.log("Quote currency:", Currency.unwrap(pool.quoteCurrency));
+            return;
+        }
+        
         console.log("Pool baseCurrency:", Currency.unwrap(pool.baseCurrency));
         console.log("Pool quoteCurrency:", Currency.unwrap(pool.quoteCurrency));
         console.log("Pool orderBook:", address(pool.orderBook));
 
-        // Setup sender with funds
-        _setupFunds(200e18, 400_000e6); // 200 ETH, 400,000 USDC
+        // Setup sender with regular tokens (will be converted to synthetic via deposits)
+        _setupFunds(5e18, 10_000e6); // 5 ETH, 10,000 USDC (reduced amounts)
+        // Convert regular tokens to synthetic tokens via BalanceManager deposits
+        _makeLocalDeposits(5e18, 10_000e6); // Deposit to get synthetic tokens
         // Note: _makeLocalDeposits temporarily disabled due to TokenRegistryNotSet issues
         // _makeLocalDeposits(100e18, 500_000e6); // Deposit 100 ETH, 500,000 USDC to BalanceManager
 
@@ -158,12 +173,14 @@ contract FillMockOrderBook is Script, DeployHelpers {
         // Use smaller order size (0.005 ETH) so trading bots can consume with larger orders
         _placeBuyOrders(pool, 1900e6, 1980e6, 10e6, 10, 5e15);
 
-        console.log("Skipping SELL orders due to balance calculation issue - BUY orders successfully created!");
+        // Place SELL orders (asks) - ascending price from 2000 to 2100
+        // Use smaller order size (0.005 ETH) so trading bots can consume with larger orders
+        // _placeSellOrders(pool, 2000e6, 2100e6, 10e6, 10, 5e15);
 
         // Print summary
         console.log("ETH/USDC order book filled with:");
         console.log("- BUY orders from 1900 USDC to 1980 USDC");
-        console.log("- SELL orders: SKIPPED due to balance overflow issue");
+        console.log("- SELL orders from 2000 USDC to 2100 USDC");
     }
 
     function fillETHUSDCOrderBookConfigurable(
@@ -184,8 +201,8 @@ contract FillMockOrderBook is Script, DeployHelpers {
         Currency weth = Currency.wrap(address(tokenWETH));
         Currency usdc = Currency.wrap(address(tokenUSDC));
 
-        // Create PoolKey and get the pool (back to original order)
-        PoolKey memory poolKey = poolManager.createPoolKey(usdc, weth);
+        // Create PoolKey and get the pool (matching deployment order)
+        PoolKey memory poolKey = poolManager.createPoolKey(weth, usdc);
         IPoolManager.Pool memory pool = poolManager.getPool(poolKey);
 
         // Setup sender with configurable funds
@@ -233,8 +250,8 @@ contract FillMockOrderBook is Script, DeployHelpers {
         Currency weth = Currency.wrap(address(tokenWETH));
         Currency usdc = Currency.wrap(address(tokenUSDC));
 
-        // Create PoolKey and get the pool (back to original order)
-        PoolKey memory poolKey = poolManager.createPoolKey(usdc, weth);
+        // Create PoolKey and get the pool (matching deployment order)
+        PoolKey memory poolKey = poolManager.createPoolKey(weth, usdc);
         IPoolManager.Pool memory pool = poolManager.getPool(poolKey);
 
         // Setup sender with funds and make local deposits for BalanceManager
@@ -426,9 +443,11 @@ contract FillMockOrderBook is Script, DeployHelpers {
     function verifyOrders() private {
         console.log("\n=== Verifying Order Book ===");
 
-        // Get currency objects
-        Currency weth = Currency.wrap(address(tokenWETH));
-        Currency usdc = Currency.wrap(address(tokenUSDC));
+        // Get synthetic currency objects for verification (pools use synthetic tokens)
+        address gsWETHAddr = deployed["gsWETH"].addr;
+        address gsUSDCAddr = deployed["gsUSDC"].addr;
+        Currency weth = Currency.wrap(gsWETHAddr);
+        Currency usdc = Currency.wrap(gsUSDCAddr);
 
         // Get pool
         IPoolManager.Pool memory pool = poolManagerResolver.getPool(weth, usdc, address(poolManager));
@@ -490,9 +509,11 @@ contract FillMockOrderBook is Script, DeployHelpers {
     function checkOrderBookDepth() private {
         console.log("\n=== Verifying OrderBook State ===");
 
-        // Get currency objects
-        Currency weth = Currency.wrap(address(tokenWETH));
-        Currency usdc = Currency.wrap(address(tokenUSDC));
+        // Get synthetic currency objects for verification (pools use synthetic tokens)
+        address gsWETHAddr = deployed["gsWETH"].addr;
+        address gsUSDCAddr = deployed["gsUSDC"].addr;
+        Currency weth = Currency.wrap(gsWETHAddr);
+        Currency usdc = Currency.wrap(gsUSDCAddr);
 
         // Verify BUY orders are correctly placed
         _verifyBuyOrdersPlaced(weth, usdc);
@@ -521,7 +542,7 @@ contract FillMockOrderBook is Script, DeployHelpers {
         for (uint256 i = 0; i < buyOrderIds.length; i++) {
             IOrderBook.Order memory order = scalexRouter.getOrder(base, quote, buyOrderIds[i]);
             require(order.id == buyOrderIds[i], "Order ID mismatch");
-            require(order.user == msg.sender, "Order user mismatch");
+            require(order.user == deployerAddress, "Order user mismatch");
             require(order.side == IOrderBook.Side.BUY, "Order side mismatch");
             require(order.price > 0, "Invalid order price");
 
@@ -551,7 +572,7 @@ contract FillMockOrderBook is Script, DeployHelpers {
             for (uint256 i = 0; i < sellOrderIds.length; i++) {
                 IOrderBook.Order memory order = scalexRouter.getOrder(base, quote, sellOrderIds[i]);
                 require(order.id == sellOrderIds[i], "SELL order ID mismatch");
-                require(order.user == msg.sender, "SELL order user mismatch");
+                require(order.user == deployerAddress, "SELL order user mismatch");
                 require(order.side == IOrderBook.Side.SELL, "SELL order side mismatch");
                 require(order.price > 0, "Invalid SELL order price");
 
@@ -586,7 +607,7 @@ contract FillMockOrderBook is Script, DeployHelpers {
         for (uint256 i = 0; i < buyOrderIds.length; i++) {
             IOrderBook.Order memory order = scalexRouter.getOrder(base, quote, buyOrderIds[i]);
             require(order.id == buyOrderIds[i], "Order ID mismatch");
-            require(order.user == msg.sender, "Order user mismatch");
+            require(order.user == deployerAddress, "Order user mismatch");
             require(order.side == IOrderBook.Side.BUY, "Order side mismatch");
             require(order.quantity > 0, "Invalid order quantity");
         }

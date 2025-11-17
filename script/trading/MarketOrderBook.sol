@@ -13,9 +13,9 @@ import "../../src/core/resolvers/PoolManagerResolver.sol";
 
 contract MarketOrderBook is Script, DeployHelpers {
    // Contract address keys
-   string constant BALANCE_MANAGER_ADDRESS = "PROXY_BALANCEMANAGER";
-   string constant POOL_MANAGER_ADDRESS = "PROXY_POOLMANAGER";
-   string constant ScaleX_ROUTER_ADDRESS = "PROXY_ROUTER";
+   string constant BALANCE_MANAGER_ADDRESS = "BalanceManager";
+   string constant POOL_MANAGER_ADDRESS = "PoolManager";
+   string constant ScaleX_ROUTER_ADDRESS = "ScaleXRouter";
    string constant WETH_ADDRESS = "gsWETH";
    string constant USDC_ADDRESS = "gsUSDC";
 
@@ -28,6 +28,10 @@ contract MarketOrderBook is Script, DeployHelpers {
    // Synthetic tokens
    IERC20 synthWETH;
    IERC20 synthUSDC;
+   
+   // Regular tokens for deposits
+   IERC20 tokenWETH;
+   IERC20 tokenUSDC;
 
    // Track order IDs for verification
    uint48[] marketBuyOrderIds;
@@ -53,6 +57,10 @@ contract MarketOrderBook is Script, DeployHelpers {
        // Load synthetic tokens
        synthWETH = IERC20(deployed[WETH_ADDRESS].addr);
        synthUSDC = IERC20(deployed[USDC_ADDRESS].addr);
+       
+       // Also load regular tokens for deposits
+       tokenWETH = IERC20(deployed["WETH"].addr);
+       tokenUSDC = IERC20(deployed["USDC"].addr);
    }
 
    function run() public {
@@ -62,11 +70,21 @@ contract MarketOrderBook is Script, DeployHelpers {
        deployerAddress = vm.addr(deployerPrivateKey);
 
        placeMarketOrdersETHUSDC();
-       verifyMarketOrders();
        
-       verifyMarketOrderExecution();
-
        vm.stopBroadcast();
+       
+       // Skip verification in broadcast mode to avoid gas issues
+       console.log("Market orders executed successfully!");
+       console.log("Run verifyMarketOrdersOnly() to verify order details if needed");
+   }
+
+   function verifyMarketOrdersOnly() public {
+       uint256 deployerPrivateKey = vm.envUint("PRIVATE_KEY_2");
+       deployerAddress = vm.addr(deployerPrivateKey);
+       
+       // Move verifications outside of broadcast context (no gas costs)
+       verifyMarketOrders();
+       verifyMarketOrderExecution();
    }
 
    function placeMarketOrdersETHUSDC() private {
@@ -79,6 +97,9 @@ contract MarketOrderBook is Script, DeployHelpers {
        // Get the pool using the resolver
        IPoolManager.Pool memory pool = poolManagerResolver.getPool(weth, usdc, address(poolManager));
 
+       // Make local deposits to get synthetic tokens if needed
+       _makeLocalDeposits(1e17, 100e6); // 0.1 ETH, 100 USDC
+       
        // Setup sender with funds for market orders (use smaller amounts matching our actual balances)
        _setupFunds(1e17, 100e6); // 0.1 ETH, 100 USDC
 
@@ -406,5 +427,53 @@ contract MarketOrderBook is Script, DeployHelpers {
        }
        
        console.log("Orderbook state verification passed");
+   }
+
+   function _makeLocalDeposits(uint256 ethAmount, uint256 usdcAmount) private {
+       console.log("\n=== Making Local Deposits to BalanceManager ===");
+       console.log("Depositing ETH amount:", ethAmount / 1e18, "ETH");
+       console.log("Depositing USDC amount:", usdcAmount / 1e6, "USDC");
+       
+       // Mint tokens if we don't have enough balance
+       if (tokenWETH.balanceOf(deployerAddress) < ethAmount) {
+           MockWETH(address(tokenWETH)).mint(deployerAddress, ethAmount);
+           console.log("[SUCCESS] WETH minted to deployer account");
+       }
+       
+       if (tokenUSDC.balanceOf(deployerAddress) < usdcAmount) {
+           MockUSDC(address(tokenUSDC)).mint(deployerAddress, usdcAmount);
+           console.log("[SUCCESS] USDC minted to deployer account");
+       }
+       
+       // Approve BalanceManager to spend WETH
+       tokenWETH.approve(address(balanceManager), ethAmount);
+       console.log("[SUCCESS] WETH approved for BalanceManager");
+       
+       // Approve BalanceManager to spend USDC  
+       tokenUSDC.approve(address(balanceManager), usdcAmount);
+       console.log("[SUCCESS] USDC approved for BalanceManager");
+       
+       // Deposit real WETH to BalanceManager (will receive synthetic balance)
+       balanceManager.depositLocal(address(tokenWETH), ethAmount, deployerAddress);
+       console.log("[SUCCESS] WETH deposited to BalanceManager");
+       
+       // Deposit real USDC to BalanceManager (will receive synthetic balance)
+       balanceManager.depositLocal(address(tokenUSDC), usdcAmount, deployerAddress);
+       console.log("[SUCCESS] USDC deposited to BalanceManager");
+       
+       // Verify BalanceManager balances for the deposited tokens
+       uint256 wethBalance = balanceManager.getBalance(deployerAddress, Currency.wrap(address(tokenWETH)));
+       uint256 usdcBalance = balanceManager.getBalance(deployerAddress, Currency.wrap(address(tokenUSDC)));
+       
+       console.log("BalanceManager WETH balance:", wethBalance / 1e18, "ETH");
+       console.log("BalanceManager USDC balance:", usdcBalance / 1e6, "USDC");
+       
+       // Check token balances in BalanceManager
+       uint256 bmWethBalance = balanceManager.getBalance(deployerAddress, Currency.wrap(address(tokenWETH)));
+       uint256 bmUsdcBalance = balanceManager.getBalance(deployerAddress, Currency.wrap(address(tokenUSDC)));
+       
+       console.log("BalanceManager WETH balance:", bmWethBalance / 1e18, "ETH");
+       console.log("BalanceManager USDC balance:", bmUsdcBalance / 1e6, "USDC");
+       console.log("Local deposits complete\n");
    }
 }

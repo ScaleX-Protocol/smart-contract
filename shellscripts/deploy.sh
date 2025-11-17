@@ -2,7 +2,35 @@
 
 # SCALEX Local Development Deployment Script
 # Deploys CLOB DEX + Lending Protocol for local development
-# Uses DeployAll.s.sol for unified deployment of all contracts
+
+# ========================================
+# ENVIRONMENT VARIABLES
+# ========================================
+# Before running this script, you may need to set these environment variables:
+#
+# REQUIRED:
+# - PRIVATE_KEY: Private key for deployment account (reads from .env file by default)
+#
+# OPTIONAL (with defaults):
+# - SCALEX_CORE_RPC: RPC URL for core chain (default: http://127.0.0.1:8545)
+# - SCALEX_SIDE_RPC: RPC URL for side chain (default: http://127.0.0.1:8545)
+# - CORE_CHAIN_ID: Chain ID for deployment (default: auto-detected from RPC)
+# - FORGE_TIMEOUT: Timeout for forge operations (default: 1200 seconds)
+#
+# USAGE EXAMPLES:
+# # Basic usage (uses defaults):
+# bash shellscripts/deploy.sh
+#
+# # With custom RPC:
+# SCALEX_CORE_RPC="http://localhost:8545" bash shellscripts/deploy.sh
+#
+# # With custom private key and RPC:
+# PRIVATE_KEY="0xYourPrivateKey" SCALEX_CORE_RPC="http://localhost:8545" bash shellscripts/deploy.sh
+#
+# # Using .env file:
+# echo "0xYourPrivateKey" > .env
+# SCALEX_CORE_RPC="http://localhost:8545" bash shellscripts/deploy.sh
+# ========================================
 
 # set -e  # Exit on any error - REMOVED for better error handling
 
@@ -17,6 +45,29 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m' # No Color
+
+# Function to load .env file
+load_env_file() {
+    local env_file="${1:-.env}"
+    
+    if [[ -f "$env_file" ]]; then
+        echo "📝 Loading environment variables from $env_file..."
+        # Read each line, skip comments and empty lines
+        while IFS= read -r line; do
+            # Skip comments and empty lines
+            [[ $line =~ ^[[:space:]]*# ]] && continue
+            [[ -z "${line// }" ]] && continue
+            
+            # Export valid KEY=VALUE pairs
+            if [[ $line =~ ^[A-Za-z_][A-Za-z0-9_]*= ]]; then
+                export "$line"
+            fi
+        done < "$env_file"
+        echo "✅ Environment variables loaded from $env_file"
+    else
+        echo "⚠️  $env_file file not found - using defaults"
+    fi
+}
 
 # Helper function to convert padded synthetic token address to proper format
 convert_synthetic_address() {
@@ -45,6 +96,9 @@ print_error() {
     echo -e "${RED}$1${NC}"
 }
 
+# Load environment variables from .env file
+load_env_file
+
 # Check if we're in the right directory
 if [[ ! -f "Makefile" ]] || [[ ! -d "script" ]]; then
     print_error "Please run this script from the clob-dex project root directory"
@@ -62,7 +116,7 @@ if [[ -f ".env" ]]; then
     source .env
 fi
 
-export PRIVATE_KEY="${PRIVATE_KEY:-0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80}"
+export PRIVATE_KEY="${PRIVATE_KEY:-$(cat .env 2>/dev/null | head -1 | tr -d '\n' || echo "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80")}"
 
 # Support both Anvil and dedicated devnets
 # Always prioritize local Anvil unless explicitly overridden
@@ -103,9 +157,9 @@ get_chain_id() {
     # Try to get chain ID from RPC
     local chain_id=$(curl -s -X POST -H "Content-Type: application/json" -d '{"jsonrpc":"2.0","method":"eth_chainId","params":[],"id":1}' "$rpc_url" | jq -r '.result' 2>/dev/null)
     
-    # If RPC call fails or returns null, default to 31337
+    # If RPC call fails or returns null, default to CORE_CHAIN_ID
     if [[ -z "$chain_id" || "$chain_id" == "null" ]]; then
-        echo "31337"
+        echo "${CORE_CHAIN_ID:-31337}"
     else
         # Remove 0x prefix and convert to decimal
         echo $((chain_id))
@@ -113,7 +167,7 @@ get_chain_id() {
 }
 
 # Get chain ID for this deployment
-CORE_CHAIN_ID=$(get_chain_id "${SCALEX_CORE_RPC:-https://core-devnet.scalex.money}")
+export CORE_CHAIN_ID="${CORE_CHAIN_ID:-$(get_chain_id "${SCALEX_CORE_RPC:-https://core-devnet.scalex.money}")}"
 print_success "Detected Core Chain ID: $CORE_CHAIN_ID"
 
 # Step 1: Clean Previous Data
@@ -125,7 +179,7 @@ print_success "Previous data cleaned"
 
 # Step 2: Phase 1A - Deploy Tokens
 print_step "Step 2: Phase 1A - Deploying Tokens..."
-CORE_MAILBOX=$CORE_MAILBOX SIDE_MAILBOX=$SIDE_MAILBOX forge script script/DeployPhase1A.s.sol:DeployPhase1A --rpc-url "${SCALEX_CORE_RPC}" --broadcast --private-key $PRIVATE_KEY --gas-price 1000000000000 --silent
+CORE_MAILBOX=$CORE_MAILBOX SIDE_MAILBOX=$SIDE_MAILBOX forge script script/deployments/DeployPhase1A.s.sol:DeployPhase1A --rpc-url "${SCALEX_CORE_RPC}" --broadcast --private-key $PRIVATE_KEY --gas-price 1000000000000 --silent
 print_success "Phase 1A deployment completed"
 
 # Add delay between phases
@@ -134,7 +188,7 @@ sleep 15
 
 # Step 2.1: Phase 1B - Deploy Core Infrastructure
 print_step "Step 2.1: Phase 1B - Deploying Core Infrastructure..."
-CORE_MAILBOX=$CORE_MAILBOX SIDE_MAILBOX=$SIDE_MAILBOX forge script script/DeployPhase1B.s.sol:DeployPhase1B --rpc-url "${SCALEX_CORE_RPC}" --broadcast --private-key $PRIVATE_KEY --gas-price 1000000000000 --silent
+CORE_MAILBOX=$CORE_MAILBOX SIDE_MAILBOX=$SIDE_MAILBOX forge script script/deployments/DeployPhase1B.s.sol:DeployPhase1B --rpc-url "${SCALEX_CORE_RPC}" --broadcast --private-key $PRIVATE_KEY --gas-price 1000000000000 --silent
 print_success "Phase 1B deployment completed"
 
 # Add delay between phases
@@ -143,7 +197,7 @@ sleep 15
 
 # Step 2.2: Phase 1C - Deploy Final Infrastructure
 print_step "Step 2.2: Phase 1C - Deploying Final Infrastructure..."
-CORE_MAILBOX=$CORE_MAILBOX SIDE_MAILBOX=$SIDE_MAILBOX forge script script/DeployPhase1C.s.sol:DeployPhase1C --rpc-url "${SCALEX_CORE_RPC}" --broadcast --private-key $PRIVATE_KEY --gas-price 1000000000000 --silent
+CORE_MAILBOX=$CORE_MAILBOX SIDE_MAILBOX=$SIDE_MAILBOX forge script script/deployments/DeployPhase1C.s.sol:DeployPhase1C --rpc-url "${SCALEX_CORE_RPC}" --broadcast --private-key $PRIVATE_KEY --gas-price 1000000000000 --silent
 print_success "Phase 1C deployment completed"
 
 # Add delay before Phase 2
@@ -211,7 +265,7 @@ else
     exit 1
 fi
 
-CORE_MAILBOX=$CORE_MAILBOX SIDE_MAILBOX=$SIDE_MAILBOX forge script script/DeployPhase2.s.sol:DeployPhase2 --rpc-url "${SCALEX_CORE_RPC}" --broadcast --private-key $PRIVATE_KEY --gas-price 1000000000000 --silent
+CORE_MAILBOX=$CORE_MAILBOX SIDE_MAILBOX=$SIDE_MAILBOX forge script script/deployments/DeployPhase2.s.sol:DeployPhase2 --rpc-url "${SCALEX_CORE_RPC}" --broadcast --private-key $PRIVATE_KEY --gas-price 1000000000000 --silent
 print_success "Phase 2 configuration completed"
 
 # Add delay between Phase 2 and Phase 3 to prevent rate limiting
@@ -255,7 +309,7 @@ ORACLE_ADDRESS=$(cat ./deployments/${CORE_CHAIN_ID}.json | jq -r '.Oracle // "0x
             attempt=$((attempt + 1))
         done
         
-        echo "  ❌ Max retries exceeded"
+        echo "   Max retries exceeded"
         return 1
     }
     
@@ -449,22 +503,22 @@ ORACLE_ADDRESS=$(cat ./deployments/${CORE_CHAIN_ID}.json | jq -r '.Oracle // "0x
                     GAS_PRICE=$((BASE_GAS_PRICE + i * 100000000))
                     
                     gsUSDC_TX=$(cast send $FACTORY_ADDRESS "createSyntheticToken(uint32,address,uint32,string,string,uint8,uint8)" \
-                        31337 $USDC_ADDRESS 31337 "gsUSDC" "gsUSDC" 6 6 \
+                        $CORE_CHAIN_ID $USDC_ADDRESS $CORE_CHAIN_ID "gsUSDC" "gsUSDC" 6 6 \
                         --rpc-url "${SCALEX_CORE_RPC}" --private-key $PRIVATE_KEY \
                         --gas-price $GAS_PRICE \
                         --nonce $CURRENT_NONCE \
                         --confirmations 1 2>/dev/null)
                     if [[ $? -eq 0 ]]; then
-                        echo "    ✅ Transaction submitted successfully, waiting for confirmation..."
+                        echo "     Transaction submitted successfully, waiting for confirmation..."
                         sleep 3  # Wait for transaction to be processed
                         # Query the factory to get the synthetic token address (reliable method)
-                        gsUSDC_ADDRESS_RAW=$(cast call $FACTORY_ADDRESS "getSyntheticToken(uint32,address)" 31337 $USDC_ADDRESS --rpc-url "${SCALEX_CORE_RPC}" 2>/dev/null)
+                        gsUSDC_ADDRESS_RAW=$(cast call $FACTORY_ADDRESS "getSyntheticToken(uint32,address)" $CORE_CHAIN_ID $USDC_ADDRESS --rpc-url "${SCALEX_CORE_RPC}" 2>/dev/null)
                         gsUSDC_ADDRESS=$(convert_synthetic_address "$gsUSDC_ADDRESS_RAW")
                         if [[ -n "$gsUSDC_ADDRESS" && "$gsUSDC_ADDRESS" != "0x0000000000000000000000000000000000000000" ]]; then
                             break
                         fi
                     else
-                        echo "    ❌ Transaction failed, waiting for next retry..."
+                        echo "     Transaction failed, waiting for next retry..."
                         sleep 8  # Longer wait between retries
                     fi
                     echo "    🔁 Retry $i/3 for gsUSDC..."
@@ -491,22 +545,22 @@ ORACLE_ADDRESS=$(cat ./deployments/${CORE_CHAIN_ID}.json | jq -r '.Oracle // "0x
                     GAS_PRICE=$((BASE_GAS_PRICE + i * 100000000))
                     
                     gsWETH_TX=$(cast send $FACTORY_ADDRESS "createSyntheticToken(uint32,address,uint32,string,string,uint8,uint8)" \
-                        31337 $WETH_ADDRESS 31337 "gsWETH" "gsWETH" 18 18 \
+                        $CORE_CHAIN_ID $WETH_ADDRESS $CORE_CHAIN_ID "gsWETH" "gsWETH" 18 18 \
                         --rpc-url "${SCALEX_CORE_RPC}" --private-key $PRIVATE_KEY \
                         --gas-price $GAS_PRICE \
                         --nonce $CURRENT_NONCE \
                         --confirmations 1 2>/dev/null)
                     if [[ $? -eq 0 ]]; then
-                        echo "    ✅ Transaction submitted successfully, waiting for confirmation..."
+                        echo "     Transaction submitted successfully, waiting for confirmation..."
                         sleep 3  # Wait for transaction to be processed
                         # Query the factory to get the synthetic token address (reliable method)
-                        gsWETH_ADDRESS_RAW=$(cast call $FACTORY_ADDRESS "getSyntheticToken(uint32,address)" 31337 $WETH_ADDRESS --rpc-url "${SCALEX_CORE_RPC}" 2>/dev/null)
+                        gsWETH_ADDRESS_RAW=$(cast call $FACTORY_ADDRESS "getSyntheticToken(uint32,address)" $CORE_CHAIN_ID $WETH_ADDRESS --rpc-url "${SCALEX_CORE_RPC}" 2>/dev/null)
                         gsWETH_ADDRESS=$(convert_synthetic_address "$gsWETH_ADDRESS_RAW")
                         if [[ -n "$gsWETH_ADDRESS" && "$gsWETH_ADDRESS" != "0x0000000000000000000000000000000000000000" ]]; then
                             break
                         fi
                     else
-                        echo "    ❌ Transaction failed, waiting for next retry..."
+                        echo "     Transaction failed, waiting for next retry..."
                         sleep 8  # Longer wait between retries
                     fi
                     echo "    🔁 Retry $i/3 for gsWETH..."
@@ -533,22 +587,22 @@ ORACLE_ADDRESS=$(cat ./deployments/${CORE_CHAIN_ID}.json | jq -r '.Oracle // "0x
                     GAS_PRICE=$((BASE_GAS_PRICE + i * 100000000))
                     
                     gsWBTC_TX=$(cast send $FACTORY_ADDRESS "createSyntheticToken(uint32,address,uint32,string,string,uint8,uint8)" \
-                        31337 $WBTC_ADDRESS 31337 "gsWBTC" "gsWBTC" 8 8 \
+                        $CORE_CHAIN_ID $WBTC_ADDRESS $CORE_CHAIN_ID "gsWBTC" "gsWBTC" 8 8 \
                         --rpc-url "${SCALEX_CORE_RPC}" --private-key $PRIVATE_KEY \
                         --gas-price $GAS_PRICE \
                         --nonce $CURRENT_NONCE \
                         --confirmations 1 2>/dev/null)
                     if [[ $? -eq 0 ]]; then
-                        echo "    ✅ Transaction submitted successfully, waiting for confirmation..."
+                        echo "     Transaction submitted successfully, waiting for confirmation..."
                         sleep 3  # Wait for transaction to be processed
                         # Query the factory to get the synthetic token address (reliable method)
-                        gsWBTC_ADDRESS_RAW=$(cast call $FACTORY_ADDRESS "getSyntheticToken(uint32,address)" 31337 $WBTC_ADDRESS --rpc-url "${SCALEX_CORE_RPC}" 2>/dev/null)
+                        gsWBTC_ADDRESS_RAW=$(cast call $FACTORY_ADDRESS "getSyntheticToken(uint32,address)" $CORE_CHAIN_ID $WBTC_ADDRESS --rpc-url "${SCALEX_CORE_RPC}" 2>/dev/null)
                         gsWBTC_ADDRESS=$(convert_synthetic_address "$gsWBTC_ADDRESS_RAW")
                         if [[ -n "$gsWBTC_ADDRESS" && "$gsWBTC_ADDRESS" != "0x0000000000000000000000000000000000000000" ]]; then
                             break
                         fi
                     else
-                        echo "    ❌ Transaction failed, waiting for next retry..."
+                        echo "     Transaction failed, waiting for next retry..."
                         sleep 8  # Longer wait between retries
                     fi
                     echo "    🔁 Retry $i/3 for gsWBTC..."
@@ -578,19 +632,19 @@ ORACLE_ADDRESS=$(cat ./deployments/${CORE_CHAIN_ID}.json | jq -r '.Oracle // "0x
                 
                 echo "  📋 Updating gsUSDC mapping in TokenRegistry..."
                 cast send $TOKEN_REGISTRY_ADDRESS "updateTokenMapping(uint32,address,uint32,address,uint8)" \
-                    31337 $USDC_ADDRESS 31337 $gsUSDC_ADDRESS 6 \
+                    $CORE_CHAIN_ID $USDC_ADDRESS $CORE_CHAIN_ID $gsUSDC_ADDRESS 6 \
                     --rpc-url "${SCALEX_CORE_RPC}" --private-key $PRIVATE_KEY > /dev/null 2>&1
                 print_success "gsUSDC mapping updated in TokenRegistry"
                 
                 echo "  📋 Updating gsWETH mapping in TokenRegistry..."
                 cast send $TOKEN_REGISTRY_ADDRESS "updateTokenMapping(uint32,address,uint32,address,uint8)" \
-                    31337 $WETH_ADDRESS 31337 $gsWETH_ADDRESS 18 \
+                    $CORE_CHAIN_ID $WETH_ADDRESS $CORE_CHAIN_ID $gsWETH_ADDRESS 18 \
                     --rpc-url "${SCALEX_CORE_RPC}" --private-key $PRIVATE_KEY > /dev/null 2>&1
                 print_success "gsWETH mapping updated in TokenRegistry"
                 
                 echo "  📋 Updating gsWBTC mapping in TokenRegistry..."
                 cast send $TOKEN_REGISTRY_ADDRESS "updateTokenMapping(uint32,address,uint32,address,uint8)" \
-                    31337 $WBTC_ADDRESS 31337 $gsWBTC_ADDRESS 8 \
+                    $CORE_CHAIN_ID $WBTC_ADDRESS $CORE_CHAIN_ID $gsWBTC_ADDRESS 8 \
                     --rpc-url "${SCALEX_CORE_RPC}" --private-key $PRIVATE_KEY > /dev/null 2>&1
                 print_success "gsWBTC mapping updated in TokenRegistry"
                 
@@ -630,7 +684,7 @@ ORACLE_ADDRESS=$(cat ./deployments/${CORE_CHAIN_ID}.json | jq -r '.Oracle // "0x
                 GAS_PRICE=$(echo "$BASE_GAS_PRICE + 0.0000001" | bc -l)
                 
                 gsUSDC_TX=$(cast send $CURRENT_FACTORY "createSyntheticToken(uint32,address,uint32,string,string,uint8,uint8)" \
-                    31337 $USDC_ADDRESS 31337 "gsUSDC" "gsUSDC" 6 6 \
+                    $CORE_CHAIN_ID $USDC_ADDRESS $CORE_CHAIN_ID "gsUSDC" "gsUSDC" 6 6 \
                     --rpc-url "${SCALEX_CORE_RPC}" --private-key $PRIVATE_KEY \
                     --gas-price $GAS_PRICE \
                     --nonce $CURRENT_NONCE \
@@ -639,7 +693,7 @@ ORACLE_ADDRESS=$(cat ./deployments/${CORE_CHAIN_ID}.json | jq -r '.Oracle // "0x
                     echo "  Failed to create gsUSDC token"
                 fi
                 # Query the factory to get the synthetic token address (reliable method)
-                gsUSDC_ADDRESS_RAW=$(cast call $CURRENT_FACTORY "getSyntheticToken(uint32,address)" 31337 $USDC_ADDRESS --rpc-url "${SCALEX_CORE_RPC}" 2>/dev/null)
+                gsUSDC_ADDRESS_RAW=$(cast call $CURRENT_FACTORY "getSyntheticToken(uint32,address)" $CORE_CHAIN_ID $USDC_ADDRESS --rpc-url "${SCALEX_CORE_RPC}" 2>/dev/null)
                 gsUSDC_ADDRESS=$(convert_synthetic_address "$gsUSDC_ADDRESS_RAW")
                 # Validate the address before saving
                 if [[ -n "$gsUSDC_ADDRESS" && "$gsUSDC_ADDRESS" != "0x0000000000000000000000000000000000000000" ]]; then
@@ -665,13 +719,13 @@ ORACLE_ADDRESS=$(cat ./deployments/${CORE_CHAIN_ID}.json | jq -r '.Oracle // "0x
                 GAS_PRICE=$(echo "$BASE_GAS_PRICE + 0.0000001" | bc -l)
                 
                 gsWETH_TX=$(cast send $CURRENT_FACTORY "createSyntheticToken(uint32,address,uint32,string,string,uint8,uint8)" \
-                    31337 $WETH_ADDRESS 31337 "gsWETH" "gsWETH" 18 18 \
+                    $CORE_CHAIN_ID $WETH_ADDRESS $CORE_CHAIN_ID "gsWETH" "gsWETH" 18 18 \
                     --rpc-url "${SCALEX_CORE_RPC}" --private-key $PRIVATE_KEY \
                     --gas-price $GAS_PRICE \
                     --nonce $CURRENT_NONCE \
                     --confirmations 1 2>/dev/null)
                 # Query the factory to get the synthetic token address (reliable method)
-                gsWETH_ADDRESS_RAW=$(cast call $CURRENT_FACTORY "getSyntheticToken(uint32,address)" 31337 $WETH_ADDRESS --rpc-url "${SCALEX_CORE_RPC}")
+                gsWETH_ADDRESS_RAW=$(cast call $CURRENT_FACTORY "getSyntheticToken(uint32,address)" $CORE_CHAIN_ID $WETH_ADDRESS --rpc-url "${SCALEX_CORE_RPC}")
                 gsWETH_ADDRESS=$(convert_synthetic_address "$gsWETH_ADDRESS_RAW")
                 jq --arg gsweth "$gsWETH_ADDRESS" '.gsWETH = $gsweth' ./deployments/${CORE_CHAIN_ID}.json > ./deployments/${CORE_CHAIN_ID}.json.tmp && \
                 mv ./deployments/${CORE_CHAIN_ID}.json.tmp ./deployments/${CORE_CHAIN_ID}.json
@@ -692,13 +746,13 @@ ORACLE_ADDRESS=$(cat ./deployments/${CORE_CHAIN_ID}.json | jq -r '.Oracle // "0x
                 GAS_PRICE=$(echo "$BASE_GAS_PRICE + 0.0000001" | bc -l)
                 
                 gsWBTC_TX=$(cast send $CURRENT_FACTORY "createSyntheticToken(uint32,address,uint32,string,string,uint8,uint8)" \
-                    31337 $WBTC_ADDRESS 31337 "gsWBTC" "gsWBTC" 8 8 \
+                    $CORE_CHAIN_ID $WBTC_ADDRESS $CORE_CHAIN_ID "gsWBTC" "gsWBTC" 8 8 \
                     --rpc-url "${SCALEX_CORE_RPC}" --private-key $PRIVATE_KEY \
                     --gas-price $GAS_PRICE \
                     --nonce $CURRENT_NONCE \
                     --confirmations 1 2>/dev/null)
                 # Query the factory to get the synthetic token address (reliable method)
-                gsWBTC_ADDRESS_RAW=$(cast call $CURRENT_FACTORY "getSyntheticToken(uint32,address)" 31337 $WBTC_ADDRESS --rpc-url "${SCALEX_CORE_RPC}")
+                gsWBTC_ADDRESS_RAW=$(cast call $CURRENT_FACTORY "getSyntheticToken(uint32,address)" $CORE_CHAIN_ID $WBTC_ADDRESS --rpc-url "${SCALEX_CORE_RPC}")
                 gsWBTC_ADDRESS=$(convert_synthetic_address "$gsWBTC_ADDRESS_RAW")
                 jq --arg gswbtc "$gsWBTC_ADDRESS" '.gsWBTC = $gswbtc' ./deployments/${CORE_CHAIN_ID}.json > ./deployments/${CORE_CHAIN_ID}.json.tmp && \
                 mv ./deployments/${CORE_CHAIN_ID}.json.tmp ./deployments/${CORE_CHAIN_ID}.json
@@ -711,7 +765,7 @@ ORACLE_ADDRESS=$(cat ./deployments/${CORE_CHAIN_ID}.json | jq -r '.Oracle // "0x
             if [[ "$CURRENT_GSUSDC" != "0x0000000000000000000000000000000000000000" && "$CURRENT_GSUSDC" != "0x" && ${#CURRENT_GSUSDC} -gt 10 ]]; then
                 echo "  📋 Registering gsUSDC in TokenRegistry..."
                 cast send $TOKEN_REGISTRY_ADDRESS "registerTokenMapping(uint32,address,uint32,address,string,uint8,uint8)" \
-                    31337 $USDC_ADDRESS 31337 $CURRENT_GSUSDC "gsUSDC" 6 6 \
+                    $CORE_CHAIN_ID $USDC_ADDRESS $CORE_CHAIN_ID $CURRENT_GSUSDC "gsUSDC" 6 6 \
                     --rpc-url "${SCALEX_CORE_RPC}" --private-key $PRIVATE_KEY > /dev/null 2>&1
                 print_success "gsUSDC registered in TokenRegistry"
             fi
@@ -719,7 +773,7 @@ ORACLE_ADDRESS=$(cat ./deployments/${CORE_CHAIN_ID}.json | jq -r '.Oracle // "0x
             if [[ "$CURRENT_GSWETH" != "0x0000000000000000000000000000000000000000" ]]; then
                 echo "  📋 Registering gsWETH in TokenRegistry..."
                 cast send $TOKEN_REGISTRY_ADDRESS "registerTokenMapping(uint32,address,uint32,address,string,uint8,uint8)" \
-                    31337 $WETH_ADDRESS 31337 $CURRENT_GSWETH "gsWETH" 18 18 \
+                    $CORE_CHAIN_ID $WETH_ADDRESS $CORE_CHAIN_ID $CURRENT_GSWETH "gsWETH" 18 18 \
                     --rpc-url "${SCALEX_CORE_RPC}" --private-key $PRIVATE_KEY > /dev/null 2>&1
                 print_success "gsWETH registered in TokenRegistry"
             fi
@@ -727,7 +781,7 @@ ORACLE_ADDRESS=$(cat ./deployments/${CORE_CHAIN_ID}.json | jq -r '.Oracle // "0x
             if [[ "$CURRENT_GSWBTC" != "0x0000000000000000000000000000000000000000" ]]; then
                 echo "  📋 Registering gsWBTC in TokenRegistry..."
                 cast send $TOKEN_REGISTRY_ADDRESS "registerTokenMapping(uint32,address,uint32,address,string,uint8,uint8)" \
-                    31337 $WBTC_ADDRESS 31337 $CURRENT_GSWBTC "gsWBTC" 8 8 \
+                    $CORE_CHAIN_ID $WBTC_ADDRESS $CORE_CHAIN_ID $CURRENT_GSWBTC "gsWBTC" 8 8 \
                     --rpc-url "${SCALEX_CORE_RPC}" --private-key $PRIVATE_KEY > /dev/null 2>&1
                 print_success "gsWBTC registered in TokenRegistry"
             fi
@@ -742,7 +796,7 @@ ORACLE_ADDRESS=$(cat ./deployments/${CORE_CHAIN_ID}.json | jq -r '.Oracle // "0x
         
         # Run DeployPhase3 script to create pools
         echo "  📊 Running Phase 3 deployment..."
-        if forge script script/DeployPhase3.s.sol:DeployPhase3 \
+        if forge script script/deployments/DeployPhase3.s.sol:DeployPhase3 \
             --rpc-url "${SCALEX_CORE_RPC}" \
             --broadcast \
             --private-key $PRIVATE_KEY \
@@ -981,7 +1035,7 @@ print_success "All verification steps completed"
 print_success "Comprehensive verification completed!"
 
 echo ""
-print_success "🎉 Core Chain Deployment completed successfully!"
+print_success " Core Chain Deployment completed successfully!"
 
 # Validation - Local Deployment Only
 print_step "Validating Local Deployment..."
@@ -1006,7 +1060,7 @@ else
 fi
 
 echo ""
-print_success "🎉 SCALEX Core Chain CLOB DEX + Lending Protocol deployment completed successfully!"
+print_success " SCALEX Core Chain CLOB DEX + Lending Protocol deployment completed successfully!"
 
 # Check if deployment files exist
 if [[ -f "deployments/${CORE_CHAIN_ID}.json" ]]; then
@@ -1057,11 +1111,11 @@ echo "  🎯 Trading pairs: 9 USDC-centric pools for optimal liquidity"
 echo "  🔗 Cross-chain: USDC + 5 major tokens enabled for cross-chain"
 
 echo ""
-print_success "🎉 Local Development Environment Ready!"
+print_success " Local Development Environment Ready!"
 
 echo ""
 echo "🚀 Quick Commands:"
-echo "  🧪 Test Lending: forge script script/TestLending.s.sol:TestLending --rpc-url ${SCALEX_CORE_RPC}"
+echo "  🧪 Test Lending: forge script script/lending/PopulateLendingData.sol:PopulateLendingData --rpc-url ${SCALEX_CORE_RPC}"
 echo "  💰 Fill OrderBook: make fill-orderbook network=scalex_core_devnet"
 echo "  📈 Market Order: make market-order network=scalex_core_devnet"
 echo "  🧪 Local Deposit: make test-local-deposit network=scalex_core_devnet token=USDC amount=1000000000"

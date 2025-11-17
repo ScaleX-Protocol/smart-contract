@@ -51,7 +51,7 @@ contract OracleLendingIntegrationTest is Test {
         (BeaconProxy lendingProxy,) = beaconDeployer.deployUpgradeableContract(
             address(new LendingManager()),
             owner,
-            abi.encodeCall(LendingManager.initialize, (owner, address(oracle)))
+            abi.encodeCall(LendingManager.initialize, (owner, address(this), address(oracle)))
         );
         lendingManager = LendingManager(address(lendingProxy));
         
@@ -124,7 +124,7 @@ contract OracleLendingIntegrationTest is Test {
         // Deploy new LendingManager without setting Oracle
         vm.startPrank(owner);
         LendingManager isolatedLendingManager = new LendingManager();
-        isolatedLendingManager.initialize(owner, address(0)); // No oracle set
+        isolatedLendingManager.initialize(owner, address(this), address(0)); // No oracle set
         
         // Even without oracle, functions should not revert
         uint256 collateralPrice = isolatedLendingManager.getCollateralPrice(address(token));

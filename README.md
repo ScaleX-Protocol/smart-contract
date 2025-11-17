@@ -9,7 +9,7 @@
 
 A revolutionary DeFi protocol that seamlessly combines CLOB trading with integrated lending. ScaleX enables **zero-capital trading** through auto-borrow/auto-repay mechanisms while users earn yield on deposits. Place limit orders without owning assets and let the system automatically handle borrowing and repayment. ScaleX brings together the best of CEX performance, DEX trustlessness, and innovative lending integration in a single protocol.
 
-## 🎯 **System Status: OPERATIONAL** ✅
+## 🎯 **System Status: OPERATIONAL** 
 
 The ScaleX unified CLOB DEX-Lending protocol is **fully deployed and working**!
 

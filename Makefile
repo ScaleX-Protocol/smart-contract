@@ -44,7 +44,7 @@ define get_paired_chain
 $(if $(filter scalex_core_devnet,$(1)),31337,$(if $(filter scalex_side_devnet,$(1)),31337,$(if $(filter base_sepolia,$(1)),31337,$(1))))
 endef
 
-.PHONY: account chain compile deploy deploy-verify flatten fork format generate lint test verify upgrade upgrade-verify full-integration simple-integration simple-demo swap deploy-chain-balance-manager add-tokens-chain-balance-manager add-single-token-chain-balance-manager remove-single-token-chain-balance-manager list-tokens-chain-balance-manager test-chain-balance-manager fill-orderbook-tokens market-orderbook-tokens deploy-upgradeable-scalex upgrade-scalex-contract test-espresso-integration check-env verify-balance validate-deployment validate-local-deployment validate-data-population validate-cross-chain-deposit test-local-deposit fill-orderbook fill-orderbook-custom market-order transfer-tokens mint-tokens diagnose-market-order deploy-unified-lending populate-lending-data deploy-oracle configure-lending-oracle update-oracle-prices display-oracle-prices test-lending-operations call-lending-op configure-lending-asset place-auto-repay-order advance-time check-lending-position check-lending-positions deploy-focused-ecosystem deploy-development deploy-production
+.PHONY: account chain compile deploy deploy-verify flatten fork format generate lint test verify upgrade upgrade-verify full-integration simple-integration simple-demo swap deploy-chain-balance-manager add-tokens-chain-balance-manager add-single-token-chain-balance-manager remove-single-token-chain-balance-manager list-tokens-chain-balance-manager test-chain-balance-manager fill-orderbook-tokens market-orderbook-tokens deploy-upgradeable-scalex upgrade-scalex-contract test-espresso-integration check-env verify-balance validate-deployment validate-data-population validate-cross-chain-deposit test-local-deposit fill-orderbook fill-orderbook-custom market-order transfer-tokens mint-tokens diagnose-market-order deploy-unified-lending populate-lending-data deploy-oracle configure-lending-oracle update-oracle-prices display-oracle-prices test-lending-operations call-lending-op configure-lending-asset place-auto-repay-order advance-time check-lending-position check-lending-positions deploy-focused-ecosystem deploy-development deploy-production
 
 # Helper function to run forge script
 define forge_script
@@ -249,7 +249,7 @@ setup-scalex-core-devnet-complete: check-env
 	@echo ""
 	@$(MAKE) configure-scalex-core-devnet-tokens
 	@echo ""
-	@echo "🎉 SCALEX Core Devnet complete setup finished!"
+	@echo " SCALEX Core Devnet complete setup finished!"
 
 # Deploy core chain trading system (generalized)
 deploy-core-chain-trading: check-env
@@ -323,12 +323,6 @@ validate-deployment:
 	@echo "🔍 Running deployment validation script..."
 	@echo "📝 Output will be logged to deployment.log"
 	@./shellscripts/validate-deployment.sh
-
-# Validate local development deployment (single-chain Anvil)
-# Usage: make validate-local-deployment
-validate-local-deployment:
-	@echo "🔍 Running local development validation script..."
-	@./shellscripts/validate-local-deployment.sh
 
 # Validate data population (trader balances, liquidity, trading events)
 validate-data-population:
@@ -513,7 +507,7 @@ deploy-focused-ecosystem: check-env
 	@echo "Step 2: Deploying Unified Lending..."
 	make deploy-unified-lending network=$(network)
 	@echo "Step 3: Configuring Focused Ecosystem..."
-	@echo "🎉 Focused Ecosystem Deployment Complete!"
+	@echo " Focused Ecosystem Deployment Complete!"
 
 # Complete two-chain setup (requires setting network for each step)
 setup-two-chain-complete: check-env
@@ -536,7 +530,7 @@ deploy-upgradeable-all: check-env
 	@echo ""
 	@$(MAKE) deploy-upgradeable-scalex-side-devnet
 	@echo ""
-	@echo "🎉 All upgradeable contracts deployed!"
+	@echo " All upgradeable contracts deployed!"
 	@echo "📋 Update proxy addresses in .env for instant upgrades"
 	
 # Define a target to display help information

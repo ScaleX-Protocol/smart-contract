@@ -2,15 +2,15 @@
 pragma solidity ^0.8.26;
 
 import "forge-std/Script.sol";
-import {MockToken} from "../src/mocks/MockToken.sol";
-import {BalanceManager} from "../src/core/BalanceManager.sol";
-import {PoolManager} from "../src/core/PoolManager.sol";
-import {ScaleXRouter} from "../src/core/ScaleXRouter.sol";
-import {OrderBook} from "../src/core/OrderBook.sol";
-import {LendingManager} from "../src/yield/LendingManager.sol";
-import {Oracle} from "../src/core/Oracle.sol";
-import {TokenRegistry} from "../src/core/TokenRegistry.sol";
-import {SyntheticTokenFactory} from "../src/core/SyntheticTokenFactory.sol";
+import {MockToken} from "@scalex/mocks/MockToken.sol";
+import {BalanceManager} from "@scalexcore/BalanceManager.sol";
+import {PoolManager} from "@scalexcore/PoolManager.sol";
+import {ScaleXRouter} from "@scalexcore/ScaleXRouter.sol";
+import {OrderBook} from "@scalexcore/OrderBook.sol";
+import {LendingManager} from "@scalex/yield/LendingManager.sol";
+import {Oracle} from "@scalexcore/Oracle.sol";
+import {TokenRegistry} from "@scalexcore/TokenRegistry.sol";
+import {SyntheticTokenFactory} from "@scalexcore/SyntheticTokenFactory.sol";
 import {UpgradeableBeacon} from "@openzeppelin/contracts/proxy/beacon/UpgradeableBeacon.sol";
 import {BeaconProxy} from "@openzeppelin/contracts/proxy/beacon/BeaconProxy.sol";
 
@@ -78,7 +78,7 @@ contract DeployPhase1 is Script {
         UpgradeableBeacon lendingManagerBeacon = new UpgradeableBeacon(address(lendingManagerImpl), deployer);
         BeaconProxy lendingManagerProxy = new BeaconProxy(
             address(lendingManagerBeacon),
-            abi.encodeCall(LendingManager.initialize, (deployer, address(oracleProxy)))
+            abi.encodeCall(LendingManager.initialize, (deployer, deployer, address(oracleProxy)))
         );
         console.log("[OK] LendingManager proxy deployed:", address(lendingManagerProxy));
         

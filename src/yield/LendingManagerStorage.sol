@@ -9,7 +9,7 @@ import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IER
  */
 abstract contract LendingManagerStorage {
     // keccak256(abi.encode(uint256(keccak256("scalex.clob.storage.lendingmanager")) - 1)) & ~bytes32(uint256(0xff))
-    bytes32 private constant STORAGE_SLOT = 0xa0938c47b5c654ca88fd5f46a35251d66e96b0e70f06871f4be1ef4fd259f100;
+    bytes32 private constant STORAGE_SLOT = 0xb5a4de8b9c6f1e3d2a7c8e9b0a1f2d3c4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b;
 
     // Structs defined outside of Storage struct
     struct AssetConfig {

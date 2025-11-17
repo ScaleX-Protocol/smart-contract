@@ -65,7 +65,7 @@ contract AutoRepayTest is Test, IPriceOracle {
         (BeaconProxy lendingManagerProxy,) = beaconDeployer.deployUpgradeableContract(
             address(new LendingManager()),
             owner,
-            abi.encodeCall(LendingManager.initialize, (owner, address(this)))
+            abi.encodeCall(LendingManager.initialize, (owner, address(this), address(0)))
         );
         lendingManager = LendingManager(address(lendingManagerProxy));
 

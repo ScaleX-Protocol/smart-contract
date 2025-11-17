@@ -122,7 +122,7 @@ else
 fi
 
 echo ""
-print_success "🎉 Faucet Deployment completed successfully!"
+print_success " Faucet Deployment completed successfully!"
 
 # Verification
 print_step "Verifying Faucet Deployment..."

@@ -2,12 +2,12 @@
 pragma solidity ^0.8.26;
 
 import {Script, console} from "forge-std/Script.sol";
-import {OrderBook} from "../src/core/OrderBook.sol";
+import {OrderBook} from "@scalexcore/OrderBook.sol";
 import {UpgradeableBeacon} from "@openzeppelin/contracts/proxy/beacon/UpgradeableBeacon.sol";
 import {BeaconProxy} from "@openzeppelin/contracts/proxy/beacon/BeaconProxy.sol";
-import {PoolManager} from "../src/core/PoolManager.sol";
-import {ScaleXRouter} from "../src/core/ScaleXRouter.sol";
-import {SyntheticTokenFactory} from "../src/core/SyntheticTokenFactory.sol";
+import {PoolManager} from "@scalexcore/PoolManager.sol";
+import {ScaleXRouter} from "@scalexcore/ScaleXRouter.sol";
+import {SyntheticTokenFactory} from "@scalexcore/SyntheticTokenFactory.sol";
 
 contract DeployPhase1C is Script {
     struct Phase1CDeployment {

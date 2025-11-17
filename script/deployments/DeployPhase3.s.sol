@@ -2,12 +2,12 @@
 pragma solidity ^0.8.26;
 
 import "forge-std/Script.sol";
-import {PoolManager} from "../src/core/PoolManager.sol";
-import {IPoolManager} from "../src/core/interfaces/IPoolManager.sol";
-import {ScaleXRouter} from "../src/core/ScaleXRouter.sol";
-import {Currency} from "../src/core/libraries/Currency.sol";
-import {IOrderBook} from "../src/core/interfaces/IOrderBook.sol";
-import {PoolKey, PoolId} from "../src/core/libraries/Pool.sol";
+import {PoolManager} from "@scalexcore/PoolManager.sol";
+import {IPoolManager} from "@scalexcore/interfaces/IPoolManager.sol";
+import {ScaleXRouter} from "@scalexcore/ScaleXRouter.sol";
+import {Currency} from "@scalexcore/libraries/Currency.sol";
+import {IOrderBook} from "@scalexcore/interfaces/IOrderBook.sol";
+import {PoolKey, PoolId} from "@scalexcore/libraries/Pool.sol";
 
 contract DeployPhase3 is Script {
     struct Phase3Deployment {
@@ -91,7 +91,12 @@ contract DeployPhase3 is Script {
             console.log("Starting broadcast to create missing pools...");
             vm.startBroadcast(deployerPrivateKey);
             
-            // Step 2: Create trading rules
+            // Step 2: Set router in PoolManager first
+            console.log("Step 2: Setting router in PoolManager...");
+            pm.setRouter(scaleXRouter);
+            console.log("[OK] Router set in PoolManager");
+            
+            // Step 3: Create trading rules
             IOrderBook.TradingRules memory tradingRules = IOrderBook.TradingRules({
                 minTradeAmount: 1000000,    // 1 USDC minimum
                 minAmountMovement: 1000000,  // 1 USDC minimum price movement
@@ -132,6 +137,8 @@ contract DeployPhase3 is Script {
                 
                 console.log("[OK] WBTC/USDC pool created with OrderBook:", wbtcUsdcOrderBook);
             }
+            
+            console.log("[OK] OrderBook router configuration completed (automatic during pool creation)");
             
             vm.stopBroadcast();
         }

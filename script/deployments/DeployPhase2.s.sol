@@ -2,13 +2,13 @@
 pragma solidity ^0.8.26;
 
 import "forge-std/Script.sol";
-import {TokenRegistry} from "../src/core/TokenRegistry.sol";
-import {SyntheticTokenFactory} from "../src/core/SyntheticTokenFactory.sol";
-import {SyntheticToken} from "../src/token/SyntheticToken.sol";
-import {LendingManager} from "../src/yield/LendingManager.sol";
-import {ScaleXRouter} from "../src/core/ScaleXRouter.sol";
-import {BalanceManager} from "../src/core/BalanceManager.sol";
-import {PoolManager} from "../src/core/PoolManager.sol";
+import {TokenRegistry} from "@scalexcore/TokenRegistry.sol";
+import {SyntheticTokenFactory} from "@scalexcore/SyntheticTokenFactory.sol";
+import {SyntheticToken} from "@scalex/token/SyntheticToken.sol";
+import {LendingManager} from "@scalex/yield/LendingManager.sol";
+import {ScaleXRouter} from "@scalexcore/ScaleXRouter.sol";
+import {BalanceManager} from "@scalexcore/BalanceManager.sol";
+import {PoolManager} from "@scalexcore/PoolManager.sol";
 
 contract DeployPhase2 is Script {
 

@@ -24,9 +24,12 @@ echo "🔍 Validating SCALEX Data Population..."
 echo "Timestamp: $(date)"
 echo ""
 
-# Trader addresses
-PRIMARY_TRADER="0x27dD1eBE7D826197FD163C134E79502402Fd7cB7"
-SECONDARY_TRADER="0x70997970C51812dc3A010C7d01b50e0d17dc79C8"
+# Derive trader addresses from private keys to match populate-data.sh
+PRIMARY_TRADER_KEY="${PRIMARY_TRADER_PRIVATE_KEY:-0x5d34b3f860c2b09c112d68a35d592dfb599841629c9b0ad8827269b94b57efca}"
+SECONDARY_TRADER_KEY="${SECONDARY_TRADER_PRIVATE_KEY:-0x3d93c16f039372c7f70b490603bfc48a34575418fad5aea156c16f2cb0280ed8}"
+
+PRIMARY_TRADER=$(cast wallet address --private-key $PRIMARY_TRADER_KEY)
+SECONDARY_TRADER=$(cast wallet address --private-key $SECONDARY_TRADER_KEY)
 
 echo "=== Checking Required Tools ==="
 if ! command -v jq >/dev/null 2>&1; then
@@ -310,7 +313,7 @@ if [ "$LIQUIDITY_OK" = false ]; then
 fi
 
 if [ "$TOTAL_ISSUES" -eq 0 ]; then
-    echo "🎉 DATA POPULATION VALIDATION PASSED!"
+    echo " DATA POPULATION VALIDATION PASSED!"
     echo "Both traders have synthetic token balances"
     echo "OrderBook has liquidity (limit orders placed)"
     

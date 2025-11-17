@@ -42,8 +42,8 @@ This command will automatically:
 ### Supported Networks
 
 Use any of the configured networks:
-- `gtx_core_devnet` - Local Anvil instance (https://core-devnet.gtxdex.xyz)
-- `gtx_side_devnet` - Side chain Anvil (https://side-devnet.gtxdex.xyz)
+- `scalex_core_devnet` - Local Anvil instance (https://core-devnet.scalex.money)
+- `scalex_side_devnet` - Side chain Anvil (https://side-devnet.scalex.money)
 - `rari_testnet` - Rari testnet
 - `appchain_testnet` - Appchain testnet
 - `arbitrum_sepolia` - Arbitrum Sepolia
@@ -235,15 +235,15 @@ Here's a complete example of deploying the faucet on the local anvil network:
 export PRIVATE_KEY=0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80
 
 # 2. Deploy the complete faucet system
-make deploy-faucet network=gtx_core_devnet
+make deploy-faucet network=scalex_core_devnet
 
 # 3. Verify deployment
-cast call <PROXY_FAUCET_ADDRESS> "getFaucetAmount()" --rpc-url https://core-devnet.gtxdex.xyz
-cast call <PROXY_FAUCET_ADDRESS> "getCooldown()" --rpc-url https://core-devnet.gtxdex.xyz
+cast call <PROXY_FAUCET_ADDRESS> "getFaucetAmount()" --rpc-url https://core-devnet.scalex.money
+cast call <PROXY_FAUCET_ADDRESS> "getCooldown()" --rpc-url https://core-devnet.scalex.money
 
 # 4. Test faucet functionality
 cast send <PROXY_FAUCET_ADDRESS> "requestTokens(address)" <WETH_TOKEN_ADDRESS> \
-  --private-key $PRIVATE_KEY --rpc-url https://core-devnet.gtxdex.xyz
+  --private-key $PRIVATE_KEY --rpc-url https://core-devnet.scalex.money
 ```
 
 ## Script Details
@@ -293,10 +293,10 @@ cast send <PROXY_FAUCET_ADDRESS> "requestTokens(address)" <WETH_TOKEN_ADDRESS> \
 
 ## Integration with Main System
 
-The faucet system integrates with the main GTX trading system by providing test tokens that can be used for:
+The faucet system integrates with the main SCALEX trading system by providing test tokens that can be used for:
 
 1. **Cross-chain deposits**: Tokens from faucet can be deposited via side chain
 2. **Local deposits**: Tokens can be deposited directly on core chain
 3. **Trading**: Users can trade with faucet-distributed tokens after depositing
 
-For complete system deployment, deploy the faucet first, then proceed with the main GTX system deployment as documented in `DEPLOYMENT.md`.
+For complete system deployment, deploy the faucet first, then proceed with the main SCALEX system deployment as documented in `DEPLOYMENT.md`.

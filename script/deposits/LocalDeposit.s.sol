@@ -5,6 +5,7 @@ import {Script, console} from "forge-std/Script.sol";
 import {TokenRegistry} from "../../src/core/TokenRegistry.sol";
 import {BalanceManager} from "../../src/core/BalanceManager.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {MockToken} from "../../src/mocks/MockToken.sol";
 import "../utils/DeployHelpers.s.sol";
 
 /**
@@ -41,20 +42,12 @@ contract LocalDeposit is DeployHelpers {
         uint256 deployerPrivateKey = vm.envUint("PRIVATE_KEY");
         address deployer = vm.addr(deployerPrivateKey);
 
-        vm.startBroadcast();
-        
-        // After broadcast starts, msg.sender is the actual signer
-        address actualSigner = msg.sender;
-        
-        vm.stopBroadcast();
-
         // Load configuration from environment
-        _loadConfiguration(deployer, actualSigner);
+        _loadConfiguration(deployer, deployer);
 
         console.log("========== TESTING LOCAL DEPOSIT ==========");
         console.log("Chain ID:", block.chainid);
         console.log("Deployer:", deployer);
-        console.log("Actual Signer:", actualSigner);
         console.log("Test Recipient:", testRecipient);
         console.log("Token Symbol:", tokenSymbol);
         console.log("Deposit Amount:", depositAmount);
@@ -63,7 +56,7 @@ contract LocalDeposit is DeployHelpers {
         // Load contract addresses from deployments
         _loadContracts();
 
-        vm.startBroadcast();
+        vm.startBroadcast(deployerPrivateKey);
 
         // Execute local deposit test
         _executeLocalDepositTest();
@@ -76,7 +69,7 @@ contract LocalDeposit is DeployHelpers {
         console.log("[INFO] Check BalanceManager balances for results");
     }
     
-    function _loadConfiguration(address deployer, address actualSigner) internal {
+    function _loadConfiguration(address deployer, address signer) internal {
         // Token symbol to test
         tokenSymbol = vm.envOr("TOKEN_SYMBOL", string("USDC"));
         
@@ -96,8 +89,8 @@ contract LocalDeposit is DeployHelpers {
             }
         }
         
-        // Test recipient (default to actual signer, fallback to deployer)
-        testRecipient = vm.envOr("TEST_RECIPIENT", actualSigner);
+        // Test recipient (default to deployer/signer)
+        testRecipient = vm.envOr("TEST_RECIPIENT", signer);
         
         // Custom local token address (optional)
         localTokenAddress = vm.envOr("LOCAL_TOKEN", address(0));
@@ -143,18 +136,42 @@ contract LocalDeposit is DeployHelpers {
         // Token mappings are now configured during deployment
         // No need to set up mappings here
         
+        // Use testRecipient as the depositor (this is set to deployer in _loadConfiguration)
+        address depositor = testRecipient;
+        
         // Check initial balances
-        address depositor = msg.sender; // The account running the script
         uint256 initialTokenBalance = localToken.balanceOf(depositor);
         console.log("Initial token balance:", initialTokenBalance);
+        console.log("Depositor address:", depositor);
         
         if (initialTokenBalance < depositAmount) {
-            console.log("ERROR: Insufficient token balance for test");
+            console.log("Insufficient token balance for test");
             console.log("  Required:", depositAmount);
             console.log("  Available:", initialTokenBalance);
             console.log("  Depositor:", depositor);
-            console.log("  Test Recipient:", testRecipient);
-            revert("Insufficient token balance for deposit");
+            console.log("  Attempting to mint additional tokens...");
+            
+            // Try to mint additional tokens
+            try MockToken(localTokenAddress).mint(depositor, depositAmount - initialTokenBalance) {
+                console.log("Successfully minted additional tokens");
+                uint256 newBalance = localToken.balanceOf(depositor);
+                console.log("New balance after minting:", newBalance);
+                
+                if (newBalance < depositAmount) {
+                    console.log("ERROR: Still insufficient tokens after minting");
+                    console.log("  Required:", depositAmount);
+                    console.log("  Available:", newBalance);
+                    revert("Insufficient token balance for deposit even after minting");
+                }
+            } catch Error(string memory reason) {
+                console.log("ERROR: Failed to mint tokens");
+                console.log("  Reason:", reason);
+                console.log("  The token might not support minting or you might not have permission");
+                revert("Insufficient token balance for deposit");
+            } catch (bytes memory) {
+                console.log("ERROR: Failed to mint tokens with low-level error");
+                revert("Insufficient token balance for deposit");
+            }
         }
         
         // Approve and execute deposit
@@ -164,13 +181,13 @@ contract LocalDeposit is DeployHelpers {
     }
     
     function _performDeposit() internal {
-        address depositor = msg.sender; // Current broadcaster
+        address depositor = testRecipient; // Use the same address as in _executeLocalDepositTest
         
         console.log("Approving BalanceManager for token spending...");
         console.log("Depositor:", depositor);
         console.log("Amount:", depositAmount);
         
-        // Approve BalanceManager
+        // Step 1: Approve BalanceManager
         try localToken.approve(address(balanceManager), depositAmount) {
             console.log("Approval successful");
         } catch Error(string memory reason) {
@@ -181,15 +198,18 @@ contract LocalDeposit is DeployHelpers {
             revert("Token approval failed with low-level error");
         }
         
+        // Step 2: Check allowance
         uint256 allowance = localToken.allowance(depositor, address(balanceManager));
         console.log("Approved amount:", allowance);
         
         if (allowance < depositAmount) {
             console.log("ERROR: Approval insufficient");
+            console.log("Depositor:", depositor);
+            console.log("BalanceManager:", address(balanceManager));
             revert("Token allowance insufficient after approval");
         }
         
-        // Execute local deposit
+        // Step 3: Execute local deposit (this will handle the LendingManager interaction internally)
         console.log("Executing depositLocal...");
         try balanceManager.depositLocal(localTokenAddress, depositAmount, testRecipient) {
             console.log("Local deposit executed successfully");

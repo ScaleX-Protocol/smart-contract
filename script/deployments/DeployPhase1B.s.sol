@@ -2,14 +2,14 @@
 pragma solidity ^0.8.26;
 
 import {Script, console} from "forge-std/Script.sol";
-import {TokenRegistry} from "../src/core/TokenRegistry.sol";
-import {Oracle} from "../src/core/Oracle.sol";
+import {TokenRegistry} from "@scalexcore/TokenRegistry.sol";
+import {Oracle} from "@scalexcore/Oracle.sol";
 import {UpgradeableBeacon} from "@openzeppelin/contracts/proxy/beacon/UpgradeableBeacon.sol";
 import {BeaconProxy} from "@openzeppelin/contracts/proxy/beacon/BeaconProxy.sol";
-import {LendingManager} from "../src/yield/LendingManager.sol";
-import {BalanceManager} from "../src/core/BalanceManager.sol";
-import {OrderBook} from "../src/core/OrderBook.sol";
-import {PoolManager} from "../src/core/PoolManager.sol";
+import {LendingManager} from "@scalex/yield/LendingManager.sol";
+import {BalanceManager} from "@scalexcore/BalanceManager.sol";
+import {OrderBook} from "@scalexcore/OrderBook.sol";
+import {PoolManager} from "@scalexcore/PoolManager.sol";
 
 contract DeployPhase1B is Script {
     struct Phase1BDeployment {
@@ -77,7 +77,7 @@ contract DeployPhase1B is Script {
         UpgradeableBeacon lendingManagerBeacon = new UpgradeableBeacon(address(lendingManagerImpl), deployer);
         BeaconProxy lendingManagerProxy = new BeaconProxy(
             address(lendingManagerBeacon),
-            abi.encodeCall(LendingManager.initialize, (deployer, address(oracleProxy)))
+            abi.encodeCall(LendingManager.initialize, (deployer, deployer, address(oracleProxy)))
         );
         console.log("[OK] LendingManager proxy deployed:", address(lendingManagerProxy));
         

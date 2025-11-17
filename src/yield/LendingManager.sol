@@ -4,6 +4,9 @@ pragma solidity ^0.8.26;
 // import {console} from "forge-std/Test.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import {OwnableUpgradeable} from "../../lib/openzeppelin-contracts-upgradeable/contracts/access/OwnableUpgradeable.sol";
+import {ReentrancyGuardUpgradeable} from "../../lib/openzeppelin-contracts-upgradeable/contracts/utils/ReentrancyGuardUpgradeable.sol";
+import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import {LendingManagerStorage} from "./LendingManagerStorage.sol";
 
 // Oracle interfaces
@@ -20,10 +23,20 @@ interface IOracle {
 
 /**
  * @title LendingManager
- * @dev Complete lending manager implementation using diamond storage pattern
+ * @dev Complete lending manager implementation using diamond storage pattern with upgradeable support
  */
-contract LendingManager is LendingManagerStorage {
+contract LendingManager is 
+    LendingManagerStorage,
+    Initializable,
+    OwnableUpgradeable,
+    ReentrancyGuardUpgradeable 
+{
     using SafeERC20 for IERC20;
+
+    /// @custom:oz-upgrades-unsafe-allow constructor
+    constructor() {
+        _disableInitializers();
+    }
 
     // Custom errors (also defined in main contract for external accessibility)
     error InsufficientLiquidity();
@@ -43,32 +56,36 @@ contract LendingManager is LendingManagerStorage {
     //                   INITIALIZATION
     // =============================================================
 
-    function initialize(address _owner, address _oracle) external {
+    function initialize(address _owner, address _balanceManager, address _oracle) public initializer {
         if (_owner == address(0)) revert InvalidAddress();
+        if (_balanceManager == address(0)) revert InvalidAddress();
         // Oracle can be zero address - system has fallback behavior
         
+        __Ownable_init(_owner);
+        __ReentrancyGuard_init();
+        
         _initializeConstants();
-        getStorage().balanceManager = _owner;
+        getStorage().balanceManager = _balanceManager;
         getStorage().oracle = _oracle;
         
-        emit BalanceManagerSet(_owner);
+        emit BalanceManagerSet(_balanceManager);
     }
 
     // =============================================================
     //                   OWNER FUNCTIONS
     // =============================================================
 
-    function setPriceOracle(address _priceOracle) external {
+    function setPriceOracle(address _priceOracle) external onlyOwner {
         if (_priceOracle == address(0)) revert InvalidAddress();
         getStorage().priceOracle = _priceOracle;
     }
 
-    function setOracle(address _oracle) external {
+    function setOracle(address _oracle) external onlyOwner {
         // Oracle can be zero address - system has fallback behavior
         getStorage().oracle = _oracle;
     }
 
-    function setBalanceManager(address _balanceManager) external {
+    function setBalanceManager(address _balanceManager) external onlyOwner {
         if (_balanceManager == address(0)) revert InvalidAddress();
         getStorage().balanceManager = _balanceManager;
         emit BalanceManagerSet(_balanceManager);
@@ -80,7 +97,7 @@ contract LendingManager is LendingManagerStorage {
         uint256 liquidationThreshold,
         uint256 liquidationBonus,
         uint256 reserveFactor
-    ) external {
+    ) external onlyOwner {
         if (token == address(0)) revert InvalidAddress();
         
         Storage storage $ = getStorage();
@@ -128,7 +145,7 @@ contract LendingManager is LendingManagerStorage {
     function supply(
         address token,
         uint256 amount
-    ) external onlyBalanceManager {
+    ) external onlyBalanceManager nonReentrant {
         _supplyForUser(msg.sender, token, amount);
     }
     
@@ -188,7 +205,7 @@ contract LendingManager is LendingManagerStorage {
     function withdraw(
         address token,
         uint256 amount
-    ) external onlyBalanceManager returns (uint256 actualAmount) {
+    ) external onlyBalanceManager nonReentrant returns (uint256 actualAmount) {
         Storage storage $ = getStorage();
         if (!$.assetConfigs[token].enabled) revert UnsupportedAsset();
         if (amount == 0) revert InvalidAmount();
@@ -292,7 +309,7 @@ contract LendingManager is LendingManagerStorage {
     //                   BORROW/REPAY FUNCTIONS
     // =============================================================
 
-    function borrow(address token, uint256 amount) external {
+    function borrow(address token, uint256 amount) external nonReentrant {
         Storage storage $ = getStorage();
         if (!$.assetConfigs[token].enabled) revert UnsupportedAsset();
         if (amount == 0) revert InvalidAmount();
@@ -374,7 +391,7 @@ contract LendingManager is LendingManagerStorage {
         emit Borrowed(user, token, amount, block.timestamp);
     }
 
-    function repay(address token, uint256 amount) external {
+    function repay(address token, uint256 amount) external nonReentrant {
         Storage storage $ = getStorage();
         if (!$.assetConfigs[token].enabled) revert UnsupportedAsset();
         if (amount == 0) revert InvalidAmount();
@@ -446,7 +463,7 @@ contract LendingManager is LendingManagerStorage {
         address debtToken,
         address collateralToken,
         uint256 debtToCover
-    ) external {
+    ) external nonReentrant {
         Storage storage $ = getStorage();
         if (!$.assetConfigs[debtToken].enabled || !$.assetConfigs[collateralToken].enabled) {
             revert UnsupportedAsset();
@@ -621,10 +638,7 @@ contract LendingManager is LendingManagerStorage {
         return getStorage().balanceManager;
     }
     
-    function owner() external view returns (address) {
-        return getStorage().balanceManager;
-    }
-
+    
     // Oracle pricing functions (from original LendingManagerView)
     function getCollateralPrice(address token) external view returns (uint256) {
         Storage storage $ = getStorage();
@@ -997,7 +1011,7 @@ contract LendingManager is LendingManagerStorage {
         return minThreshold;
     }
 
-    function updateInterestAccrual(address token) external {
+    function updateInterestAccrual(address token) external onlyOwner {
         Storage storage $ = getStorage();
         if (block.timestamp == $.lastInterestUpdate[token]) return;
         
@@ -1014,7 +1028,7 @@ contract LendingManager is LendingManagerStorage {
         emit InterestGenerated(token, interestGenerated, block.timestamp);
     }
 
-    function updateCollateral(address user, address syntheticToken, uint256 amount) external {
+    function updateCollateral(address user, address syntheticToken, uint256 amount) external onlyBalanceManager {
         Storage storage $ = getStorage();
         UserPosition storage position = $.userPositions[user][syntheticToken];
         position.supplied += amount;

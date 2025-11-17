@@ -80,7 +80,7 @@ contract AutoYieldRedemptionTest is Test {
         (BeaconProxy lendingProxy,) = beaconDeployer.deployUpgradeableContract(
             address(new LendingManager()),
             owner,
-            abi.encodeCall(LendingManager.initialize, (owner, address(0x742d35Cc6634c0532925A3B8d4C9db96c4B3D8B9)))
+            abi.encodeCall(LendingManager.initialize, (owner, address(this), address(0x742d35Cc6634c0532925A3B8d4C9db96c4B3D8B9)))
         );
         lendingManager = LendingManager(address(lendingProxy));
         
