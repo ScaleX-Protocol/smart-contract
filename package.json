@@ -40,7 +40,9 @@
     "toml": "~3.0.0"
   },
   "devDependencies": {
+    "@nomicfoundation/hardhat-toolbox": "^6.1.0",
     "@types/prettier": "2",
-    "@types/qrcode": "1"
+    "@types/qrcode": "1",
+    "hardhat": "^3.0.15"
   }
 }

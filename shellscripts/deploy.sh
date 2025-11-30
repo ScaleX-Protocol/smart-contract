@@ -16,6 +16,7 @@
 # - SCALEX_SIDE_RPC: RPC URL for side chain (default: http://127.0.0.1:8545)
 # - CORE_CHAIN_ID: Chain ID for deployment (default: auto-detected from RPC)
 # - FORGE_TIMEOUT: Timeout for forge operations (default: 1200 seconds)
+# - ETHERSCAN_API_KEY: API key for contract verification on public networks (optional)
 #
 # USAGE EXAMPLES:
 # # Basic usage (uses defaults):
@@ -23,6 +24,9 @@
 #
 # # With custom RPC:
 # SCALEX_CORE_RPC="http://localhost:8545" bash shellscripts/deploy.sh
+#
+# # With contract verification on Base Sepolia:
+# SCALEX_CORE_RPC="https://sepolia.base.org" ETHERSCAN_API_KEY="your_key" bash shellscripts/deploy.sh
 #
 # # With custom private key and RPC:
 # PRIVATE_KEY="0xYourPrivateKey" SCALEX_CORE_RPC="http://localhost:8545" bash shellscripts/deploy.sh
@@ -94,6 +98,73 @@ print_warning() {
 
 print_error() {
     echo -e "${RED}$1${NC}"
+}
+
+# Function to get verification flags for forge commands
+get_verification_flags() {
+    local chain_id=$1
+    
+    # Check if we should verify (public networks and valid API key)
+    if [[ "$chain_id" == "84532" ]] || [[ "$chain_id" == "11155111" ]] || [[ "$chain_id" == "1" ]] || [[ "$SCALEX_CORE_RPC" == *"base-sepolia"* ]] || [[ "$SCALEX_CORE_RPC" == *"sepolia"* ]] || [[ "$SCALEX_CORE_RPC" == *"mainnet"* ]] || [[ "$SCALEX_CORE_RPC" == *"basescan"* ]]; then
+        if [[ -n "$ETHERSCAN_API_KEY" && "$ETHERSCAN_API_KEY" != "dummy_key_for_local_testing" && "$ETHERSCAN_API_KEY" != "" ]]; then
+            case $chain_id in
+                84532) echo "--verify --etherscan-api-key $ETHERSCAN_API_KEY --chain 84532" ;;
+                11155111) echo "--verify --etherscan-api-key $ETHERSCAN_API_KEY --verifier-url https://api-sepolia.etherscan.io/api" ;;
+                1) echo "--verify --etherscan-api-key $ETHERSCAN_API_KEY --verifier-url https://api.etherscan.io/api" ;;
+                42161) echo "--verify --etherscan-api-key $ETHERSCAN_API_KEY --verifier-url https://api.arbiscan.io/api" ;;
+                10) echo "--verify --etherscan-api-key $ETHERSCAN_API_KEY --verifier-url https://api-optimistic.etherscan.io/api" ;;
+                137) echo "--verify --etherscan-api-key $ETHERSCAN_API_KEY --verifier-url https://api.polygonscan.com/api" ;;
+                *) 
+                    # Try to auto-detect verifier URL from RPC hostname
+                    if [[ "$SCALEX_CORE_RPC" == *"base"* ]]; then
+                        echo "--verify --etherscan-api-key $ETHERSCAN_API_KEY --verifier-url https://api.basescan.org/api"
+                    else
+                        echo "--verify --etherscan-api-key $ETHERSCAN_API_KEY"
+                    fi
+                    ;;
+            esac
+        else
+            print_warning "ETHERSCAN_API_KEY not set or invalid - skipping contract verification"
+            echo "  To enable verification, set a valid API key:"
+            echo "  export ETHERSCAN_API_KEY='your_actual_api_key_here'"
+            echo ""
+        fi
+    else
+        # Local development - no verification needed
+        echo ""
+    fi
+}
+
+# Function to validate verification setup
+validate_verification_setup() {
+    local chain_id=$1
+    
+    # Only validate on public networks
+    if [[ "$chain_id" == "31337" ]] || [[ "$SCALEX_CORE_RPC" == *"127.0.0.1"* ]] || [[ "$SCALEX_CORE_RPC" == *"localhost"* ]]; then
+        return 0  # Skip validation for local development
+    fi
+    
+    # Check if forge verify-contract command is available
+    if ! forge verify-contract --help >/dev/null 2>&1; then
+        print_warning "forge verify-contract command not available - verification disabled"
+        return 1
+    fi
+    
+    # Validate API key format (should be a reasonable length hex string)
+    if [[ -n "$ETHERSCAN_API_KEY" ]]; then
+        if [[ ${#ETHERSCAN_API_KEY} -lt 10 ]] || [[ "$ETHERSCAN_API_KEY" == "dummy_key_for_local_testing" ]]; then
+            print_error "Invalid ETHERSCAN_API_KEY format"
+            echo "  Expected: Real API key (at least 10 characters)"
+            echo "  Current: ${ETHERSCAN_API_KEY:0:10}..."
+            return 1
+        fi
+    else
+        print_warning "No ETHERSCAN_API_KEY set - contracts will not be verified"
+        return 1
+    fi
+    
+    print_success "Verification setup validated"
+    return 0
 }
 
 # Load environment variables from .env file
@@ -170,6 +241,28 @@ get_chain_id() {
 export CORE_CHAIN_ID="${CORE_CHAIN_ID:-$(get_chain_id "${SCALEX_CORE_RPC:-https://core-devnet.scalex.money}")}"
 print_success "Detected Core Chain ID: $CORE_CHAIN_ID"
 
+# Check verification status and validate setup
+VERIFY_FLAGS=$(get_verification_flags $CORE_CHAIN_ID)
+if [[ -n "$VERIFY_FLAGS" ]]; then
+    validate_verification_setup $CORE_CHAIN_ID
+    if [[ $? -eq 0 ]]; then
+        print_success "Contract verification ENABLED and validated for this deployment"
+    else
+        print_warning "Contract verification setup issues detected - verification may fail"
+        echo "  Consider fixing the above issues or proceed without verification"
+        read -p "  Continue with deployment? (y/N): " -n 1 -r
+        echo
+        if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+            print_error "Deployment cancelled by user"
+            exit 1
+        fi
+        # Disable verification if user continues
+        VERIFY_FLAGS=""
+    fi
+else
+    print_warning "Contract verification DISABLED (local network or missing API key)"
+fi
+
 # Step 1: Clean Previous Data
 print_step "Step 1: Cleaning previous deployment data..."
 mkdir -p deployments/
@@ -179,7 +272,8 @@ print_success "Previous data cleaned"
 
 # Step 2: Phase 1A - Deploy Tokens
 print_step "Step 2: Phase 1A - Deploying Tokens..."
-CORE_MAILBOX=$CORE_MAILBOX SIDE_MAILBOX=$SIDE_MAILBOX forge script script/deployments/DeployPhase1A.s.sol:DeployPhase1A --rpc-url "${SCALEX_CORE_RPC}" --broadcast --private-key $PRIVATE_KEY --gas-price 1000000000000 --silent
+VERIFY_FLAGS=$(get_verification_flags $CORE_CHAIN_ID)
+CORE_MAILBOX=$CORE_MAILBOX SIDE_MAILBOX=$SIDE_MAILBOX forge script script/deployments/DeployPhase1A.s.sol:DeployPhase1A --rpc-url "${SCALEX_CORE_RPC}" --broadcast --private-key $PRIVATE_KEY --gas-price 1000000000000 --silent $VERIFY_FLAGS
 print_success "Phase 1A deployment completed"
 
 # Add delay between phases
@@ -188,7 +282,7 @@ sleep 15
 
 # Step 2.1: Phase 1B - Deploy Core Infrastructure
 print_step "Step 2.1: Phase 1B - Deploying Core Infrastructure..."
-CORE_MAILBOX=$CORE_MAILBOX SIDE_MAILBOX=$SIDE_MAILBOX forge script script/deployments/DeployPhase1B.s.sol:DeployPhase1B --rpc-url "${SCALEX_CORE_RPC}" --broadcast --private-key $PRIVATE_KEY --gas-price 1000000000000 --silent
+CORE_MAILBOX=$CORE_MAILBOX SIDE_MAILBOX=$SIDE_MAILBOX forge script script/deployments/DeployPhase1B.s.sol:DeployPhase1B --rpc-url "${SCALEX_CORE_RPC}" --broadcast --private-key $PRIVATE_KEY --gas-price 1000000000000 --silent $VERIFY_FLAGS
 print_success "Phase 1B deployment completed"
 
 # Add delay between phases
@@ -197,7 +291,7 @@ sleep 15
 
 # Step 2.2: Phase 1C - Deploy Final Infrastructure
 print_step "Step 2.2: Phase 1C - Deploying Final Infrastructure..."
-CORE_MAILBOX=$CORE_MAILBOX SIDE_MAILBOX=$SIDE_MAILBOX forge script script/deployments/DeployPhase1C.s.sol:DeployPhase1C --rpc-url "${SCALEX_CORE_RPC}" --broadcast --private-key $PRIVATE_KEY --gas-price 1000000000000 --silent
+CORE_MAILBOX=$CORE_MAILBOX SIDE_MAILBOX=$SIDE_MAILBOX forge script script/deployments/DeployPhase1C.s.sol:DeployPhase1C --rpc-url "${SCALEX_CORE_RPC}" --broadcast --private-key $PRIVATE_KEY --gas-price 1000000000000 --silent $VERIFY_FLAGS
 print_success "Phase 1C deployment completed"
 
 # Add delay before Phase 2
@@ -265,7 +359,7 @@ else
     exit 1
 fi
 
-CORE_MAILBOX=$CORE_MAILBOX SIDE_MAILBOX=$SIDE_MAILBOX forge script script/deployments/DeployPhase2.s.sol:DeployPhase2 --rpc-url "${SCALEX_CORE_RPC}" --broadcast --private-key $PRIVATE_KEY --gas-price 1000000000000 --silent
+CORE_MAILBOX=$CORE_MAILBOX SIDE_MAILBOX=$SIDE_MAILBOX forge script script/deployments/DeployPhase2.s.sol:DeployPhase2 --rpc-url "${SCALEX_CORE_RPC}" --broadcast --private-key $PRIVATE_KEY --gas-price 1000000000000 --silent $VERIFY_FLAGS
 print_success "Phase 2 configuration completed"
 
 # Add delay between Phase 2 and Phase 3 to prevent rate limiting
@@ -461,6 +555,7 @@ ORACLE_ADDRESS=$(cat ./deployments/${CORE_CHAIN_ID}.json | jq -r '.Oracle // "0x
             FACTORY_ADDRESS=$(forge create src/core/SyntheticTokenFactory.sol:SyntheticTokenFactory \
                 --rpc-url "${SCALEX_CORE_RPC}" \
                 --private-key $PRIVATE_KEY \
+                $VERIFY_FLAGS \
                 | grep "Deployed to:" | awk '{print $3}')
             
             if [[ -n "$FACTORY_ADDRESS" ]]; then
@@ -801,7 +896,7 @@ ORACLE_ADDRESS=$(cat ./deployments/${CORE_CHAIN_ID}.json | jq -r '.Oracle // "0x
             --broadcast \
             --private-key $PRIVATE_KEY \
             --legacy \
-            --silent; then
+            --silent $VERIFY_FLAGS; then
             print_success "Phase 3 pool creation completed successfully"
         else
             print_error "Phase 3 pool creation failed"
