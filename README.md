@@ -1,436 +1,275 @@
-# 🚀 ScaleX - Unified CLOB DEX-Lending Protocol
+# Tenderly CLI
 
-> 💰 Unified CLOB DEX-Lending protocol with automated yield generation and portfolio-backed borrowing
+[![GitHub tag (latest SemVer)](https://img.shields.io/github/tag/Tenderly/tenderly-cli.svg?label=Latest%20Version)](https://github.com/Tenderly/tenderly-cli)
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Status](https://img.shields.io/badge/Status-OPERATIONAL-brightgreen)](README.md)
+Tenderly CLI is a suite of development tools that allows you to debug, monitor and track the execution of your smart
+contracts. 
 
-## 🌟 Vision
+For smart contract verification in Tenderly, follow the [Foundry verification guide](https://docs.tenderly.co/contract-verification/foundry) and [Hardhat verification guide](https://docs.tenderly.co/contract-verification/hardhat).
 
-A revolutionary DeFi protocol that seamlessly combines CLOB trading with integrated lending. ScaleX enables **zero-capital trading** through auto-borrow/auto-repay mechanisms while users earn yield on deposits. Place limit orders without owning assets and let the system automatically handle borrowing and repayment. ScaleX brings together the best of CEX performance, DEX trustlessness, and innovative lending integration in a single protocol.
+## Table of Contents
 
-## 🎯 **System Status: OPERATIONAL** 
+* [Installation](#installation)
+* [Usage](#usage)
+    * [Login](#login)
+    * [Init](#init)
+    * [Push](#push)
+    * [Check for updates](#check-for-updates)
+    * [Version](#version)
+    * [Who am I?](#who-am-i)
+    * [Logout](#logout)
 
-The ScaleX unified CLOB DEX-Lending protocol is **fully deployed and working**!
+## Installation
 
-- 📊 **CLOB trading**: Operational with advanced order book
-- 💰 **Auto-yield generation**: Deposits automatically lent for yield
-- 🏦 **Portfolio-backed borrowing**: Borrow against your deposited assets
-- 🔒 **Liquidity management**: Unified liquidity across lending and trading
+### macOS
 
-📋 [View detailed documentation](docs/ARCHITECTURE_OVERVIEW.md)
-
-## 🏗️ ScaleX Protocol Architecture
+You can install the Tenderly CLI via the [Homebrew package manager](https://brew.sh/):
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                   SCALEX PROTOCOL                           │
-│                                                             │
-│  ┌─────────────────┐  ┌─────────────────┐  ┌──────────────┐ │
-│  │   CLOB Engine   │  │  Lending Engine │  │   Oracle     │ │
-│  │                 │  │                 │  │   System     │ │
-│  │ • OrderBook     │  │ • LendingManager│  │ • PriceFeed  │ │
-│  │ • SCALEXRouter     │  │ • YieldTracker  │  │ • TokenReg   │ │
-│  │ • PoolManager   │  │ • Liquidator    │  │              │ │
-│  └─────────────────┘  └─────────────────┘  └──────────────┘  │
-│           │                       │                       │
-│           └───────────────────────┼───────────────────────┘
-│                                   │
-│  ┌─────────────────────────────────┼─────────────────────────┐
-│  │           BALANCEMANAGER       │                         │
-│  │  ┌─────────────────────────────┴─────────────────────────┐│
-│  │  │           USER ACCOUNTS & PORTFOLIOS                 ││
-│  │  │ • Auto-yield on deposits                              ││
-│  │  │ • Portfolio-backed borrowing                         ││
-│  │  │ • Unified balance management                          ││
-│  │  └───────────────────────────────────────────────────────┘│
-│  └───────────────────────────────────────────────────────────┘
-└─────────────────────────────────────────────────────────────┘
+brew tap tenderly/tenderly
+brew install tenderly
 ```
 
-### **Core Components**
-- **BalanceManager**: Unified account management with auto-yield and borrowing capabilities
-- **OrderBook**: High-performance CLOB with Red-Black Tree for efficient order matching
-- **SCALEXRouter**: User-friendly interface for trading and lending operations
-- **LendingManager**: Automated lending protocol with yield generation
-- **Oracle**: Real-time price feeds for accurate asset valuation and liquidation
+Or if you prefer you can also install by using cURL and running our installation script:
 
-## 💎 Core Features
-
-### 💰 Automated Lending & Yield Generation
-
-- **Auto-Lend on Deposit**: All deposited assets are automatically lent out to generate yield
-- **Real-time Yield Tracking**: Continuously accrue and track yield earnings for all depositors
-- **Dynamic Interest Rates**: Market-driven interest rates based on supply and demand
-- **Portfolio-Backed Borrowing**: Borrow against your deposited portfolio with automated health monitoring
-
-### 🚀 Revolutionary CLOB-Lending Integration
-
-- **🔄 Auto-Borrow for Limit Orders**: Place limit orders without owning the assets! ScaleX automatically borrows from the lending protocol when your order executes
-- **⚡ Auto-Repay on Order Match**: When your sell orders are filled, ScaleX automatically repays your debt from the lending protocol using the proceeds
-- **📈 Zero-Capital Trading**: Start trading immediately without needing to pre-fund your account - just maintain sufficient collateral
-- **🎯 Smart Debt Management**: Automatically optimize borrowing and repayment to minimize interest costs while maximizing trading opportunities
-
-### 🗃️ Optimized Order Management
-
-- **Packed Order Structure**
-  ```solidity
-  struct Order {
-      address user;         // User who placed the order
-      uint48 id;            // Unique identifier
-      uint48 next;          // Next order in queue
-      uint128 quantity;     // Total order quantity
-      uint128 filled;       // Filled amount
-      uint128 price;        // Order price
-      uint48 prev;          // Previous order in queue
-      uint48 expiry;        // Expiration timestamp
-      Status status;        // Current status
-      OrderType orderType;  // LIMIT or MARKET
-      Side side;            // BUY or SELL
-  }
-  ```
-
-- **Order Queue Management**: Double-linked list implementation for FIFO order execution
-  ```solidity
-  struct OrderQueue {
-      uint256 totalVolume;  // Total volume at price level
-      uint48 orderCount;    // Number of orders
-      uint48 head;          // First order in queue
-      uint48 tail;          // Last order in queue
-  }
-  ```
-
-### 🔑 Efficient Data Structures
-
-- **Price Level Indexing**: Red-Black Tree for O(log n) price lookup
-  ```solidity
-  mapping(Side => RedBlackTreeLib.Tree) private priceTrees;
-  ```
-
-- **Order Storage**: Optimized for gas efficiency and quick access
-  ```solidity
-  mapping(uint48 => Order) private orders;
-  mapping(Side => mapping(uint128 => OrderQueue)) private orderQueues;
-  ```
-
-### 💰 Unified Balance & Portfolio Management
-
-- **Balance Tracking**: Per-user balance tracking for multiple currencies
-  ```solidity
-  mapping(address => mapping(uint256 => uint256)) private balanceOf;
-  ```
-
-- **Auto-Yield Integration**: Deposits automatically enter lending pools
-  ```solidity
-  mapping(address => mapping(uint256 => uint256)) private depositedBalance;
-  mapping(address => mapping(uint256 => uint256)) private earnedYield;
-  ```
-
-- **Portfolio-Backed Borrowing**: Borrow against your total portfolio value
-  ```solidity
-  mapping(address => mapping(uint256 => uint256)) private borrowedAmount;
-  mapping(address => uint256) private healthFactor;
-  ```
-
-- **Order Lock System**: Balance locking prevents double-spending
-  ```solidity
-  mapping(address => mapping(address => mapping(uint256 => uint256))) private lockedBalanceOf;
-  ```
-
-## ⛽ Gas Optimization Techniques
-
-1. **Optimized Storage Access**
-    - Packed struct layouts reduce storage operations
-    - Minimized SSTOREs through strategic updates
-    - Efficient order data retrieval patterns
-
-2. **Advanced Data Structures**
-    - Red-Black Tree for price levels (O(log n) operations)
-    - Double-linked list for order queue management
-    - Automatic price level cleanup for unused levels
-
-3. **Balance Management**
-    - Lock-and-execute pattern prevents unnecessary transfers
-    - Direct balance transfers between users within the contract
-
-## 🔒 Security Features
-
-1. **Balance Protection**
-    - Order amount locking before placement
-    - Atomicity in balance operations
-    - Authorization checks for operators
-
-2. **Lending Protocol Security**
-    - Automated health factor monitoring
-    - Real-time liquidation protection
-    - Over-collateralization requirements for borrowing
-    - Interest rate risk management
-
-3. **Order Integrity**
-    - Order ownership validation
-    - Expiration handling
-    - Time-in-force constraints enforcement
-
-4. **Access Control**
-    - Router authorization for order operations
-    - Owner-only configuration changes
-    - Operator-limited permissions
-
-## 📊 Market Order Execution
-
-1. **Efficient Matching**
-    - Best price traversal using Red-Black Tree
-    - Volume-based execution across price levels
-    - Auto-cancellation of unfilled IOC/FOK orders
-
-2. **Multi-Currency Support**
-    - Automatic currency conversion for trades
-    - Multi-hop swap routing
-    - Intermediary currency support
-
-## 🔄 Order Lifecycle Management
-
-1. **Order Placement**
-    - Validation of parameters (price, quantity, trading rules)
-    - Balance locking
-    - Insertion into appropriate price level queue
-
-2. **Order Matching**
-    - FIFO execution against opposite side orders
-    - Partial fills tracking
-    - Balance transfers between counterparties
-
-3. **Order Cancellation/Expiration**
-    - Removal from order queue
-    - Balance unlocking
-    - Automatic price level cleanup
-
-The implementation ensures efficient order management while maintaining robust security measures and optimizing for gas usage across all operations.
-
-## 📜 Contract Addresses
-
-The contract addresses are stored in JSON files under the `deployments/<chain_id>.json`. Example folder:
-
-- 🔗 **Local Development**: `deployments/31337.json` (Anvil network)
-- 🌐 **SCALEX Dev Network**: `deployments/31337.json` (SCALEX Development)
-- 🚀 **Rise Network**: `deployments/11155931.json` (Rise Sepolia)
-- 🌟 **Pharos Network**: `deployments/50002.json` (Pharos Devnet)
-
-To access contract addresses for a specific network:
-1. Locate the appropriate JSON file for your target network
-2. Parse the JSON to find the contract you need (e.g., `SCALEXRouter`, `PoolManager`)
-3. Use the address in your frontend or for contract interactions
-
-## 📜 Contract ABIs
-
-The contract ABIs are stored in the `deployed-contracts/deployedContracts.ts` file.
-
-**Note**: This file is automatically generated using the `generate-abi` target in the `Makefile`. Ensure you run the appropriate Makefile command to update or regenerate the ABIs when needed.
-
-## Foundry Smart Contract Setup Guide
-
-This document provides a comprehensive guide for setting up, deploying, and upgrading smart contracts using Foundry. Follow the instructions below to get started.
-
----
-
-## Prerequisites
-
-Before proceeding, ensure you have the following installed:
-
-- [Foundry](https://book.getfoundry.sh/)
-- Node.js (required for generating ABI files)
-- A compatible Ethereum wallet for broadcasting transactions
-- A `.env` file to configure network and wallet details
-
----
-
-## Installation and Setup
-
-1. Clone the repository:
-   ```bash
-   git clone https://github.com/Great-Trading-eXperience/clob-dex.git
-   cd clob-dex
-   ```
-
-2. Install dependencies:
-   ```bash
-   forge install
-   ```
-
-3. Duplicate the `.env.example` file in the root directory, rename it to `.env`, and set the required variables.
-
-## 🚀 Quick Start - Zero-Capital Trading with Auto-Borrow
-
-### **Step 1: Deposit Collateral (Auto-Yield Enabled)**
-```solidity
-// Deposit USDT - automatically starts earning yield
-balanceManager.deposit(
-    USDT_ADDRESS,  // Your token address
-    amount,
-    recipient
-);
-// Yield automatically starts accruing!
+```
+curl https://raw.githubusercontent.com/Tenderly/tenderly-cli/master/scripts/install-macos.sh | sh
 ```
 
-### **Step 2: Place Limit Orders WITHOUT Owning Assets! 🚀**
-```solidity
-// Place a BUY order for WETH without having USDT!
-// ScaleX auto-borrows when your order is matched
-router.placeLimitOrder(
-    WETH,      // Asset you want to buy
-    USDT,      // Asset you're selling (will be auto-borrowed)
-    price,     // Your desired price
-    quantity,  // Amount of WETH you want
-    true       // enableAutoBorrow: true
-);
+### Linux
+
+You can install the Tenderly CLI by using cURL and running our installation script.
+
+With `root` privileges user:
+```
+curl https://raw.githubusercontent.com/Tenderly/tenderly-cli/master/scripts/install-linux.sh | sh
 ```
 
-### **Step 4: Watch the Magic Happen! ✨**
+Or with `sudo` user:
+```
+curl https://raw.githubusercontent.com/Tenderly/tenderly-cli/master/scripts/install-linux.sh | sudo sh
+```
 
-- 🔄 **Order Matched**: ScaleX automatically borrows funds to fulfill your order
-- 💰 **Order Filled**: When your sell orders execute, debt is auto-repaid from proceeds
-- 📊 **Interest Optimization**: System minimizes borrowing time to reduce interest costs
-- 🔒 **Risk Management**: Health factor monitoring ensures safe operation at all times
 
-## 🎯 Why ScaleX is Revolutionary
+### Windows
 
-### **Traditional DEX vs ScaleX**
-| Feature | Traditional DEX | ScaleX |
-|---------|----------------|--------|
-| **Require Assets to Trade** | Yes | **No - Auto-Borrow!** |
-| **Yield on Deposits** | No | **Auto-Yield** |
-| **Manual Debt Management** | N/A | **Auto-Repay** |
-| **Capital Efficiency** | Low | **Maximum** |
+Go to the [release page](https://github.com/Tenderly/tenderly-cli/releases), download the latest version and put it
+somewhere in your `$PATH`.
 
-### **Use Cases Enabled**
-- 🚀 **Zero-Capital Trading**: Start trading immediately with just collateral
-- 📈 **Leverage Trading**: Borrow to amplify positions without manual management
-- ⚡ **Flash Trading**: Execute arbitrage without pre-funding
-- 🔄 **Automated Strategies**: Let the system handle borrowing/repayment while you focus on prices
+### Updating
 
-### **Contract Addresses**
+You can check the current version of the CLI by running:
 
-| Network | Contract | Description |
-|---------|----------|-------------|
-| **Local** | BalanceManager | `0xd7fEF09a6cBd62E3f026916CDfE415b1e64f4Eb5` |
-| **Local** | SCALEXRouter | `0xF38489749c3e65c82a9273c498A8c6614c34754b` |
-| **Local** | OrderBook | `0x...` |
-| **Local** | LendingManager | `0x...` |
-| **Local** | Oracle | `0x...` |
+```
+tenderly version
+```
 
----
+To upgrade it via Homebrew:
 
-## Deployment Guide
+```
+brew upgrade tenderly
+```
 
-For complete deployment instructions, see **[📋 DEPLOYMENT.md](docs/DEPLOYMENT.md)**
+## Usage
 
-### Quick Deployment
+### Login
+
+The `login` command is used to authenticate the Tenderly CLI with
+your [Tenderly Dashboard](https://dashboard.tenderly.co).
+
+```
+tenderly login
+```
+
+#### Command Flags
+
+| Flag | Default | Description                                                            |
+| --- | --- |------------------------------------------------------------------------|
+| --authentication-method | / | Pick the authentication method. Possible values are email or access-key |
+| --email | / | The email used when authentication method is email                     |
+| --password | / | The password used when authentication method is email                  |
+| --access-key | / | The token used when authentication method is access-key         |
+| --force | false | Don't check if you are already logged in                               |
+| --help | / | Help for login command                                                 |
+
+### Init
+
+The `init` command is used to connect your local project directory with a project in
+the [Tenderly Dashboard](https://dashboard.tenderly.co).
+
+```
+tenderly init
+```
+
+#### Command Flags
+
+| Flag | Default | Description |
+| --- | --- | --- |
+| --project | / | The project name used for generating the configuration file |
+| --create-project | false | Creates the project provided by the --project flag if it doesn't exist |
+| --re-init | false | Force initializes the project if it was already initialized |
+| --help | / | Help for init command |
+
+### Example how to initialize tenderly project
+
+For Tenderly CLI to work you need to have a `deployments` directory inside your project. You can generate that one
+using [hardhat-tenderly](https://github.com/Tenderly/hardhat-tenderly#readme.)
+
+1. To install hardhat-tenderly run.
+
 ```bash
-# Deploy and validate the ScaleX protocol
-make validate-deployment           # Validate core deployment
+npm install --save-dev @tenderly/hardhat-tenderly
 ```
 
-### Single Network Deployment
-To deploy contracts to a single network:
-```bash
-make deploy network=<network_name>
-```
-- Example:
-  ```bash
-  make deploy network=riseSepolia
-  ```
+2. Add the following statement to your `hardhat.config.js`:
 
-### Deploying and Verifying Contracts
-To deploy and verify contracts:
-```bash
-make deploy-verify network=<network_name>
+```js
+require("@tenderly/hardhat-tenderly");
 ```
 
----
+Or, if you are using typescript:
 
-## Data Population
-
-For populating the system with demo trading data, see **[📊 DATA_POPULATION.md](docs/DATA_POPULATION.md)**
-
-### Quick Data Population
-```bash
-# Populate system with traders, liquidity, and trading activity
-make validate-data-population
+```js
+import "@tenderly/hardhat-tenderly"
 ```
 
----
+3. Then you need to call it from your scripts (using ethers to deploy a contract):
 
-## Mock Contracts Deployment
+```js
+const Greeter = await ethers.getContractFactory("Greeter");
+const greeter = await Greeter.deploy("Hello, Hardhat!");
 
-### Deploying Mocks
-To deploy mock contracts, use:
-```bash
-make deploy-mocks network=<network_name>
+await greeter.deployed()
+
+await hre.tenderly.persistArtifacts({
+    name: "Greeter",
+    address: greeter.address,
+})
 ```
 
-### Deploying and Verifying Mocks
-To deploy and verify mock contracts:
-```bash
-make deploy-mocks-verify network=<network_name>
+`persistArtifacts` accept variadic parameters:
+
+```js
+const contracts = [
+    {
+        name: "Greeter",
+        address: "123"
+    },
+    {
+        name: "Greeter2",
+        address: "456"
+    }
+]
+
+await hre.tenderly.persistArtifacts(...contracts)
 ```
 
-### Fill Mock Order Book
-To populate the ETH/USDC order book with sample orders:
-```bash
-make fill-orderbook network=<network_name>
+4. Run: `npx hardhat compile` to compile contracts
+5. Run: `npx hardhat node --network hardhat` to start a local node
+6. Run: `npx hardhat run scripts/sample-script.js --network localhost` to run a script
+7. And at the end now when `deployments` directory was built you can run `tenderly init`
+
+### Push
+
+If you are using Hardhat, take a look at [docs](https://docs.tenderly.co/monitoring/smart-contract-verification/verifying-contracts-using-the-tenderly-hardhat-plugin) instead of using this command.
+
+The `push` command is used to add your contracts to the [Tenderly Dashboard](https://dashboard.tenderly.co).
+
+Note that the `push` command is used **only** for adding contracts that are deployed to a public network.
+
+```
+tenderly contracts push
 ```
 
-## Contract Upgrades
+#### Command Flags
 
-### Upgrading Contracts
-To upgrade contracts:
-```bash
-make upgrade network=<network_name>
+| Flag | Default | Description |
+| --- | --- | --- |
+| --networks | / | A comma separated list of network ids to push |
+| --tag | / | Optional tag used for filtering and referencing pushed contracts |
+| --project-slug | / | Optional project slug used to pick only one project to push (see advanced usage) |
+| --help | / | Help for push command |
+
+#### Advanced usage
+
+It is possible to push to multiple projects by editing the `tenderly.yaml` file and providing a map of projects and
+their networks. To do this remove the already provided `project_slug` property and replace it with the `projects`
+property like the example below;
+
+```yaml
+projects: # running tenderly push will push the smart contracts to all of the provided projects
+  my-cool-project:
+    networks:
+      - "1" # mainnet
+      - "5" # goerli
+  my-other-project:
+  # if the networks property is not provided or is empty the project will be pushed to all of the migrated networks
+  company-account/my-other-project:
+  # if you want to push to a shared project provide the full project identifier
+  # the identifier can be found in your Tenderly dashboard under the projects name
 ```
 
-### Upgrading and Verifying Contracts
-To upgrade and verify contracts:
-```bash
-make upgrade-verify network=<network_name>
+### Verify
+
+The `verify` command uploads your smart contracts and verifies them on [Tenderly](https://tenderly.co).
+
+```
+tenderly contracts verify
 ```
 
----
+#### Command Flags
 
-## Additional Commands
+| Flag | Default | Description |
+| --- | --- | --- |
+| --networks | / | A comma separated list of network ids to verify |
+| --help | / | Help for verify command |
 
-- **Compile Contracts**
-  ```bash
-  make compile
-  ```
+### Check for updates
 
-- **Run Tests**
-  ```bash
-  make test
-  ```
+The `update-check` command checks if there is a new version of the Tenderly CLI and gives update instructions and
+changelog information.
 
-- **Lint Code**
-  ```bash
-  make lint
-  ```
+### Version
 
-- **Generate ABI Files**
-  ```bash
-  make generate-abi
-  ```
+The `version` command prints out the current version of the Tenderly CLI.
 
-- **Help**
-  Display all Makefile targets:
-  ```bash
-  make help
-  ```
+```
+tenderly version
+```
 
----
+### Who am I?
 
-## Notes
+The `whoami` command prints out basic information about the currently logged in account
 
-- Replace `<network_name>` with the desired network (e.g., `arbitrumSepolia`, `mainnet`).
-- Ensure your `.env` file is correctly configured to avoid deployment errors.
-- Use the `help` target to quickly review all available commands:
-  ```bash
-  make help
-  ```
+```
+tenderly whoami
+```
+
+### Logout
+
+The `logout` command disconnects your local Tenderly CLI from your [Tenderly Dashboard](https://dashboard.tenderly.co)
+
+```
+tenderly logout
+```
+
+### Global Flags
+
+In addition to command specific flags, the following flags can be passed to any command
+
+| Flag | Default | Description |
+| --- | --- | --- |
+| --debug | false | Turn on debug level logging |
+| --output | text | Which output mode to use: text or json. If not provided. text output will be used. |
+| --global-config | config | Global configuration file name (without the extension) |
+| --project-config | tenderly | Project configuration file name (without the extension) |
+| --project-dir | "./" | The directory in which your Truffle project resides |
+
+## Report Bugs / Feedback
+
+We look forward to any feedback you want to share with us or if you're stuck with a problem you can contact us
+at [support@tenderly.co](mailto:support@tenderly.co).
+
+-----
+
+Made with ♥ by [Tenderly](https://tenderly.co)

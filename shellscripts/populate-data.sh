@@ -146,8 +146,8 @@ else
 fi
 
 # Set trader accounts
-export PRIVATE_KEY="${PRIMARY_TRADER_PRIVATE_KEY:-0x5d34b3f860c2b09c112d68a35d592dfb599841629c9b0ad8827269b94b57efca}"
-export PRIVATE_KEY_2="${SECONDARY_TRADER_PRIVATE_KEY:-0x3d93c16f039372c7f70b490603bfc48a34575418fad5aea156c16f2cb0280ed8}"
+export PRIVATE_KEY="${PRIVATE_KEY:-0x5d34b3f860c2b09c112d68a35d592dfb599841629c9b0ad8827269b94b57efca}"
+export PRIVATE_KEY_2="${PRIVATE_KEY_2:-0x3d93c16f039372c7f70b490603bfc48a34575418fad5aea156c16f2cb0280ed8}"
 
 # Derive trader addresses directly from private keys to avoid mismatches
 export PRIMARY_TRADER_ADDRESS="${PRIMARY_TRADER_ADDRESS:-$(cast wallet address --private-key $PRIVATE_KEY)}"
