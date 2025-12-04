@@ -229,7 +229,7 @@ contract OrderBook is Initializable, OwnableUpgradeable, ReentrancyGuardUpgradea
 
         _addOrderToQueue(newOrder);
 
-        emit OrderPlaced(orderId, user, side, price, quantity, newOrder.expiry, false, Status.OPEN);
+        emit OrderPlaced(orderId, user, side, price, quantity, newOrder.expiry, false, Status.OPEN, autoRepay, autoBorrow);
 
         _handleTimeInForce(newOrder, side, user, timeInForce);
 
@@ -263,24 +263,32 @@ contract OrderBook is Initializable, OwnableUpgradeable, ReentrancyGuardUpgradea
     }
 
     function _validateAutoBorrow(address user, Side side) private view {
-        // Auto-borrow only works for SELL orders (providing debt tokens)
-        if (side != Side.SELL) {
-            revert AutoBorrowOnlyForSellOrders();
-        }
-
-        // Check if user has enough balance to borrow against (base currency is the debt token)
+        // Auto-borrow works for both BUY and SELL orders
         IBalanceManager bm = IBalanceManager(getStorage().balanceManager);
         address lendingManager = bm.lendingManager();
-        address debtToken = Currency.unwrap(getStorage().poolKey.baseCurrency);
         
-        if (lendingManager != address(0)) {
-            try ILendingManager(lendingManager).getUserSupply(user, debtToken) returns (uint256 userSupply) {
-                if (userSupply == 0) {
-                    revert NoCollateralToBorrow();
-                }
-            } catch {
-                // If LendingManager call fails, allow order placement anyway
+        if (lendingManager == address(0)) {
+            return; // No lending manager available
+        }
+
+        // Determine which token needs to be borrowed based on order side
+        address tokenToBorrow;
+        if (side == Side.SELL) {
+            // SELL orders need to borrow base tokens (e.g., USDC)
+            tokenToBorrow = Currency.unwrap(getStorage().poolKey.baseCurrency);
+        } else {
+            // BUY orders need to borrow quote tokens (e.g., WETH) 
+            tokenToBorrow = Currency.unwrap(getStorage().poolKey.quoteCurrency);
+        }
+        
+        // Check if user has sufficient collateral
+        try ILendingManager(lendingManager).getUserSupply(user, tokenToBorrow) returns (uint256 userSupply) {
+            if (userSupply == 0) {
+                revert NoCollateralToBorrow();
             }
+        } catch {
+            // If checking specific token supply fails, allow auto-borrow
+            // (user may have other collateral or different lending protocol)
         }
     }
 
@@ -376,7 +384,7 @@ contract OrderBook is Initializable, OwnableUpgradeable, ReentrancyGuardUpgradea
             autoBorrow: autoBorrow
         });
 
-        emit OrderPlaced(orderId, user, side, 0, quantity, marketOrder.expiry, true, Status.OPEN);
+        emit OrderPlaced(orderId, user, side, 0, quantity, marketOrder.expiry, true, Status.OPEN, autoRepay, autoBorrow);
 
         uint128 filled = _matchOrder(marketOrder, side, user, true);
 
@@ -430,7 +438,7 @@ contract OrderBook is Initializable, OwnableUpgradeable, ReentrancyGuardUpgradea
             autoBorrow: autoBorrow
         });
 
-        emit OrderPlaced(orderId, user, side, 0, quoteAmount, marketOrder.expiry, true, Status.OPEN);
+        emit OrderPlaced(orderId, user, side, 0, quoteAmount, marketOrder.expiry, true, Status.OPEN, autoRepay, autoBorrow);
 
         uint128 baseAmountFilled = _matchOrderWithQuoteAmount(marketOrder, side, user, quoteAmount);
 
@@ -563,7 +571,7 @@ contract OrderBook is Initializable, OwnableUpgradeable, ReentrancyGuardUpgradea
             matchingOrder.filled += baseAmount;
             queue.totalVolume -= baseAmount;
 
-            transferBalances(ctx.user, matchingOrder.user, ctx.bestPrice, baseAmount, Side.BUY, true);
+            transferBalances(ctx.user, matchingOrder.user, ctx.bestPrice, baseAmount, Side.BUY, true, order.id, order.autoRepay);
 
             if (matchingOrder.filled == matchingOrder.quantity) {
                 _removeOrderFromQueue(queue, matchingOrder);
@@ -574,6 +582,7 @@ contract OrderBook is Initializable, OwnableUpgradeable, ReentrancyGuardUpgradea
                 emit UpdateOrder(matchingOrder.id, uint48(block.timestamp), matchingOrder.filled, Status.PARTIALLY_FILLED);
             }
 
+            
             // Update Oracle with real-time price from this trade
             _updateOracleFromTrade(ctx.bestPrice, baseAmount);
 
@@ -687,7 +696,7 @@ contract OrderBook is Initializable, OwnableUpgradeable, ReentrancyGuardUpgradea
         matchingOrder.filled += executedQuantity;
         queue.totalVolume -= executedQuantity;
 
-        transferBalances(ctx.user, matchingOrder.user, ctx.bestPrice, executedQuantity, ctx.side, ctx.isMarketOrder);
+        transferBalances(ctx.user, matchingOrder.user, ctx.bestPrice, executedQuantity, ctx.side, ctx.isMarketOrder, ctx.order.id, ctx.order.autoRepay);
 
         if (matchingOrder.filled == matchingOrder.quantity) {
             _removeOrderFromQueue(queue, matchingOrder);
@@ -696,6 +705,19 @@ contract OrderBook is Initializable, OwnableUpgradeable, ReentrancyGuardUpgradea
         } else {
             matchingOrder.status = Status.PARTIALLY_FILLED;
             emit UpdateOrder(matchingOrder.id, uint48(block.timestamp), matchingOrder.filled, Status.PARTIALLY_FILLED);
+        }
+
+        // Check for auto-borrow on successful order fills
+        // Auto-borrow works for both orders in the match
+        if (matchingOrder.autoBorrow) {
+            _handleAutoBorrow(matchingOrder.user, executedQuantity, ctx.bestPrice, matchingOrder.side, matchingOrder.id);
+        }
+
+        // Also check auto-borrow for the primary order (ctx.order)
+        if (ctx.order.autoBorrow) {
+            // Calculate the amount for the primary order based on side
+            uint256 primaryOrderAmount = executedQuantity;
+            _handleAutoBorrow(ctx.user, primaryOrderAmount, ctx.bestPrice, ctx.order.side, ctx.order.id);
         }
 
         emit OrderMatched(
@@ -774,7 +796,11 @@ contract OrderBook is Initializable, OwnableUpgradeable, ReentrancyGuardUpgradea
             filled: 0
         });
 
+        uint256 loopCount = 0;
         while (s.remaining > 0) {
+            loopCount++;
+            uint128 prevRemaining = s.remaining;
+            
             uint128 bestPrice = _getBestMatchingPrice(s.orderPrice, oppositeSide, isMarketOrder);
             if (bestPrice == 0) {
                 break;
@@ -797,6 +823,14 @@ contract OrderBook is Initializable, OwnableUpgradeable, ReentrancyGuardUpgradea
             (s.remaining, s.filled) =
                 _matchAtPriceLevel(order, queue, bestPrice, s.remaining, s.filled, side, user, isMarketOrder);
             _updatePriceLevel(bestPrice, queue, $.priceTrees[oppositeSide]);
+            
+            if (s.remaining == prevRemaining) {
+                break;
+            }
+            
+            if (loopCount > 10) {
+                break;
+            }
         }
 
         return s.filled;
@@ -940,7 +974,9 @@ contract OrderBook is Initializable, OwnableUpgradeable, ReentrancyGuardUpgradea
         uint128 matchPrice,
         uint128 executedQuantity,
         IOrderBook.Side side,
-        bool isMarketOrder
+        bool isMarketOrder,
+        uint48 traderOrderId,
+        bool traderAutoRepay
     ) private {
         Storage storage $ = getStorage();
         IBalanceManager bm = IBalanceManager($.balanceManager);
@@ -949,12 +985,20 @@ contract OrderBook is Initializable, OwnableUpgradeable, ReentrancyGuardUpgradea
 
         if (side == IOrderBook.Side.SELL) {
             _handleSellTransfer(bm, trader, matchingUser, baseAmount, quoteAmount, isMarketOrder);
+
+            // Check for auto-repay on successful SELL orders only if enabled
+            // SELL orders receive quote tokens, can repay quote token debt
+            if (traderAutoRepay) {
+                _handleAutoRepay(trader, baseAmount, matchPrice, side, traderOrderId);
+            }
         } else {
             _handleBuyTransfer(bm, trader, matchingUser, baseAmount, quoteAmount, isMarketOrder);
-            
-            // Check for auto-repay on successful BUY orders (only if order has autoRepay enabled)
-            // For now, we'll check if user has any auto-repay orders (simplified approach)
-            _handleAutoRepayOnBuy(trader, baseAmount, matchPrice);
+
+            // Check for auto-repay on successful BUY orders only if enabled
+            // BUY orders receive base tokens, can repay base token debt
+            if (traderAutoRepay) {
+                _handleAutoRepay(trader, baseAmount, matchPrice, side, traderOrderId);
+            }
         }
     }
 
@@ -1023,6 +1067,7 @@ contract OrderBook is Initializable, OwnableUpgradeable, ReentrancyGuardUpgradea
         order.orderType = _order.orderType;
         order.side = _order.side;
         order.autoRepay = _order.autoRepay;
+        order.autoBorrow = _order.autoBorrow;
 
         if (queue.head == 0) {
             queue.head = _order.id;
@@ -1117,15 +1162,14 @@ contract OrderBook is Initializable, OwnableUpgradeable, ReentrancyGuardUpgradea
     //                   AUTO-REPAY HELPERS
     // =============================================================
 
-    function _handleAutoRepayOnBuy(
+    function _handleAutoRepay(
         address user,
-        uint256 baseAmount,
-        uint128 fillPrice
+        uint256 amount,
+        uint128 fillPrice,
+        Side orderSide,
+        uint48 orderId
     ) private {
         Storage storage $ = getStorage();
-        
-        // Get user's current debt (base currency is the debt token)
-        address debtToken = Currency.unwrap($.poolKey.baseCurrency);
         IBalanceManager bm = IBalanceManager($.balanceManager);
         address lendingManager = bm.lendingManager();
         
@@ -1133,20 +1177,76 @@ contract OrderBook is Initializable, OwnableUpgradeable, ReentrancyGuardUpgradea
             return; // No lending manager available
         }
 
-        try ILendingManager(lendingManager).getUserDebt(user, debtToken) returns (uint256 userDebt) {
+        // Auto-repay logic depends on order side
+        if (orderSide == Side.BUY) {
+            // BUY orders: User acquires base tokens, can repay base token debt
+            address baseToken = Currency.unwrap($.poolKey.baseCurrency);
+            _repayToken(user, baseToken, lendingManager, bm, fillPrice, orderId);
+        } else {
+            // SELL orders: User receives quote tokens, can repay quote token debt
+            address quoteToken = Currency.unwrap($.poolKey.quoteCurrency);
+            _repayToken(user, quoteToken, lendingManager, bm, fillPrice, orderId);
+        }
+    }
+
+    function _repayToken(
+        address user,
+        address token,
+        address lendingManager,
+        IBalanceManager balanceManager,
+        uint128 fillPrice,
+        uint48 orderId
+    ) private {
+        try ILendingManager(lendingManager).getUserDebt(user, token) returns (uint256 userDebt) {
             if (userDebt == 0) {
-                return; // No debt to repay
+                return; // No debt to repay for this token
             }
 
             // Repay maximum possible: min(user balance, user debt)
-            uint256 userBalance = bm.getBalance(user, $.poolKey.baseCurrency);
+            uint256 userBalance = balanceManager.getBalance(user, Currency.wrap(token));
             uint256 repayAmount = userBalance > userDebt ? userDebt : userBalance;
 
             if (repayAmount > 0) {
-                _executeAutoRepayment(user, debtToken, repayAmount, fillPrice);
+                _executeAutoRepayment(user, token, repayAmount, fillPrice, orderId);
             }
         } catch {
-            // If checking debt fails, skip auto-repay
+            // If checking debt fails, skip auto-repay for this token
+        }
+    }
+
+    // Auto-borrow functionality for both BUY and SELL orders
+    function _handleAutoBorrow(
+        address user,
+        uint256 amount,
+        uint128 fillPrice,
+        Side orderSide,
+        uint48 orderId
+    ) private {
+        Storage storage $ = getStorage();
+        
+        // Get lending manager
+        IBalanceManager bm = IBalanceManager($.balanceManager);
+        address lendingManager = bm.lendingManager();
+        
+        if (lendingManager == address(0)) {
+            return; // No lending manager available
+        }
+
+        // Determine which token needs to be borrowed based on order side
+        address tokenToBorrow;
+        if (orderSide == Side.SELL) {
+            // SELL orders need to borrow base tokens (e.g., USDC) to sell
+            tokenToBorrow = Currency.unwrap($.poolKey.baseCurrency);
+        } else {
+            // BUY orders need to borrow quote tokens (e.g., WETH) to buy
+            tokenToBorrow = Currency.unwrap($.poolKey.quoteCurrency);
+        }
+        
+        try ILendingManager(lendingManager).borrow(tokenToBorrow, amount) {
+            emit AutoBorrowExecuted(user, tokenToBorrow, amount, block.timestamp, orderId);
+        } catch {
+            // If borrowing fails, emit event and continue
+            emit AutoBorrowFailed(user, tokenToBorrow, amount, block.timestamp, orderId);
         }
     }
 
@@ -1156,7 +1256,8 @@ contract OrderBook is Initializable, OwnableUpgradeable, ReentrancyGuardUpgradea
         address user,
         address debtToken,
         uint256 repayAmount,
-        uint128 fillPrice
+        uint128 fillPrice,
+        uint48 orderId
     ) private {
         Storage storage $ = getStorage();
         
@@ -1170,10 +1271,10 @@ contract OrderBook is Initializable, OwnableUpgradeable, ReentrancyGuardUpgradea
             
             // Execute repayment
             try ILendingManager(lendingManager).repay(debtToken, repayAmount) {
-                emit AutoRepaymentExecuted(user, debtToken, repayAmount, savings, block.timestamp);
+                emit AutoRepaymentExecuted(user, debtToken, repayAmount, savings, block.timestamp, orderId);
             } catch {
                 // If repayment fails, emit event and continue
-                emit AutoRepaymentFailed(user, debtToken, repayAmount, block.timestamp);
+                emit AutoRepaymentFailed(user, debtToken, repayAmount, block.timestamp, orderId);
             }
         }
     }

@@ -17,6 +17,10 @@
 # - CORE_CHAIN_ID: Chain ID for deployment (default: auto-detected from RPC)
 # - FORGE_TIMEOUT: Timeout for forge operations (default: 1200 seconds)
 # - ETHERSCAN_API_KEY: API key for contract verification on public networks (optional)
+# - VERIFIER: Verification service to use: "both" (default), "etherscan", or "tenderly"
+# - TENDERLY_PROJECT: Tenderly project slug (required for Tenderly verification)
+# - TENDERLY_USERNAME: Tenderly username (required for Tenderly verification)
+# - TENDERLY_ACCESS_KEY: Tenderly access key (optional, for private projects)
 #
 # USAGE EXAMPLES:
 # # Basic usage (uses defaults):
@@ -25,8 +29,17 @@
 # # With custom RPC:
 # SCALEX_CORE_RPC="http://localhost:8545" bash shellscripts/deploy.sh
 #
-# # With contract verification on Base Sepolia:
+# # With Etherscan verification on Base Sepolia:
 # SCALEX_CORE_RPC="https://sepolia.base.org" ETHERSCAN_API_KEY="your_key" bash shellscripts/deploy.sh
+#
+# # With Tenderly verification on Base Sepolia:
+# SCALEX_CORE_RPC="https://sepolia.base.org" VERIFIER="tenderly" \
+# TENDERLY_PROJECT="my-project" TENDERLY_USERNAME="myusername" bash shellscripts/deploy.sh
+#
+# # With BOTH Etherscan and Tenderly verification:
+# SCALEX_CORE_RPC="https://sepolia.base.org" VERIFIER="both" \
+# ETHERSCAN_API_KEY="your_key" TENDERLY_PROJECT="my-project" \
+# TENDERLY_USERNAME="myusername" bash shellscripts/deploy.sh
 #
 # # With custom private key and RPC:
 # PRIVATE_KEY="0xYourPrivateKey" SCALEX_CORE_RPC="http://localhost:8545" bash shellscripts/deploy.sh
@@ -103,31 +116,83 @@ print_error() {
 # Function to get verification flags for forge commands
 get_verification_flags() {
     local chain_id=$1
-    
-    # Check if we should verify (public networks and valid API key)
+    local verifier="${VERIFIER:-both}"  # Default to both Etherscan and Tenderly if not set
+
+    # Skip verification for local networks
+    if [[ "$chain_id" == "31337" ]] || [[ "$SCALEX_CORE_RPC" == *"127.0.0.1"* ]] || [[ "$SCALEX_CORE_RPC" == *"localhost"* ]]; then
+        echo ""
+        return 0
+    fi
+
+    # Check if we should verify (public networks only)
     if [[ "$chain_id" == "84532" ]] || [[ "$chain_id" == "11155111" ]] || [[ "$chain_id" == "1" ]] || [[ "$SCALEX_CORE_RPC" == *"base-sepolia"* ]] || [[ "$SCALEX_CORE_RPC" == *"sepolia"* ]] || [[ "$SCALEX_CORE_RPC" == *"mainnet"* ]] || [[ "$SCALEX_CORE_RPC" == *"basescan"* ]]; then
-        if [[ -n "$ETHERSCAN_API_KEY" && "$ETHERSCAN_API_KEY" != "dummy_key_for_local_testing" && "$ETHERSCAN_API_KEY" != "" ]]; then
-            case $chain_id in
-                84532) echo "--verify --etherscan-api-key $ETHERSCAN_API_KEY --chain 84532" ;;
-                11155111) echo "--verify --etherscan-api-key $ETHERSCAN_API_KEY --verifier-url https://api-sepolia.etherscan.io/api" ;;
-                1) echo "--verify --etherscan-api-key $ETHERSCAN_API_KEY --verifier-url https://api.etherscan.io/api" ;;
-                42161) echo "--verify --etherscan-api-key $ETHERSCAN_API_KEY --verifier-url https://api.arbiscan.io/api" ;;
-                10) echo "--verify --etherscan-api-key $ETHERSCAN_API_KEY --verifier-url https://api-optimistic.etherscan.io/api" ;;
-                137) echo "--verify --etherscan-api-key $ETHERSCAN_API_KEY --verifier-url https://api.polygonscan.com/api" ;;
-                *) 
-                    # Try to auto-detect verifier URL from RPC hostname
-                    if [[ "$SCALEX_CORE_RPC" == *"base"* ]]; then
-                        echo "--verify --etherscan-api-key $ETHERSCAN_API_KEY --verifier-url https://api.basescan.org/api"
-                    else
-                        echo "--verify --etherscan-api-key $ETHERSCAN_API_KEY"
-                    fi
-                    ;;
-            esac
+
+        # Both Etherscan and Tenderly verification
+        if [[ "$verifier" == "both" ]]; then
+            # Primary: Use Etherscan for inline verification (during forge script)
+            # Secondary: Tenderly will be done post-deployment
+            if [[ -n "$ETHERSCAN_API_KEY" && "$ETHERSCAN_API_KEY" != "dummy_key_for_local_testing" ]]; then
+                case $chain_id in
+                    84532) echo "--verify --etherscan-api-key $ETHERSCAN_API_KEY --chain 84532" ;;
+                    11155111) echo "--verify --etherscan-api-key $ETHERSCAN_API_KEY --verifier-url https://api-sepolia.etherscan.io/api" ;;
+                    1) echo "--verify --etherscan-api-key $ETHERSCAN_API_KEY --verifier-url https://api.etherscan.io/api" ;;
+                    42161) echo "--verify --etherscan-api-key $ETHERSCAN_API_KEY --verifier-url https://api.arbiscan.io/api" ;;
+                    10) echo "--verify --etherscan-api-key $ETHERSCAN_API_KEY --verifier-url https://api-optimistic.etherscan.io/api" ;;
+                    137) echo "--verify --etherscan-api-key $ETHERSCAN_API_KEY --verifier-url https://api.polygonscan.com/api" ;;
+                    *)
+                        if [[ "$SCALEX_CORE_RPC" == *"base"* ]]; then
+                            echo "--verify --etherscan-api-key $ETHERSCAN_API_KEY --verifier-url https://api.basescan.org/api"
+                        else
+                            echo "--verify --etherscan-api-key $ETHERSCAN_API_KEY"
+                        fi
+                        ;;
+                esac
+            else
+                print_warning "ETHERSCAN_API_KEY not set - will only verify on Tenderly"
+            fi
+        # Tenderly-only verification
+        elif [[ "$verifier" == "tenderly" ]]; then
+            if [[ -n "$TENDERLY_PROJECT" && -n "$TENDERLY_USERNAME" ]]; then
+                local flags="--verify --verifier tenderly --verifier-url https://api.tenderly.co/api/v1/account/${TENDERLY_USERNAME}/project/${TENDERLY_PROJECT}"
+                # Add access key if provided (for private projects)
+                if [[ -n "$TENDERLY_ACCESS_KEY" ]]; then
+                    flags="$flags --etherscan-api-key $TENDERLY_ACCESS_KEY"
+                fi
+                echo "$flags"
+            else
+                print_warning "TENDERLY_PROJECT or TENDERLY_USERNAME not set - skipping Tenderly verification"
+                echo "  To enable Tenderly verification, set:"
+                echo "  export VERIFIER='tenderly'"
+                echo "  export TENDERLY_PROJECT='your-project-slug'"
+                echo "  export TENDERLY_USERNAME='your-username'"
+                echo "  export TENDERLY_ACCESS_KEY='your-access-key' # optional, for private projects"
+                echo ""
+            fi
+        # Etherscan-only verification (default)
         else
-            print_warning "ETHERSCAN_API_KEY not set or invalid - skipping contract verification"
-            echo "  To enable verification, set a valid API key:"
-            echo "  export ETHERSCAN_API_KEY='your_actual_api_key_here'"
-            echo ""
+            if [[ -n "$ETHERSCAN_API_KEY" && "$ETHERSCAN_API_KEY" != "dummy_key_for_local_testing" && "$ETHERSCAN_API_KEY" != "" ]]; then
+                case $chain_id in
+                    84532) echo "--verify --etherscan-api-key $ETHERSCAN_API_KEY --chain 84532" ;;
+                    11155111) echo "--verify --etherscan-api-key $ETHERSCAN_API_KEY --verifier-url https://api-sepolia.etherscan.io/api" ;;
+                    1) echo "--verify --etherscan-api-key $ETHERSCAN_API_KEY --verifier-url https://api.etherscan.io/api" ;;
+                    42161) echo "--verify --etherscan-api-key $ETHERSCAN_API_KEY --verifier-url https://api.arbiscan.io/api" ;;
+                    10) echo "--verify --etherscan-api-key $ETHERSCAN_API_KEY --verifier-url https://api-optimistic.etherscan.io/api" ;;
+                    137) echo "--verify --etherscan-api-key $ETHERSCAN_API_KEY --verifier-url https://api.polygonscan.com/api" ;;
+                    *)
+                        # Try to auto-detect verifier URL from RPC hostname
+                        if [[ "$SCALEX_CORE_RPC" == *"base"* ]]; then
+                            echo "--verify --etherscan-api-key $ETHERSCAN_API_KEY --verifier-url https://api.basescan.org/api"
+                        else
+                            echo "--verify --etherscan-api-key $ETHERSCAN_API_KEY"
+                        fi
+                        ;;
+                esac
+            else
+                print_warning "ETHERSCAN_API_KEY not set or invalid - skipping contract verification"
+                echo "  To enable verification, set a valid API key:"
+                echo "  export ETHERSCAN_API_KEY='your_actual_api_key_here'"
+                echo ""
+            fi
         fi
     else
         # Local development - no verification needed
@@ -135,36 +200,154 @@ get_verification_flags() {
     fi
 }
 
+# Function to verify contracts on Tenderly (post-deployment)
+verify_on_tenderly() {
+    local chain_id=$1
+    local deployment_file="deployments/${chain_id}.json"
+
+    # Check if Tenderly verification is needed
+    if [[ "$VERIFIER" != "tenderly" && "$VERIFIER" != "both" ]]; then
+        return 0
+    fi
+
+    # Validate Tenderly credentials
+    if [[ -z "$TENDERLY_PROJECT" || -z "$TENDERLY_USERNAME" ]]; then
+        print_warning "Skipping Tenderly verification - missing TENDERLY_PROJECT or TENDERLY_USERNAME"
+        return 1
+    fi
+
+    # Check if tenderly CLI is installed
+    if ! command -v tenderly &> /dev/null; then
+        print_warning "Tenderly CLI not installed - skipping Tenderly verification"
+        echo "  Install with: npm install -g @tenderly/cli"
+        echo "  Or: curl https://raw.githubusercontent.com/Tenderly/tenderly-cli/master/scripts/install-linux.sh | sh"
+        return 1
+    fi
+
+    print_step "Verifying contracts on Tenderly..."
+
+    # Check if deployment file exists
+    if [[ ! -f "$deployment_file" ]]; then
+        print_error "Deployment file not found: $deployment_file"
+        return 1
+    fi
+
+    # Login to Tenderly (if access key is provided)
+    if [[ -n "$TENDERLY_ACCESS_KEY" ]]; then
+        echo "  🔐 Logging in to Tenderly..."
+        tenderly login --authentication-method access-key --access-key "$TENDERLY_ACCESS_KEY" --force > /dev/null 2>&1
+    fi
+
+    # Extract contract addresses from deployment file
+    local contracts=($(jq -r 'to_entries[] | select(.value | startswith("0x")) | .key' "$deployment_file" 2>/dev/null))
+
+    if [[ ${#contracts[@]} -eq 0 ]]; then
+        print_warning "No contracts found in deployment file"
+        return 1
+    fi
+
+    echo "  📋 Found ${#contracts[@]} contracts to verify on Tenderly"
+
+    # Verify each contract on Tenderly
+    local success_count=0
+    local fail_count=0
+
+    for contract_name in "${contracts[@]}"; do
+        local contract_address=$(jq -r ".$contract_name" "$deployment_file")
+
+        # Skip if address is invalid
+        if [[ ! "$contract_address" =~ ^0x[a-fA-F0-9]{40}$ ]]; then
+            continue
+        fi
+
+        echo "  🔍 Verifying $contract_name at $contract_address..."
+
+        # Use tenderly contract verify command
+        if tenderly contract verify \
+            --network "$chain_id" \
+            "$contract_address" \
+            --project-slug "$TENDERLY_PROJECT" \
+            --username "$TENDERLY_USERNAME" > /dev/null 2>&1; then
+            success_count=$((success_count + 1))
+            echo "    ✅ $contract_name verified"
+        else
+            fail_count=$((fail_count + 1))
+            echo "    ❌ $contract_name verification failed"
+        fi
+
+        # Small delay to avoid rate limiting
+        sleep 1
+    done
+
+    echo ""
+    print_success "Tenderly verification complete: $success_count succeeded, $fail_count failed"
+    echo "  🌐 View at: https://dashboard.tenderly.co/${TENDERLY_USERNAME}/${TENDERLY_PROJECT}"
+
+    return 0
+}
+
 # Function to validate verification setup
 validate_verification_setup() {
     local chain_id=$1
-    
+    local verifier="${VERIFIER:-both}"  # Default to both if not set
+
     # Only validate on public networks
     if [[ "$chain_id" == "31337" ]] || [[ "$SCALEX_CORE_RPC" == *"127.0.0.1"* ]] || [[ "$SCALEX_CORE_RPC" == *"localhost"* ]]; then
         return 0  # Skip validation for local development
     fi
-    
+
     # Check if forge verify-contract command is available
     if ! forge verify-contract --help >/dev/null 2>&1; then
         print_warning "forge verify-contract command not available - verification disabled"
         return 1
     fi
-    
-    # Validate API key format (should be a reasonable length hex string)
-    if [[ -n "$ETHERSCAN_API_KEY" ]]; then
-        if [[ ${#ETHERSCAN_API_KEY} -lt 10 ]] || [[ "$ETHERSCAN_API_KEY" == "dummy_key_for_local_testing" ]]; then
-            print_error "Invalid ETHERSCAN_API_KEY format"
-            echo "  Expected: Real API key (at least 10 characters)"
-            echo "  Current: ${ETHERSCAN_API_KEY:0:10}..."
-            return 1
+
+    local validation_passed=true
+
+    # Validate Etherscan setup (if needed)
+    if [[ "$verifier" == "etherscan" || "$verifier" == "both" ]]; then
+        if [[ -n "$ETHERSCAN_API_KEY" ]]; then
+            if [[ ${#ETHERSCAN_API_KEY} -lt 10 ]] || [[ "$ETHERSCAN_API_KEY" == "dummy_key_for_local_testing" ]]; then
+                print_error "Invalid ETHERSCAN_API_KEY format"
+                echo "  Expected: Real API key (at least 10 characters)"
+                echo "  Current: ${ETHERSCAN_API_KEY:0:10}..."
+                validation_passed=false
+            else
+                print_success "✅ Etherscan API key validated"
+            fi
+        else
+            print_warning "⚠️  No ETHERSCAN_API_KEY set - Etherscan verification will be skipped"
+            if [[ "$verifier" == "etherscan" ]]; then
+                validation_passed=false
+            fi
         fi
+    fi
+
+    # Validate Tenderly setup (if needed)
+    if [[ "$verifier" == "tenderly" || "$verifier" == "both" ]]; then
+        if [[ -n "$TENDERLY_PROJECT" && -n "$TENDERLY_USERNAME" ]]; then
+            print_success "✅ Tenderly credentials validated"
+
+            # Check if Tenderly CLI is installed (optional warning)
+            if ! command -v tenderly &> /dev/null; then
+                print_warning "⚠️  Tenderly CLI not installed - verification will use API only"
+                echo "  Install with: npm install -g @tenderly/cli"
+            fi
+        else
+            print_error "❌ Missing Tenderly credentials"
+            echo "  Required: TENDERLY_PROJECT and TENDERLY_USERNAME"
+            if [[ "$verifier" == "tenderly" ]]; then
+                validation_passed=false
+            fi
+        fi
+    fi
+
+    if [[ "$validation_passed" == true ]]; then
+        print_success "Verification setup validated"
+        return 0
     else
-        print_warning "No ETHERSCAN_API_KEY set - contracts will not be verified"
         return 1
     fi
-    
-    print_success "Verification setup validated"
-    return 0
 }
 
 # Load environment variables from .env file
@@ -1131,6 +1314,12 @@ print_success "Comprehensive verification completed!"
 
 echo ""
 print_success " Core Chain Deployment completed successfully!"
+
+# Post-deployment: Verify on Tenderly if configured
+if [[ "$VERIFIER" == "tenderly" || "$VERIFIER" == "both" ]]; then
+    echo ""
+    verify_on_tenderly $CORE_CHAIN_ID
+fi
 
 # Validation - Local Deployment Only
 print_step "Validating Local Deployment..."

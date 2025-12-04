@@ -47,19 +47,8 @@ contract WeightedCheckpointTest is Test {
         usdc.mint(user1, 10000 * 1e6);
         usdc.mint(user2, 5000 * 1e6);
         weth.mint(borrower, 1000 * 1e18); // More WETH for collateral
-        
-        // Deploy LendingManager proxy (like working tests)
-        ERC1967Proxy lendingProxy = new ERC1967Proxy(
-            address(new LendingManager()),
-            abi.encodeWithSelector(
-                LendingManager.initialize.selector,
-                owner,
-                address(0x742d35Cc6634c0532925A3B8d4C9db96c4B3D8B9) // Mock oracle address
-            )
-        );
-        lendingManager = LendingManager(address(lendingProxy));
-        
-        // Deploy BalanceManager proxy (like working tests)
+
+        // Deploy BalanceManager FIRST (needed for LendingManager initialization)
         ERC1967Proxy balanceProxy = new ERC1967Proxy(
             address(new BalanceManager()),
             abi.encodeWithSelector(
@@ -71,7 +60,19 @@ contract WeightedCheckpointTest is Test {
             )
         );
         balanceManager = IBalanceManager(payable(address(balanceProxy)));
-        
+
+        // NOW deploy LendingManager with BalanceManager address
+        ERC1967Proxy lendingProxy = new ERC1967Proxy(
+            address(new LendingManager()),
+            abi.encodeWithSelector(
+                LendingManager.initialize.selector,
+                owner,
+                address(balanceProxy), // Pass BalanceManager address
+                address(0x742d35Cc6634c0532925A3B8d4C9db96c4B3D8B9) // Mock oracle address
+            )
+        );
+        lendingManager = LendingManager(address(lendingProxy));
+
         // Deploy token factory
         tokenFactory = new SyntheticTokenFactory();
         tokenFactory.initialize(owner, owner);

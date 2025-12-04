@@ -111,6 +111,7 @@ contract LiquidationStressTest is Test {
             abi.encodeWithSelector(
                 LendingManager.initialize.selector,
                 owner,
+                address(balanceManager), // Pass BalanceManager address
                 address(mockOracle)
             )
         );

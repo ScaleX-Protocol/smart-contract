@@ -104,7 +104,9 @@ interface IOrderBook is IOrderBookErrors {
         uint128 quantity,
         uint48 expiry,
         bool isMarketOrder,
-        Status status
+        Status status,
+        bool autoRepay,
+        bool autoBorrow
     );
 
     event OrderMatched(
@@ -128,14 +130,32 @@ interface IOrderBook is IOrderBookErrors {
         address indexed debtToken,
         uint256 repayAmount,
         uint256 savings,
-        uint256 timestamp
+        uint256 timestamp,
+        uint48 orderId
     );
 
     event AutoRepaymentFailed(
         address indexed user,
         address indexed debtToken,
         uint256 attemptedAmount,
-        uint256 timestamp
+        uint256 timestamp,
+        uint48 orderId
+    );
+
+    event AutoBorrowExecuted(
+        address indexed user,
+        address indexed borrowedToken,
+        uint256 borrowAmount,
+        uint256 timestamp,
+        uint48 orderId
+    );
+
+    event AutoBorrowFailed(
+        address indexed user,
+        address indexed attemptedToken,
+        uint256 attemptedAmount,
+        uint256 timestamp,
+        uint48 orderId
     );
 
     function initialize(
