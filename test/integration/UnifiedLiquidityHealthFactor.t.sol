@@ -102,6 +102,7 @@ contract UnifiedLiquidityHealthFactorTest is Test {
             abi.encodeWithSelector(
                 LendingManager.initialize.selector,
                 owner,
+                address(balanceProxy), // Pass BalanceManager address
                 address(mockOracle)
             )
         );

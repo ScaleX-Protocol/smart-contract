@@ -121,10 +121,18 @@ contract OracleLendingIntegrationTest is Test {
     }
     
     function testOracleFallbackBehavior() public {
-        // Deploy new LendingManager without setting Oracle
+        // Deploy new LendingManager without setting Oracle, using a proxy
         vm.startPrank(owner);
-        LendingManager isolatedLendingManager = new LendingManager();
-        isolatedLendingManager.initialize(owner, address(this), address(0)); // No oracle set
+        ERC1967Proxy isolatedProxy = new ERC1967Proxy(
+            address(new LendingManager()),
+            abi.encodeWithSelector(
+                LendingManager.initialize.selector,
+                owner,
+                address(this), // Using address(this) as mock balanceManager
+                address(0) // No oracle set
+            )
+        );
+        LendingManager isolatedLendingManager = LendingManager(address(isolatedProxy));
         
         // Even without oracle, functions should not revert
         uint256 collateralPrice = isolatedLendingManager.getCollateralPrice(address(token));

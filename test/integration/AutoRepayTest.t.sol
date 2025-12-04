@@ -11,6 +11,7 @@ import {LendingManager} from "../../src/yield/LendingManager.sol";
 import {MockToken} from "../../src/mocks/MockToken.sol";
 import {IOrderBook} from "../../src/core/interfaces/IOrderBook.sol";
 import {IPoolManager} from "../../src/core/interfaces/IPoolManager.sol";
+import {ScaleXRouter} from "../../src/core/ScaleXRouter.sol";
 import {Currency} from "../../src/core/libraries/Currency.sol";
 import {PoolId, PoolKey} from "../../src/core/libraries/Pool.sol";
 import {UpgradeableBeacon} from "@openzeppelin/contracts/proxy/beacon/UpgradeableBeacon.sol";
@@ -32,6 +33,7 @@ contract AutoRepayTest is Test, IPriceOracle {
     ITokenRegistry public tokenRegistry;
     SyntheticTokenFactory public tokenFactory;
     LendingManager public lendingManager;
+    ScaleXRouter public scalexRouter;
     
     MockToken public weth;
     MockToken public usdc;
@@ -139,10 +141,21 @@ contract AutoRepayTest is Test, IPriceOracle {
         balanceManager.setPoolManager(address(poolManager));
         balanceManager.setAuthorizedOperator(address(poolManager), true);
         
-        // Set the router first
-        poolManager.setRouter(router);
+        // Deploy ScaleXRouter beacon and proxy using BeaconDeployer like other contracts
+        (BeaconProxy routerProxy,) = beaconDeployer.deployUpgradeableContract(
+            address(new ScaleXRouter()),
+            owner,
+            abi.encodeCall(ScaleXRouter.initialize, (address(poolManager), address(balanceManager)))
+        );
+        scalexRouter = ScaleXRouter(address(routerProxy));
         
-        // Create the pool with trading rules
+        // Set ScaleXRouter as the router in PoolManager BEFORE creating the pool
+        poolManager.setRouter(address(scalexRouter));
+        
+        // Authorize ScaleXRouter to call BalanceManager functions
+        balanceManager.setAuthorizedOperator(address(scalexRouter), true);
+        
+        // Create the pool with trading rules (OrderBook will be created with ScaleXRouter as router)
         IOrderBook.TradingRules memory tradingRules = IOrderBook.TradingRules({
             minTradeAmount: 1 * 1e6,
             minAmountMovement: 1,
@@ -208,18 +221,26 @@ contract AutoRepayTest is Test, IPriceOracle {
     }
     
     function test_AutoRepayOrderPlacement() public {
-        vm.startPrank(router);
+        vm.startPrank(borrower);
         
-        // Place auto-repay limit order to buy USDC at discount
+        // Get the pool for ScaleXRouter
+        PoolKey memory poolKey = PoolKey({
+            baseCurrency: Currency.wrap(address(usdc)),
+            quoteCurrency: Currency.wrap(address(weth))
+        });
+        IPoolManager.Pool memory pool = poolManager.getPool(poolKey);
+        
+        // Place auto-repay limit order to buy USDC at discount using ScaleXRouter
         uint128 targetPrice = 980 * 1e6;  // $0.98 per USDC (this will be the order price)
         uint128 quantity = 1000 * 1e6;   // Buy 1000 USDC
         
-        uint48 orderId = orderBook.placeOrder(
+        uint48 orderId = scalexRouter.placeLimitOrderWithFlags(
+            pool,
             targetPrice,
             quantity,
             IOrderBook.Side.BUY,
-            borrower,
             IOrderBook.TimeInForce.GTC,
+            quantity,
             true,  // autoRepay = true
             false  // autoBorrow = false
         );
@@ -231,7 +252,7 @@ contract AutoRepayTest is Test, IPriceOracle {
         assertEq(order.quantity, quantity, "Order quantity should match");
         assertTrue(order.side == IOrderBook.Side.BUY, "Order should be BUY side");
         
-        console.log("[OK] Auto-repay order placed successfully");
+        console.log("[OK] Auto-repay order placed successfully via ScaleXRouter");
         console.log("   Order ID:", uint256(orderId));
         console.log("   Order Price:", uint256(targetPrice) / 1e6, "USD per USDC");
         console.log("   Order Quantity:", uint256(quantity) / 1e6, "USDC");
@@ -241,21 +262,30 @@ contract AutoRepayTest is Test, IPriceOracle {
     }
     
     function test_AutoRepayWithProfitableFill() public {
-        // Place auto-repay order first
-        vm.startPrank(router);
-        uint48 autoRepayOrderId = orderBook.placeOrder(
+        // Place auto-repay order first using ScaleXRouter
+        vm.startPrank(borrower);
+        
+        // Get the pool for ScaleXRouter
+        PoolKey memory poolKey = PoolKey({
+            baseCurrency: Currency.wrap(address(usdc)),
+            quoteCurrency: Currency.wrap(address(weth))
+        });
+        IPoolManager.Pool memory pool = poolManager.getPool(poolKey);
+        
+        uint48 autoRepayOrderId = scalexRouter.placeLimitOrderWithFlags(
+            pool,
             1000 * 1e6,  // Market price
             1000 * 1e6,  // Buy 1000 USDC
             IOrderBook.Side.BUY,
-            borrower,
             IOrderBook.TimeInForce.GTC,
+            1000 * 1e6,
             true,  // autoRepay = true
             false // autoBorrow = false
         );
         
         vm.stopPrank();
         
-        console.log("[OK] Auto-repay setup complete");
+        console.log("[OK] Auto-repay setup complete via ScaleXRouter");
         console.log("   Initial debt:", lendingManager.getUserDebt(borrower, address(usdc)) / 1e6, "USDC");
         
         // Note: In a real scenario, when this order fills, it will automatically
@@ -264,15 +294,23 @@ contract AutoRepayTest is Test, IPriceOracle {
     }
 
     function test_RegularOrderWithoutAutoRepay() public {
-        vm.startPrank(router);
+        vm.startPrank(borrower);
         
-        // Place regular order without auto-repay
-        uint48 orderId = orderBook.placeOrder(
+        // Get the pool for ScaleXRouter
+        PoolKey memory poolKey = PoolKey({
+            baseCurrency: Currency.wrap(address(usdc)),
+            quoteCurrency: Currency.wrap(address(weth))
+        });
+        IPoolManager.Pool memory pool = poolManager.getPool(poolKey);
+        
+        // Place regular order without auto-repay using ScaleXRouter
+        uint48 orderId = scalexRouter.placeLimitOrderWithFlags(
+            pool,
             1000 * 1e6,  // Market price
             500 * 1e6,   // Buy 500 USDC
             IOrderBook.Side.BUY,
-            borrower,
             IOrderBook.TimeInForce.GTC,
+            500 * 1e6,
             false, // autoRepay = false
             false  // autoBorrow = false
         );
@@ -281,9 +319,155 @@ contract AutoRepayTest is Test, IPriceOracle {
         IOrderBook.Order memory order = orderBook.getOrder(orderId);
         assertTrue(!order.autoRepay, "Order should not have auto-repay enabled");
         
-        console.log("[OK] Regular order placed successfully (no auto-repay)");
+        console.log("[OK] Regular order placed successfully via ScaleXRouter (no auto-repay)");
         console.log("   Order ID:", uint256(orderId));
         console.log("   Auto-Repay Enabled:", order.autoRepay);
+        
+        vm.stopPrank();
+    }
+    
+    function test_AutoBorrowOrderPlacement() public {
+        // Setup a user with collateral but insufficient base tokens for selling
+        address seller = address(0x5);
+        vm.startPrank(seller);
+        
+        // Give seller WETH collateral and also supply USDC to enable borrowing
+        weth.mint(seller, 3 ether);
+        weth.approve(address(balanceManager), 3 ether);
+        balanceManager.deposit(Currency.wrap(address(weth)), 3 ether, seller, seller);
+        
+        // Also supply USDC to lending to enable borrowing of USDC
+        usdc.mint(seller, 2000 * 1e6);
+        usdc.approve(address(balanceManager), 2000 * 1e6);
+        balanceManager.deposit(Currency.wrap(address(usdc)), 2000 * 1e6, seller, seller);
+        
+        // Supply more USDC to lending from owner to ensure liquidity
+        vm.startPrank(owner);
+        usdc.mint(owner, 5000 * 1e6);
+        usdc.approve(address(balanceManager), 5000 * 1e6);
+        balanceManager.deposit(Currency.wrap(address(usdc)), 5000 * 1e6, owner, owner);
+        
+        vm.startPrank(seller);
+        
+        // Try to place a sell order for USDC with autoBorrow (sell USDC that we don't have)
+        PoolKey memory poolKey = PoolKey({
+            baseCurrency: Currency.wrap(address(usdc)),
+            quoteCurrency: Currency.wrap(address(weth))
+        });
+        IPoolManager.Pool memory pool = poolManager.getPool(poolKey);
+        
+        uint128 sellPrice = 1000 * 1e6;  // $1000 per USDC
+        uint128 sellQuantity = 500 * 1e6; // Sell 500 USDC (we don't have this)
+        
+        // This should work with autoBorrow enabled since we have WETH collateral
+        uint48 orderId = scalexRouter.placeLimitOrderWithFlags(
+            pool,
+            sellPrice,
+            sellQuantity,
+            IOrderBook.Side.SELL,
+            IOrderBook.TimeInForce.GTC,
+            0, // No deposit needed for sell order
+            false, // autoRepay = false
+            true   // autoBorrow = true
+        );
+        
+        // Verify order was placed with autoBorrow enabled
+        IOrderBook.Order memory order = orderBook.getOrder(orderId);
+        console.log("   Order placed successfully!");
+        console.log("   Order ID:", uint256(orderId));
+        console.log("   Order autoBorrow:", order.autoBorrow);
+        console.log("   Order autoRepay:", order.autoRepay);
+        console.log("   Order side:", uint256(order.side) == 0 ? "BUY" : "SELL");
+        
+        assertTrue(order.autoBorrow, "Order should have auto-borrow enabled");
+        assertEq(order.price, sellPrice, "Order price should match");
+        assertEq(order.quantity, sellQuantity, "Order quantity should match");
+        assertTrue(order.side == IOrderBook.Side.SELL, "Order should be SELL side");
+        
+        console.log("[OK] Auto-borrow order placed successfully via ScaleXRouter");
+        console.log("   Order ID:", uint256(orderId));
+        console.log("   Order Price:", uint256(sellPrice) / 1e6, "USD per USDC");
+        console.log("   Order Quantity:", uint256(sellQuantity) / 1e6, "USDC");
+        console.log("   Auto-Borrow Enabled:", order.autoBorrow);
+        
+        vm.stopPrank();
+    }
+    
+    function test_AutoBorrowWorksForBothSides() public {
+        address user = address(0x6);
+        vm.startPrank(user);
+        
+        // Setup collateral for both tokens
+        weth.mint(user, 2 ether);
+        weth.approve(address(balanceManager), 2 ether);
+        balanceManager.deposit(Currency.wrap(address(weth)), 2 ether, user, user);
+        
+        usdc.mint(user, 2000 * 1e6);
+        usdc.approve(address(balanceManager), 2000 * 1e6);
+        balanceManager.deposit(Currency.wrap(address(usdc)), 2000 * 1e6, user, user);
+        
+        PoolKey memory poolKey = PoolKey({
+            baseCurrency: Currency.wrap(address(usdc)),
+            quoteCurrency: Currency.wrap(address(weth))
+        });
+        IPoolManager.Pool memory pool = poolManager.getPool(poolKey);
+        
+        // Should now work: autoBorrow works for both BUY and SELL orders
+        uint48 buyOrderId = scalexRouter.placeLimitOrderWithFlags(
+            pool,
+            1000 * 1e6,
+            100 * 1e6,
+            IOrderBook.Side.BUY,  // BUY order - should now work
+            IOrderBook.TimeInForce.GTC,
+            0,
+            false,
+            true
+        );
+        
+        uint48 sellOrderId = scalexRouter.placeLimitOrderWithFlags(
+            pool,
+            1000 * 1e6,
+            100 * 1e6,
+            IOrderBook.Side.SELL, // SELL order - should work
+            IOrderBook.TimeInForce.GTC,
+            0,
+            false,
+            true
+        );
+        
+        assertTrue(buyOrderId > 0, "BUY order with autoBorrow should be placed");
+        assertTrue(sellOrderId > 0, "SELL order with autoBorrow should be placed");
+        
+        console.log("[OK] Auto-borrow works for both BUY and SELL orders");
+        
+        vm.stopPrank();
+    }
+    
+    function test_AutoBorrowRequiresCollateral() public {
+        // Test that autoBorrow fails for users with no collateral
+        address noCollateralUser = address(0x7);
+        vm.startPrank(noCollateralUser);
+        
+        PoolKey memory poolKey = PoolKey({
+            baseCurrency: Currency.wrap(address(usdc)),
+            quoteCurrency: Currency.wrap(address(weth))
+        });
+        IPoolManager.Pool memory pool = poolManager.getPool(poolKey);
+        
+        // Should fail: user has no collateral to borrow against
+        vm.expectRevert();
+        scalexRouter.placeLimitOrderWithFlags(
+            pool,
+            1000 * 1e6,
+            100 * 1e6,
+            IOrderBook.Side.SELL,
+            IOrderBook.TimeInForce.GTC,
+            0,
+            false,
+            true
+        );
+        
+        console.log("[OK] Auto-borrow correctly rejected for users with no collateral");
         
         vm.stopPrank();
     }

@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.26;
 
+import {Test, console} from "forge-std/Test.sol";
+import {IScaleXRouter} from "../../src/core/interfaces/IScaleXRouter.sol";
 import "../../src/core/BalanceManager.sol";
 import {IBalanceManager} from "../../src/core/interfaces/IBalanceManager.sol";
 import {ITokenRegistry} from "../../src/core/interfaces/ITokenRegistry.sol";
@@ -233,7 +235,7 @@ contract ScaleXRouterSimpleTest is Test {
         
         // Place a limit order with autoBorrow and autoRepay flags
         uint128 price = 2000e6; // $2000
-        uint48 orderId = scalexRouter.placeLimitOrder(
+        uint48 orderId = scalexRouter.placeLimitOrderWithFlags(
             pool, 
             price, 
             quantity, 
@@ -249,6 +251,13 @@ contract ScaleXRouterSimpleTest is Test {
         assertTrue(orderId > 0, "Order with auto flags should be placed successfully");
         
         // Verify order details by checking it through OrderBook (for testing purposes)
+        console.log("ScaleXRouterSimpleTest - Order ID:", uint256(orderId));
+        
+        // Get the order to verify autoBorrow flag
+        OrderBook orderBook = OrderBook(address(pool.orderBook));
+        IOrderBook.Order memory order = orderBook.getOrder(orderId);
+        console.log("AutoBorrow flag:", order.autoBorrow);
+        console.log("AutoRepay flag:", order.autoRepay);
         // Note: In actual implementation, autoBorrow for SELL orders would be validated
         // to ensure user has sufficient collateral to borrow against
     }

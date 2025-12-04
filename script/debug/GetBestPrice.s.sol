@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.26;
 
-import {Test, console} from "forge-std/Test.sol";
+import {Script, console} from "forge-std/Script.sol";
 import {IScaleXRouter} from "@scalexcore/interfaces/IScaleXRouter.sol";
 import {IPoolManager} from "@scalexcore/interfaces/IPoolManager.sol";
 import {IOrderBook} from "@scalexcore/interfaces/IOrderBook.sol";
 import {Currency} from "@scalexcore/libraries/Currency.sol";
 
-contract TestBestPrice is Test {
+contract TestBestPrice is Script {
     // Contract addresses
     IScaleXRouter constant router = IScaleXRouter(0xd81F05627eC398719B58F034a0E806D2971958f1);
     

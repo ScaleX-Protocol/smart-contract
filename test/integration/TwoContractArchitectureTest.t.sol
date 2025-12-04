@@ -95,6 +95,7 @@ contract TwoContractArchitectureTest is Test {
             abi.encodeWithSelector(
                 LendingManager.initialize.selector,
                 owner,
+                address(balanceManager), // Pass BalanceManager address
                 address(0x742d35Cc6634c0532925A3B8d4C9db96c4B3D8B9) // Mock oracle
             )
         );

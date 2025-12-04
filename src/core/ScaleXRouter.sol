@@ -10,12 +10,15 @@ import {Currency} from "./libraries/Currency.sol";
 import {PoolKey, PoolIdLibrary} from "./libraries/Pool.sol";
 import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
 import {IScaleXRouter} from "./interfaces/IScaleXRouter.sol";
 import {ScaleXRouterStorage} from "./storages/ScaleXRouterStorage.sol";
 import {ILendingManager} from "./interfaces/ILendingManager.sol";
 
 contract ScaleXRouter is IScaleXRouter, ScaleXRouterStorage, Initializable, OwnableUpgradeable {
+    using SafeERC20 for IERC20;
+
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() {
         _disableInitializers();
@@ -63,7 +66,7 @@ contract ScaleXRouter is IScaleXRouter, ScaleXRouterStorage, Initializable, Owna
         return _placeLimitOrderInternal(pool, _price, _quantity, _side, _timeInForce, depositAmount, false, false);
     }
 
-    function placeLimitOrder(
+    function placeLimitOrderWithFlags(
         IPoolManager.Pool calldata pool,
         uint128 _price,
         uint128 _quantity,
@@ -93,7 +96,7 @@ contract ScaleXRouter is IScaleXRouter, ScaleXRouterStorage, Initializable, Owna
         if (depositAmount > 0) {
             balanceManager.deposit(depositCurrency, depositAmount, msg.sender, msg.sender);
         }
-
+        
         orderId = pool.orderBook.placeOrder(_price, _quantity, _side, msg.sender, _timeInForce, autoRepay, autoBorrow);
     }
 
@@ -380,405 +383,405 @@ contract ScaleXRouter is IScaleXRouter, ScaleXRouterStorage, Initializable, Owna
         return pool.orderBook.getNextBestPrices(side, price, count);
     }
 
-    // /// Calculate minimum output amount for swap operations
-    // function calculateMinOutForSwap(
-    //     Currency srcCurrency,
-    //     Currency dstCurrency,
-    //     uint256 inputAmount,
-    //     uint256 slippageToleranceBps
-    // ) external view returns (uint128 minOutputAmount) {
-    //     if (Currency.unwrap(srcCurrency) == Currency.unwrap(dstCurrency)) {
-    //         revert IdenticalCurrencies(Currency.unwrap(srcCurrency));
-    //     }
-    //     if (slippageToleranceBps > 10_000) {
-    //         revert InvalidSlippageTolerance(slippageToleranceBps);
-    //     }
-    //     if (inputAmount == 0) {
-    //         return 0;
-    //     }
+    /// Calculate minimum output amount for swap operations
+    function calculateMinOutForSwap(
+        Currency srcCurrency,
+        Currency dstCurrency,
+        uint256 inputAmount,
+        uint256 slippageToleranceBps
+    ) external view returns (uint128 minOutputAmount) {
+        if (Currency.unwrap(srcCurrency) == Currency.unwrap(dstCurrency)) {
+            revert IdenticalCurrencies(Currency.unwrap(srcCurrency));
+        }
+        if (slippageToleranceBps > 10_000) {
+            revert InvalidSlippageTolerance(slippageToleranceBps);
+        }
+        if (inputAmount == 0) {
+            return 0;
+        }
 
-    //     Storage storage $ = getStorage();
-    //     IPoolManager poolManager = IPoolManager($.poolManager);
+        Storage storage $ = getStorage();
+        IPoolManager poolManager = IPoolManager($.poolManager);
 
-    //     // Try direct swap first
-    //     if (poolManager.poolExists(srcCurrency, dstCurrency)) {
-    //         return _calculateDirectSwapMinOut(srcCurrency, dstCurrency, srcCurrency, inputAmount, slippageToleranceBps);
-    //     } else if (poolManager.poolExists(dstCurrency, srcCurrency)) {
-    //         return _calculateDirectSwapMinOut(dstCurrency, srcCurrency, srcCurrency, inputAmount, slippageToleranceBps);
-    //     }
+        // Try direct swap first
+        if (poolManager.poolExists(srcCurrency, dstCurrency)) {
+            return _calculateDirectSwapMinOut(srcCurrency, dstCurrency, srcCurrency, inputAmount, slippageToleranceBps);
+        } else if (poolManager.poolExists(dstCurrency, srcCurrency)) {
+            return _calculateDirectSwapMinOut(dstCurrency, srcCurrency, srcCurrency, inputAmount, slippageToleranceBps);
+        }
 
-    //     // Try multi-hop via common intermediaries
-    //     Currency[] memory intermediaries = poolManager.getCommonIntermediaries();
+        // Try multi-hop via common intermediaries
+        Currency[] memory intermediaries = poolManager.getCommonIntermediaries();
 
-    //     for (uint256 i = 0; i < intermediaries.length; i++) {
-    //         Currency intermediary = intermediaries[i];
-    //         if (
-    //             Currency.unwrap(intermediary) == Currency.unwrap(srcCurrency)
-    //                 || Currency.unwrap(intermediary) == Currency.unwrap(dstCurrency)
-    //         ) {
-    //             continue;
-    //         }
+        for (uint256 i = 0; i < intermediaries.length; i++) {
+            Currency intermediary = intermediaries[i];
+            if (
+                Currency.unwrap(intermediary) == Currency.unwrap(srcCurrency)
+                    || Currency.unwrap(intermediary) == Currency.unwrap(dstCurrency)
+            ) {
+                continue;
+            }
 
-    //         if (_canSwapViaIntermediary(poolManager, srcCurrency, intermediary, dstCurrency)) {
-    //             return _calculateMultiHopMinOut(
-    //                 poolManager, srcCurrency, intermediary, dstCurrency, inputAmount, slippageToleranceBps
-    //             );
-    //         }
-    //     }
+            if (_canSwapViaIntermediary(poolManager, srcCurrency, intermediary, dstCurrency)) {
+                return _calculateMultiHopMinOut(
+                    poolManager, srcCurrency, intermediary, dstCurrency, inputAmount, slippageToleranceBps
+                );
+            }
+        }
 
-    //     return 0; // No valid swap path found
-    // }
+        return 0; // No valid swap path found
+    }
 
-    // /// @dev Calculate minimum output for direct swap
-    // function _calculateDirectSwapMinOut(
-    //     Currency baseCurrency,
-    //     Currency quoteCurrency,
-    //     Currency srcCurrency,
-    //     uint256 inputAmount,
-    //     uint256 slippageToleranceBps
-    // ) internal view returns (uint128) {
-    //     Storage storage $ = getStorage();
-    //     IPoolManager poolManager = IPoolManager($.poolManager);
+    /// @dev Calculate minimum output for direct swap
+    function _calculateDirectSwapMinOut(
+        Currency baseCurrency,
+        Currency quoteCurrency,
+        Currency srcCurrency,
+        uint256 inputAmount,
+        uint256 slippageToleranceBps
+    ) internal view returns (uint128) {
+        Storage storage $ = getStorage();
+        IPoolManager poolManager = IPoolManager($.poolManager);
 
-    //     PoolKey memory key = poolManager.createPoolKey(baseCurrency, quoteCurrency);
-    //     IPoolManager.Pool memory pool = poolManager.getPool(key);
+        PoolKey memory key = poolManager.createPoolKey(baseCurrency, quoteCurrency);
+        IPoolManager.Pool memory pool = poolManager.getPool(key);
 
-    //     // Determine side: if we're selling the base currency, it's a SELL order
-    //     // If we're buying the base currency with quote currency, it's a BUY order
-    //     IOrderBook.Side side =
-    //         Currency.unwrap(srcCurrency) == Currency.unwrap(baseCurrency) ? IOrderBook.Side.SELL : IOrderBook.Side.BUY;
+        // Determine side: if we're selling the base currency, it's a SELL order
+        // If we're buying the base currency with quote currency, it's a BUY order
+        IOrderBook.Side side =
+            Currency.unwrap(srcCurrency) == Currency.unwrap(baseCurrency) ? IOrderBook.Side.SELL : IOrderBook.Side.BUY;
 
-    //     return calculateMinOutAmountForMarket(pool, inputAmount, side, slippageToleranceBps);
-    // }
+        return calculateMinOutAmountForMarket(pool, inputAmount, side, slippageToleranceBps);
+    }
 
-    // /// @dev Calculate minimum output for multi-hop swap
-    // function _calculateMultiHopMinOut(
-    //     IPoolManager poolManager,
-    //     Currency srcCurrency,
-    //     Currency intermediateCurrency,
-    //     Currency dstCurrency,
-    //     uint256 inputAmount,
-    //     uint256 slippageToleranceBps
-    // ) internal view returns (uint128) {
-    //     // Split slippage tolerance across both hops
-    //     uint256 slippagePerHop = slippageToleranceBps / 2;
+    /// @dev Calculate minimum output for multi-hop swap
+    function _calculateMultiHopMinOut(
+        IPoolManager poolManager,
+        Currency srcCurrency,
+        Currency intermediateCurrency,
+        Currency dstCurrency,
+        uint256 inputAmount,
+        uint256 slippageToleranceBps
+    ) internal view returns (uint128) {
+        // Split slippage tolerance across both hops
+        uint256 slippagePerHop = slippageToleranceBps / 2;
 
-    //     // First hop: calculate intermediate amount
-    //     uint128 intermediateAmount;
-    //     if (poolManager.poolExists(srcCurrency, intermediateCurrency)) {
-    //         intermediateAmount =
-    //             _calculateDirectSwapMinOut(srcCurrency, intermediateCurrency, srcCurrency, inputAmount, slippagePerHop);
-    //     } else if (poolManager.poolExists(intermediateCurrency, srcCurrency)) {
-    //         intermediateAmount =
-    //             _calculateDirectSwapMinOut(intermediateCurrency, srcCurrency, srcCurrency, inputAmount, slippagePerHop);
-    //     } else {
-    //         return 0; // First hop not possible
-    //     }
+        // First hop: calculate intermediate amount
+        uint128 intermediateAmount;
+        if (poolManager.poolExists(srcCurrency, intermediateCurrency)) {
+            intermediateAmount =
+                _calculateDirectSwapMinOut(srcCurrency, intermediateCurrency, srcCurrency, inputAmount, slippagePerHop);
+        } else if (poolManager.poolExists(intermediateCurrency, srcCurrency)) {
+            intermediateAmount =
+                _calculateDirectSwapMinOut(intermediateCurrency, srcCurrency, srcCurrency, inputAmount, slippagePerHop);
+        } else {
+            return 0; // First hop not possible
+        }
 
-    //     // Second hop: calculate final amount
-    //     if (poolManager.poolExists(intermediateCurrency, dstCurrency)) {
-    //         return _calculateDirectSwapMinOut(
-    //             intermediateCurrency, dstCurrency, intermediateCurrency, intermediateAmount, slippagePerHop
-    //         );
-    //     } else if (poolManager.poolExists(dstCurrency, intermediateCurrency)) {
-    //         return _calculateDirectSwapMinOut(
-    //             dstCurrency, intermediateCurrency, intermediateCurrency, intermediateAmount, slippagePerHop
-    //         );
-    //     } else {
-    //         return 0; // Second hop not possible
-    //     }
-    // }
+        // Second hop: calculate final amount
+        if (poolManager.poolExists(intermediateCurrency, dstCurrency)) {
+            return _calculateDirectSwapMinOut(
+                intermediateCurrency, dstCurrency, intermediateCurrency, intermediateAmount, slippagePerHop
+            );
+        } else if (poolManager.poolExists(dstCurrency, intermediateCurrency)) {
+            return _calculateDirectSwapMinOut(
+                dstCurrency, intermediateCurrency, intermediateCurrency, intermediateAmount, slippagePerHop
+            );
+        } else {
+            return 0; // Second hop not possible
+        }
+    }
 
-    // /// @dev Check if swap is possible via intermediary
-    // function _canSwapViaIntermediary(
-    //     IPoolManager poolManager,
-    //     Currency srcCurrency,
-    //     Currency intermediary,
-    //     Currency dstCurrency
-    // ) internal view returns (bool) {
-    //     bool firstHopExists =
-    //         poolManager.poolExists(srcCurrency, intermediary) || poolManager.poolExists(intermediary, srcCurrency);
-    //     bool secondHopExists =
-    //         poolManager.poolExists(intermediary, dstCurrency) || poolManager.poolExists(dstCurrency, intermediary);
+    /// @dev Check if swap is possible via intermediary
+    function _canSwapViaIntermediary(
+        IPoolManager poolManager,
+        Currency srcCurrency,
+        Currency intermediary,
+        Currency dstCurrency
+    ) internal view returns (bool) {
+        bool firstHopExists =
+            poolManager.poolExists(srcCurrency, intermediary) || poolManager.poolExists(intermediary, srcCurrency);
+        bool secondHopExists =
+            poolManager.poolExists(intermediary, dstCurrency) || poolManager.poolExists(dstCurrency, intermediary);
 
-    //     return firstHopExists && secondHopExists;
-    // }
+        return firstHopExists && secondHopExists;
+    }
 
-    // /// @notice Swaps tokens with automatic routing through intermediary pools
-    // function swap(
-    //     Currency srcCurrency,
-    //     Currency dstCurrency,
-    //     uint256 srcAmount,
-    //     uint256 minDstAmount,
-    //     uint8 maxHops,
-    //     address user
-    // ) external returns (uint256 receivedAmount) {
-    //     if (Currency.unwrap(srcCurrency) == Currency.unwrap(dstCurrency)) {
-    //         revert IdenticalCurrencies(Currency.unwrap(srcCurrency));
-    //     }
-    //     if (maxHops > 3) {
-    //         revert TooManyHops(maxHops, 3);
-    //     }
+    /// @notice Swaps tokens with automatic routing through intermediary pools
+    function swap(
+        Currency srcCurrency,
+        Currency dstCurrency,
+        uint256 srcAmount,
+        uint256 minDstAmount,
+        uint8 maxHops,
+        address user
+    ) external returns (uint256 receivedAmount) {
+        if (Currency.unwrap(srcCurrency) == Currency.unwrap(dstCurrency)) {
+            revert IdenticalCurrencies(Currency.unwrap(srcCurrency));
+        }
+        if (maxHops > 3) {
+            revert TooManyHops(maxHops, 3);
+        }
 
-    //     return _executeSwap(srcCurrency, dstCurrency, srcAmount, minDstAmount, user);
-    // }
+        return _executeSwap(srcCurrency, dstCurrency, srcAmount, minDstAmount, user);
+    }
 
-    // /// @dev Internal function to execute swap logic with reduced stack depth
-    // function _executeSwap(
-    //     Currency srcCurrency,
-    //     Currency dstCurrency,
-    //     uint256 srcAmount,
-    //     uint256 minDstAmount,
-    //     address user
-    // ) internal returns (uint256 receivedAmount) {
-    //     Storage storage $ = getStorage();
-    //     IBalanceManager balanceManager = IBalanceManager($.balanceManager);
+    /// @dev Internal function to execute swap logic with reduced stack depth
+    function _executeSwap(
+        Currency srcCurrency,
+        Currency dstCurrency,
+        uint256 srcAmount,
+        uint256 minDstAmount,
+        address user
+    ) internal returns (uint256 receivedAmount) {
+        Storage storage $ = getStorage();
+        IBalanceManager balanceManager = IBalanceManager($.balanceManager);
 
-    //     uint256 dstBalanceBefore = balanceManager.getBalance(user, dstCurrency);
+        uint256 dstBalanceBefore = balanceManager.getBalance(user, dstCurrency);
 
-    //     // Try direct swap first
-    //     if (_tryDirectSwap(srcCurrency, dstCurrency, srcAmount, minDstAmount, user)) {
-    //         return _calculateReceivedAmount(balanceManager, user, dstCurrency, dstBalanceBefore);
-    //     }
+        // Try direct swap first
+        if (_tryDirectSwap(srcCurrency, dstCurrency, srcAmount, minDstAmount, user)) {
+            return _calculateReceivedAmount(balanceManager, user, dstCurrency, dstBalanceBefore);
+        }
 
-    //     // Try multi-hop swap
-    //     if (_tryMultiHopSwap(srcCurrency, dstCurrency, srcAmount, minDstAmount, user)) {
-    //         return _calculateReceivedAmount(balanceManager, user, dstCurrency, dstBalanceBefore);
-    //     }
+        // Try multi-hop swap
+        if (_tryMultiHopSwap(srcCurrency, dstCurrency, srcAmount, minDstAmount, user)) {
+            return _calculateReceivedAmount(balanceManager, user, dstCurrency, dstBalanceBefore);
+        }
 
-    //     revert NoValidSwapPath(Currency.unwrap(srcCurrency), Currency.unwrap(dstCurrency));
-    // }
+        revert NoValidSwapPath(Currency.unwrap(srcCurrency), Currency.unwrap(dstCurrency));
+    }
 
-    // /// @dev Try direct swap between two currencies
-    // function _tryDirectSwap(
-    //     Currency srcCurrency,
-    //     Currency dstCurrency,
-    //     uint256 srcAmount,
-    //     uint256 minDstAmount,
-    //     address user
-    // ) internal returns (bool success) {
-    //     Storage storage $ = getStorage();
-    //     IPoolManager poolManager = IPoolManager($.poolManager);
+    /// @dev Try direct swap between two currencies
+    function _tryDirectSwap(
+        Currency srcCurrency,
+        Currency dstCurrency,
+        uint256 srcAmount,
+        uint256 minDstAmount,
+        address user
+    ) internal returns (bool success) {
+        Storage storage $ = getStorage();
+        IPoolManager poolManager = IPoolManager($.poolManager);
 
-    //     if (poolManager.poolExists(srcCurrency, dstCurrency) && _hasLiquidity(poolManager, srcCurrency, dstCurrency)) {
-    //         executeDirectSwap(srcCurrency, dstCurrency, srcCurrency, dstCurrency, srcAmount, minDstAmount, user);
-    //         return true;
-    //     } else if (
-    //         poolManager.poolExists(dstCurrency, srcCurrency) && _hasLiquidity(poolManager, dstCurrency, srcCurrency)
-    //     ) {
-    //         executeDirectSwap(dstCurrency, srcCurrency, srcCurrency, dstCurrency, srcAmount, minDstAmount, user);
-    //         return true;
-    //     }
+        if (poolManager.poolExists(srcCurrency, dstCurrency) && _hasLiquidity(poolManager, srcCurrency, dstCurrency)) {
+            executeDirectSwap(srcCurrency, dstCurrency, srcCurrency, dstCurrency, srcAmount, minDstAmount, user);
+            return true;
+        } else if (
+            poolManager.poolExists(dstCurrency, srcCurrency) && _hasLiquidity(poolManager, dstCurrency, srcCurrency)
+        ) {
+            executeDirectSwap(dstCurrency, srcCurrency, srcCurrency, dstCurrency, srcAmount, minDstAmount, user);
+            return true;
+        }
 
-    //     return false;
-    // }
+        return false;
+    }
 
-    // /// @dev Try multi-hop swap through intermediary currencies
-    // function _tryMultiHopSwap(
-    //     Currency srcCurrency,
-    //     Currency dstCurrency,
-    //     uint256 srcAmount,
-    //     uint256 minDstAmount,
-    //     address user
-    // ) internal returns (bool success) {
-    //     Storage storage $ = getStorage();
-    //     IPoolManager poolManager = IPoolManager($.poolManager);
+    /// @dev Try multi-hop swap through intermediary currencies
+    function _tryMultiHopSwap(
+        Currency srcCurrency,
+        Currency dstCurrency,
+        uint256 srcAmount,
+        uint256 minDstAmount,
+        address user
+    ) internal returns (bool success) {
+        Storage storage $ = getStorage();
+        IPoolManager poolManager = IPoolManager($.poolManager);
 
-    //     Currency[] memory intermediaries = poolManager.getCommonIntermediaries();
+        Currency[] memory intermediaries = poolManager.getCommonIntermediaries();
 
-    //     for (uint256 i = 0; i < intermediaries.length; i++) {
-    //         Currency intermediary = intermediaries[i];
-    //         if (
-    //             Currency.unwrap(intermediary) == Currency.unwrap(srcCurrency)
-    //                 || Currency.unwrap(intermediary) == Currency.unwrap(dstCurrency)
-    //         ) {
-    //             continue;
-    //         }
+        for (uint256 i = 0; i < intermediaries.length; i++) {
+            Currency intermediary = intermediaries[i];
+            if (
+                Currency.unwrap(intermediary) == Currency.unwrap(srcCurrency)
+                    || Currency.unwrap(intermediary) == Currency.unwrap(dstCurrency)
+            ) {
+                continue;
+            }
 
-    //         if (_canExecuteMultiHop(poolManager, srcCurrency, intermediary, dstCurrency)) {
-    //             executeMultiHopSwap(srcCurrency, intermediary, dstCurrency, srcAmount, minDstAmount, user);
-    //             return true;
-    //         }
-    //     }
+            if (_canExecuteMultiHop(poolManager, srcCurrency, intermediary, dstCurrency)) {
+                executeMultiHopSwap(srcCurrency, intermediary, dstCurrency, srcAmount, minDstAmount, user);
+                return true;
+            }
+        }
 
-    //     return false;
-    // }
+        return false;
+    }
 
-    // /// @dev Check if multi-hop swap is possible through intermediary
-    // function _canExecuteMultiHop(
-    //     IPoolManager poolManager,
-    //     Currency srcCurrency,
-    //     Currency intermediary,
-    //     Currency dstCurrency
-    // ) internal view returns (bool) {
-    //     return (poolManager.poolExists(srcCurrency, intermediary) && poolManager.poolExists(intermediary, dstCurrency))
-    //         || (poolManager.poolExists(srcCurrency, intermediary) && poolManager.poolExists(dstCurrency, intermediary))
-    //         || (poolManager.poolExists(intermediary, srcCurrency) && poolManager.poolExists(dstCurrency, intermediary));
-    // }
+    /// @dev Check if multi-hop swap is possible through intermediary
+    function _canExecuteMultiHop(
+        IPoolManager poolManager,
+        Currency srcCurrency,
+        Currency intermediary,
+        Currency dstCurrency
+    ) internal view returns (bool) {
+        return (poolManager.poolExists(srcCurrency, intermediary) && poolManager.poolExists(intermediary, dstCurrency))
+            || (poolManager.poolExists(srcCurrency, intermediary) && poolManager.poolExists(dstCurrency, intermediary))
+            || (poolManager.poolExists(intermediary, srcCurrency) && poolManager.poolExists(dstCurrency, intermediary));
+    }
 
-    // /// @dev Calculate received amount and transfer to user
-    // function _calculateReceivedAmount(
-    //     IBalanceManager balanceManager,
-    //     address user,
-    //     Currency dstCurrency,
-    //     uint256 dstBalanceBefore
-    // ) internal returns (uint256 receivedAmount) {
-    //     uint256 dstBalanceAfter = balanceManager.getBalance(user, dstCurrency);
-    //     receivedAmount = dstBalanceAfter > dstBalanceBefore ? dstBalanceAfter - dstBalanceBefore : 0;
+    /// @dev Calculate received amount and transfer to user
+    function _calculateReceivedAmount(
+        IBalanceManager balanceManager,
+        address user,
+        Currency dstCurrency,
+        uint256 dstBalanceBefore
+    ) internal returns (uint256 receivedAmount) {
+        uint256 dstBalanceAfter = balanceManager.getBalance(user, dstCurrency);
+        receivedAmount = dstBalanceAfter > dstBalanceBefore ? dstBalanceAfter - dstBalanceBefore : 0;
 
-    //     if (receivedAmount > 0) {
-    //         balanceManager.transferOut(user, user, dstCurrency, receivedAmount);
-    //     } else {
-    //         revert NoValidSwapPath(Currency.unwrap(dstCurrency), Currency.unwrap(dstCurrency));
-    //     }
+        if (receivedAmount > 0) {
+            balanceManager.transferOut(user, user, dstCurrency, receivedAmount);
+        } else {
+            revert NoValidSwapPath(Currency.unwrap(dstCurrency), Currency.unwrap(dstCurrency));
+        }
 
-    //     return receivedAmount;
-    // }
+        return receivedAmount;
+    }
 
-    // /// @notice Check if a pool has liquidity
-    // function _hasLiquidity(
-    //     IPoolManager poolManager,
-    //     Currency baseCurrency,
-    //     Currency quoteCurrency
-    // ) internal view returns (bool) {
-    //     PoolKey memory key = poolManager.createPoolKey(baseCurrency, quoteCurrency);
-    //     IPoolManager.Pool memory pool = poolManager.getPool(key);
+    /// @notice Check if a pool has liquidity
+    function _hasLiquidity(
+        IPoolManager poolManager,
+        Currency baseCurrency,
+        Currency quoteCurrency
+    ) internal view returns (bool) {
+        PoolKey memory key = poolManager.createPoolKey(baseCurrency, quoteCurrency);
+        IPoolManager.Pool memory pool = poolManager.getPool(key);
 
-    //     IOrderBook.PriceVolume memory buyPrice = pool.orderBook.getBestPrice(IOrderBook.Side.BUY);
-    //     IOrderBook.PriceVolume memory sellPrice = pool.orderBook.getBestPrice(IOrderBook.Side.SELL);
+        IOrderBook.PriceVolume memory buyPrice = pool.orderBook.getBestPrice(IOrderBook.Side.BUY);
+        IOrderBook.PriceVolume memory sellPrice = pool.orderBook.getBestPrice(IOrderBook.Side.SELL);
 
-    //     return (buyPrice.price > 0 && buyPrice.volume > 0) || (sellPrice.price > 0 && sellPrice.volume > 0);
-    // }
+        return (buyPrice.price > 0 && buyPrice.volume > 0) || (sellPrice.price > 0 && sellPrice.volume > 0);
+    }
 
-    // /// @notice Execute direct swap between two currencies
-    // function executeDirectSwap(
-    //     Currency baseCurrency,
-    //     Currency quoteCurrency,
-    //     Currency srcCurrency,
-    //     Currency /* dstCurrency */,
-    //     uint256 srcAmount,
-    //     uint256 minDstAmount,
-    //     address user
-    // ) internal {
-    //     Storage storage $ = getStorage();
-    //     IPoolManager poolManager = IPoolManager($.poolManager);
-    //     IBalanceManager balanceManager = IBalanceManager($.balanceManager);
+    /// @notice Execute direct swap between two currencies
+    function executeDirectSwap(
+        Currency baseCurrency,
+        Currency quoteCurrency,
+        Currency srcCurrency,
+        Currency /* dstCurrency */,
+        uint256 srcAmount,
+        uint256 minDstAmount,
+        address user
+    ) internal {
+        Storage storage $ = getStorage();
+        IPoolManager poolManager = IPoolManager($.poolManager);
+        IBalanceManager balanceManager = IBalanceManager($.balanceManager);
 
-    //     PoolKey memory key = poolManager.createPoolKey(baseCurrency, quoteCurrency);
-    //     IOrderBook.Side side =
-    //         Currency.unwrap(srcCurrency) == Currency.unwrap(baseCurrency) ? IOrderBook.Side.SELL : IOrderBook.Side.BUY;
+        PoolKey memory key = poolManager.createPoolKey(baseCurrency, quoteCurrency);
+        IOrderBook.Side side =
+            Currency.unwrap(srcCurrency) == Currency.unwrap(baseCurrency) ? IOrderBook.Side.SELL : IOrderBook.Side.BUY;
 
-    //     balanceManager.deposit(srcCurrency, srcAmount, msg.sender, user);
-    //     _placeMarketOrderForSwap(key, srcAmount, side, user, uint128(minDstAmount));
-    // }
+        balanceManager.deposit(srcCurrency, srcAmount, msg.sender, user);
+        _placeMarketOrderForSwap(key, srcAmount, side, user, uint128(minDstAmount));
+    }
 
-    // /// @notice Execute multi-hop swap through intermediary
-    // function executeMultiHopSwap(
-    //     Currency srcCurrency,
-    //     Currency intermediary,
-    //     Currency dstCurrency,
-    //     uint256 srcAmount,
-    //     uint256 minDstAmount,
-    //     address user
-    // ) internal {
-    //     Storage storage $ = getStorage();
-    //     IBalanceManager balanceManager = IBalanceManager($.balanceManager);
-    //     IPoolManager poolManager = IPoolManager($.poolManager);
+    /// @notice Execute multi-hop swap through intermediary
+    function executeMultiHopSwap(
+        Currency srcCurrency,
+        Currency intermediary,
+        Currency dstCurrency,
+        uint256 srcAmount,
+        uint256 minDstAmount,
+        address user
+    ) internal {
+        Storage storage $ = getStorage();
+        IBalanceManager balanceManager = IBalanceManager($.balanceManager);
+        IPoolManager poolManager = IPoolManager($.poolManager);
 
-    //     balanceManager.deposit(srcCurrency, srcAmount, msg.sender, user);
+        balanceManager.deposit(srcCurrency, srcAmount, msg.sender, user);
 
-    //     uint256 intermediateBalanceBefore = balanceManager.getBalance(user, intermediary);
+        uint256 intermediateBalanceBefore = balanceManager.getBalance(user, intermediary);
 
-    //     if (poolManager.poolExists(srcCurrency, intermediary)) {
-    //         executeSwapStep(
-    //             srcCurrency, intermediary, srcCurrency, intermediary, srcAmount, 0, user, IOrderBook.Side.SELL
-    //         );
-    //     } else {
-    //         executeSwapStep(
-    //             srcCurrency, intermediary, intermediary, srcCurrency, srcAmount, 0, user, IOrderBook.Side.BUY
-    //         );
-    //     }
+        if (poolManager.poolExists(srcCurrency, intermediary)) {
+            executeSwapStep(
+                srcCurrency, intermediary, srcCurrency, intermediary, srcAmount, 0, user, IOrderBook.Side.SELL
+            );
+        } else {
+            executeSwapStep(
+                srcCurrency, intermediary, intermediary, srcCurrency, srcAmount, 0, user, IOrderBook.Side.BUY
+            );
+        }
 
-    //     uint256 intermediateBalanceAfter = balanceManager.getBalance(user, intermediary);
-    //     uint256 intermediateAmount = intermediateBalanceAfter > intermediateBalanceBefore
-    //         ? intermediateBalanceAfter - intermediateBalanceBefore
-    //         : 0;
+        uint256 intermediateBalanceAfter = balanceManager.getBalance(user, intermediary);
+        uint256 intermediateAmount = intermediateBalanceAfter > intermediateBalanceBefore
+            ? intermediateBalanceAfter - intermediateBalanceBefore
+            : 0;
 
-    //     if (intermediateAmount == 0) {
-    //         revert SwapHopFailed(1, intermediateAmount);
-    //     }
+        if (intermediateAmount == 0) {
+            revert SwapHopFailed(1, intermediateAmount);
+        }
 
-    //     if (poolManager.poolExists(dstCurrency, intermediary)) {
-    //         executeSwapStep(
-    //             intermediary,
-    //             dstCurrency,
-    //             dstCurrency,
-    //             intermediary,
-    //             intermediateAmount,
-    //             minDstAmount,
-    //             user,
-    //             IOrderBook.Side.BUY
-    //         );
-    //     } else {
-    //         executeSwapStep(
-    //             intermediary,
-    //             dstCurrency,
-    //             intermediary,
-    //             dstCurrency,
-    //             intermediateAmount,
-    //             minDstAmount,
-    //             user,
-    //             IOrderBook.Side.SELL
-    //         );
-    //     }
-    // }
+        if (poolManager.poolExists(dstCurrency, intermediary)) {
+            executeSwapStep(
+                intermediary,
+                dstCurrency,
+                dstCurrency,
+                intermediary,
+                intermediateAmount,
+                minDstAmount,
+                user,
+                IOrderBook.Side.BUY
+            );
+        } else {
+            executeSwapStep(
+                intermediary,
+                dstCurrency,
+                intermediary,
+                dstCurrency,
+                intermediateAmount,
+                minDstAmount,
+                user,
+                IOrderBook.Side.SELL
+            );
+        }
+    }
 
-    // /// @notice Execute single swap step
-    // function executeSwapStep(
-    //     Currency, /* srcCurrency */
-    //     Currency, /* dstCurrency */
-    //     Currency baseCurrency,
-    //     Currency quoteCurrency,
-    //     uint256 srcAmount,
-    //     uint256 minDstAmount,
-    //     address user,
-    //     IOrderBook.Side side
-    // ) internal {
-    //     Storage storage $ = getStorage();
-    //     IPoolManager poolManager = IPoolManager($.poolManager);
-    //     PoolKey memory key = poolManager.createPoolKey(baseCurrency, quoteCurrency);
-    //     _placeMarketOrderForSwap(key, srcAmount, side, user, uint128(minDstAmount));
-    // }
+    /// @notice Execute single swap step
+    function executeSwapStep(
+        Currency, /* srcCurrency */
+        Currency, /* dstCurrency */
+        Currency baseCurrency,
+        Currency quoteCurrency,
+        uint256 srcAmount,
+        uint256 minDstAmount,
+        address user,
+        IOrderBook.Side side
+    ) internal {
+        Storage storage $ = getStorage();
+        IPoolManager poolManager = IPoolManager($.poolManager);
+        PoolKey memory key = poolManager.createPoolKey(baseCurrency, quoteCurrency);
+        _placeMarketOrderForSwap(key, srcAmount, side, user, uint128(minDstAmount));
+    }
 
-    // /// @notice Execute reverse multi-hop swap
-    // function executeReverseMultiHopSwap(
-    //     Currency srcCurrency,
-    //     Currency intermediary,
-    //     Currency dstCurrency,
-    //     uint256 srcAmount,
-    //     uint256 minDstAmount,
-    //     address user
-    // ) internal {
-    //     Storage storage $ = getStorage();
-    //     IBalanceManager balanceManager = IBalanceManager($.balanceManager);
-    //     IPoolManager poolManager = IPoolManager($.poolManager);
+    /// @notice Execute reverse multi-hop swap
+    function executeReverseMultiHopSwap(
+        Currency srcCurrency,
+        Currency intermediary,
+        Currency dstCurrency,
+        uint256 srcAmount,
+        uint256 minDstAmount,
+        address user
+    ) internal {
+        Storage storage $ = getStorage();
+        IBalanceManager balanceManager = IBalanceManager($.balanceManager);
+        IPoolManager poolManager = IPoolManager($.poolManager);
 
-    //     balanceManager.deposit(srcCurrency, srcAmount, msg.sender, user);
+        balanceManager.deposit(srcCurrency, srcAmount, msg.sender, user);
 
-    //     uint256 intermediateBalanceBefore = balanceManager.getBalance(user, intermediary);
-    //     executeSwapStep(srcCurrency, intermediary, dstCurrency, srcCurrency, srcAmount, 0, user, IOrderBook.Side.SELL);
-    //     uint256 intermediateBalanceAfter = balanceManager.getBalance(user, intermediary);
-    //     uint256 intermediateAmount = intermediateBalanceAfter > intermediateBalanceBefore
-    //         ? intermediateBalanceAfter - intermediateBalanceBefore
-    //         : 0;
+        uint256 intermediateBalanceBefore = balanceManager.getBalance(user, intermediary);
+        executeSwapStep(srcCurrency, intermediary, dstCurrency, srcCurrency, srcAmount, 0, user, IOrderBook.Side.SELL);
+        uint256 intermediateBalanceAfter = balanceManager.getBalance(user, intermediary);
+        uint256 intermediateAmount = intermediateBalanceAfter > intermediateBalanceBefore
+            ? intermediateBalanceAfter - intermediateBalanceBefore
+            : 0;
 
-    //     if (intermediateAmount == 0) {
-    //         revert SwapHopFailed(1, intermediateAmount);
-    //     }
+        if (intermediateAmount == 0) {
+            revert SwapHopFailed(1, intermediateAmount);
+        }
 
-    //     PoolKey memory reverseKey = poolManager.createPoolKey(dstCurrency, intermediary);
-    //     _placeMarketOrderForSwap(reverseKey, intermediateAmount, IOrderBook.Side.BUY, user, uint128(minDstAmount));
-    // }
+        PoolKey memory reverseKey = poolManager.createPoolKey(dstCurrency, intermediary);
+        _placeMarketOrderForSwap(reverseKey, intermediateAmount, IOrderBook.Side.BUY, user, uint128(minDstAmount));
+    }
 
     /// @notice Place market order for swap operations
     function _placeMarketOrderForSwap(
@@ -911,17 +914,33 @@ contract ScaleXRouter is IScaleXRouter, ScaleXRouterStorage, Initializable, Owna
     }
 
     function liquidate(
-        address borrower, 
-        address debtToken, 
-        address collateralToken, 
+        address borrower,
+        address debtToken,
+        address collateralToken,
         uint256 debtToCover
     ) external {
         Storage storage $ = getStorage();
         if ($.lendingManager == address(0)) revert LendingManagerNotSet();
-        
+
+        // Transfer debt tokens from liquidator to router first
+        IERC20(debtToken).safeTransferFrom(msg.sender, address(this), debtToCover);
+
+        // Approve LendingManager to spend the tokens
+        IERC20(debtToken).forceApprove($.lendingManager, debtToCover);
+
         try ILendingManager($.lendingManager).liquidate(borrower, debtToken, collateralToken, debtToCover) {
-            // Liquidation successful
+            // Transfer any collateral received to the liquidator
+            // (LendingManager transfers collateral to the router as msg.sender)
+            uint256 collateralBalance = IERC20(collateralToken).balanceOf(address(this));
+            if (collateralBalance > 0) {
+                IERC20(collateralToken).safeTransfer(msg.sender, collateralBalance);
+            }
+
+            // Reset approval to 0 for security
+            IERC20(debtToken).forceApprove($.lendingManager, 0);
         } catch {
+            // Return tokens to liquidator on failure
+            IERC20(debtToken).safeTransfer(msg.sender, debtToCover);
             revert LiquidationFailed();
         }
     }

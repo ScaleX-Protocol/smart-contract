@@ -9,14 +9,6 @@ import {IOrderBook} from "./IOrderBook.sol";
 import {IPoolManager} from "./IPoolManager.sol";
 
 interface IScaleXRouter is IScaleXRouterErrors {
-    // Events for lending operations
-    event DepositStarted(address indexed user, address indexed token, uint256 amount);
-    event DepositCompleted(address indexed user, address indexed token, uint256 amount);
-    event BorrowStarted(address indexed user, address indexed token, uint256 amount);
-    event BorrowCompleted(address indexed user, address indexed token, uint256 amount);
-    event RepayStarted(address indexed user, address indexed token, uint256 amount);
-    event RepayCompleted(address indexed user, address indexed token, uint256 amount);
-
     function placeLimitOrder(
         IPoolManager.Pool calldata pool,
         uint128 _price,
@@ -24,6 +16,17 @@ interface IScaleXRouter is IScaleXRouterErrors {
         IOrderBook.Side _side,
         IOrderBook.TimeInForce _timeInForce,
         uint128 depositAmount
+    ) external returns (uint48 orderId);
+
+    function placeLimitOrderWithFlags(
+        IPoolManager.Pool calldata pool,
+        uint128 _price,
+        uint128 _quantity,
+        IOrderBook.Side _side,
+        IOrderBook.TimeInForce _timeInForce,
+        uint128 depositAmount,
+        bool autoRepay,
+        bool autoBorrow
     ) external returns (uint48 orderId);
 
     function placeMarketOrder(

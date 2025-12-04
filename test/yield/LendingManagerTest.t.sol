@@ -140,24 +140,10 @@ contract LendingManagerTest is Test {
         dai.mint(borrower1, 20_000 * 1e18);
         dai.mint(borrower2, 10_000 * 1e18);
 
-        // Deploy LendingManager
-        address lendingManagerImpl = address(new LendingManager());
-        ERC1967Proxy lendingProxy = new ERC1967Proxy(
-            lendingManagerImpl,
-            abi.encodeWithSelector(
-                LendingManager.initialize.selector,
-                owner,
-                address(mockOracle) // Use mock oracle address
-            )
-        );
-        lendingManagerProxy = address(lendingProxy);
-        lendingManager = LendingManager(lendingManagerProxy);
-
-        // Use simpler ERC1967Proxy deployment for now to debug
+        // Deploy BalanceManager FIRST (needed for LendingManager initialization)
         tokenFactory = new SyntheticTokenFactory();
         tokenFactory.initialize(owner, owner); // Use owner as token deployer for testing
-        
-        // Deploy BalanceManager using ERC1967Proxy
+
         address balanceManagerImpl = address(new BalanceManager());
         ERC1967Proxy balanceProxy = new ERC1967Proxy(
             balanceManagerImpl,
@@ -171,6 +157,21 @@ contract LendingManagerTest is Test {
         );
         balanceManager = IBalanceManager(payable(address(balanceProxy)));
         balanceManagerProxy = address(balanceProxy);
+
+        // NOW deploy LendingManager with BalanceManager address
+        // NOTE: LendingManager's owner is the BalanceManager for architectural reasons
+        address lendingManagerImpl = address(new LendingManager());
+        ERC1967Proxy lendingProxy = new ERC1967Proxy(
+            lendingManagerImpl,
+            abi.encodeWithSelector(
+                LendingManager.initialize.selector,
+                balanceManagerProxy, // BalanceManager is the owner of LendingManager
+                balanceManagerProxy, // Pass deployed BalanceManager address
+                address(mockOracle) // Use mock oracle address
+            )
+        );
+        lendingManagerProxy = address(lendingProxy);
+        lendingManager = LendingManager(lendingManagerProxy);
         
         // Deploy TokenRegistry using ERC1967Proxy
         address tokenRegistryImpl = address(new TokenRegistry());
@@ -183,9 +184,9 @@ contract LendingManagerTest is Test {
         );
         tokenRegistry = ITokenRegistry(address(tokenRegistryProxy));
 
-        // Configure assets
-        vm.startPrank(owner);
-        
+        // Configure assets (as BalanceManager since it owns LendingManager)
+        vm.startPrank(balanceManagerProxy);
+
         // Configure USDC
         lendingManager.configureAsset(
             address(usdc),
@@ -239,11 +240,16 @@ contract LendingManagerTest is Test {
             300,   // 3% rate slope 1
             1500   // 15% rate slope 2
         );
-        
+
+        // Stop pranking as balanceManagerProxy (needed for LendingManager config above)
+        vm.stopPrank();
+
+        // Now prank as owner for BalanceManager operations
+        vm.startPrank(owner);
+
         // Set up BalanceManager and LendingManager relationship
         balanceManager.setLendingManager(lendingManagerProxy);
-        lendingManager.setBalanceManager(balanceManagerProxy);
-        
+
         // Create synthetic tokens and add supported assets to BalanceManager
         address usdcSynthetic = tokenFactory.createSyntheticToken(address(usdc));
         address wethSynthetic = tokenFactory.createSyntheticToken(address(weth));
@@ -296,7 +302,16 @@ contract LendingManagerTest is Test {
         // Set up token factory and token registry in BalanceManager
         balanceManager.setTokenFactory(address(tokenFactory));
         balanceManager.setTokenRegistry(address(tokenRegistry));
-        
+
+        vm.stopPrank();
+
+        // Set BalanceManager in LendingManager (requires pranking as balanceManagerProxy)
+        vm.prank(balanceManagerProxy);
+        lendingManager.setBalanceManager(balanceManagerProxy);
+
+        // Resume as owner for remaining setup
+        vm.startPrank(owner);
+
         // Deploy ScaleXRouter
         address routerImpl = address(new ScaleXRouter());
         ERC1967Proxy routerProxyContract = new ERC1967Proxy(
@@ -654,7 +669,8 @@ contract LendingManagerTest is Test {
         uint256 totalAccumulatedBefore = lendingManager.totalAccumulatedInterest(address(usdc));
 
         // Update interest accrual
-        vm.startPrank(owner);
+        // NOTE: LendingManager owner is balanceManagerProxy
+        vm.startPrank(balanceManagerProxy);
         lendingManager.updateInterestAccrual(address(usdc));
         vm.stopPrank();
 
@@ -849,7 +865,7 @@ contract LendingManagerTest is Test {
         
         vm.startPrank(localLiquidator);
         usdc.mint(localLiquidator, partialDebtRepayment);
-        usdc.approve(address(lendingManager), partialDebtRepayment);
+        usdc.approve(address(router), partialDebtRepayment);
         
         (,uint256 borrowedBefore,) = lendingManager.getUserPosition(borrower1, address(usdc));
         (uint256 suppliedBefore,,) = lendingManager.getUserPosition(borrower1, address(weth));
@@ -1024,7 +1040,8 @@ contract LendingManagerTest is Test {
         vm.stopPrank();
         
         // Ensure WETH is configured with aggressive liquidation parameters
-        vm.startPrank(owner);
+        // NOTE: LendingManager owner is balanceManagerProxy
+        vm.startPrank(balanceManagerProxy);
         lendingManager.configureAsset(
             address(weth),
             7000,  // 70% LTV (more conservative)
@@ -1058,8 +1075,8 @@ contract LendingManagerTest is Test {
         balanceManager.depositLocal(address(weth), collateralAmount, borrower1);
         vm.stopPrank();
         
-        // Borrow via router
-        uint256 borrowAmount = 5_000 * 1e6;
+        // Borrow via router (3000 USDC is safe with 2 ETH collateral at $2000/ETH with 85% LT)
+        uint256 borrowAmount = 3_000 * 1e6;
         vm.startPrank(borrower1);
         router.borrow(address(usdc), borrowAmount);
         vm.stopPrank();
