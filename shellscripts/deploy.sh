@@ -456,7 +456,13 @@ print_success "Previous data cleaned"
 # Step 2: Phase 1A - Deploy Tokens
 print_step "Step 2: Phase 1A - Deploying Tokens..."
 VERIFY_FLAGS=$(get_verification_flags $CORE_CHAIN_ID)
-CORE_MAILBOX=$CORE_MAILBOX SIDE_MAILBOX=$SIDE_MAILBOX forge script script/deployments/DeployPhase1A.s.sol:DeployPhase1A --rpc-url "${SCALEX_CORE_RPC}" --broadcast --private-key $PRIVATE_KEY --gas-price 1000000000000 --silent $VERIFY_FLAGS
+# Split VERIFY_FLAGS into array to handle multiple arguments properly
+if [[ -n "$VERIFY_FLAGS" ]]; then
+    # Use eval to properly split verification flags (safer approach with controlled input)
+    eval "CORE_MAILBOX=\$CORE_MAILBOX SIDE_MAILBOX=\$SIDE_MAILBOX forge script script/deployments/DeployPhase1A.s.sol:DeployPhase1A --rpc-url \"\${SCALEX_CORE_RPC}\" --broadcast --private-key \$PRIVATE_KEY --gas-price 1000000000000 --silent $VERIFY_FLAGS"
+else
+    CORE_MAILBOX=$CORE_MAILBOX SIDE_MAILBOX=$SIDE_MAILBOX forge script script/deployments/DeployPhase1A.s.sol:DeployPhase1A --rpc-url "${SCALEX_CORE_RPC}" --broadcast --private-key $PRIVATE_KEY --gas-price 1000000000000 --silent
+fi
 print_success "Phase 1A deployment completed"
 
 # Add delay between phases
@@ -465,7 +471,13 @@ sleep 15
 
 # Step 2.1: Phase 1B - Deploy Core Infrastructure
 print_step "Step 2.1: Phase 1B - Deploying Core Infrastructure..."
-CORE_MAILBOX=$CORE_MAILBOX SIDE_MAILBOX=$SIDE_MAILBOX forge script script/deployments/DeployPhase1B.s.sol:DeployPhase1B --rpc-url "${SCALEX_CORE_RPC}" --broadcast --private-key $PRIVATE_KEY --gas-price 1000000000000 --silent $VERIFY_FLAGS
+# Split VERIFY_FLAGS into array to handle multiple arguments properly
+if [[ -n "$VERIFY_FLAGS" ]]; then
+    # Use eval to properly split verification flags (safer approach with controlled input)
+    eval "CORE_MAILBOX=\$CORE_MAILBOX SIDE_MAILBOX=\$SIDE_MAILBOX forge script script/deployments/DeployPhase1B.s.sol:DeployPhase1B --rpc-url \"\${SCALEX_CORE_RPC}\" --broadcast --private-key \$PRIVATE_KEY --gas-price 1000000000000 --silent $VERIFY_FLAGS"
+else
+    CORE_MAILBOX=$CORE_MAILBOX SIDE_MAILBOX=$SIDE_MAILBOX forge script script/deployments/DeployPhase1B.s.sol:DeployPhase1B --rpc-url "${SCALEX_CORE_RPC}" --broadcast --private-key $PRIVATE_KEY --gas-price 1000000000000 --silent
+fi
 print_success "Phase 1B deployment completed"
 
 # Add delay between phases
@@ -474,7 +486,13 @@ sleep 15
 
 # Step 2.2: Phase 1C - Deploy Final Infrastructure
 print_step "Step 2.2: Phase 1C - Deploying Final Infrastructure..."
-CORE_MAILBOX=$CORE_MAILBOX SIDE_MAILBOX=$SIDE_MAILBOX forge script script/deployments/DeployPhase1C.s.sol:DeployPhase1C --rpc-url "${SCALEX_CORE_RPC}" --broadcast --private-key $PRIVATE_KEY --gas-price 1000000000000 --silent $VERIFY_FLAGS
+# Split VERIFY_FLAGS into array to handle multiple arguments properly
+if [[ -n "$VERIFY_FLAGS" ]]; then
+    # Use eval to properly split verification flags (safer approach with controlled input)
+    eval "CORE_MAILBOX=\$CORE_MAILBOX SIDE_MAILBOX=\$SIDE_MAILBOX forge script script/deployments/DeployPhase1C.s.sol:DeployPhase1C --rpc-url \"\${SCALEX_CORE_RPC}\" --broadcast --private-key \$PRIVATE_KEY --gas-price 1000000000000 --silent $VERIFY_FLAGS"
+else
+    CORE_MAILBOX=$CORE_MAILBOX SIDE_MAILBOX=$SIDE_MAILBOX forge script script/deployments/DeployPhase1C.s.sol:DeployPhase1C --rpc-url "${SCALEX_CORE_RPC}" --broadcast --private-key $PRIVATE_KEY --gas-price 1000000000000 --silent
+fi
 print_success "Phase 1C deployment completed"
 
 # Add delay before Phase 2
@@ -542,7 +560,13 @@ else
     exit 1
 fi
 
-CORE_MAILBOX=$CORE_MAILBOX SIDE_MAILBOX=$SIDE_MAILBOX forge script script/deployments/DeployPhase2.s.sol:DeployPhase2 --rpc-url "${SCALEX_CORE_RPC}" --broadcast --private-key $PRIVATE_KEY --gas-price 1000000000000 --silent $VERIFY_FLAGS
+# Split VERIFY_FLAGS into array to handle multiple arguments properly
+if [[ -n "$VERIFY_FLAGS" ]]; then
+    # Use eval to properly split verification flags (safer approach with controlled input)
+    eval "CORE_MAILBOX=\$CORE_MAILBOX SIDE_MAILBOX=\$SIDE_MAILBOX forge script script/deployments/DeployPhase2.s.sol:DeployPhase2 --rpc-url \"\${SCALEX_CORE_RPC}\" --broadcast --private-key \$PRIVATE_KEY --gas-price 1000000000000 --silent $VERIFY_FLAGS"
+else
+    CORE_MAILBOX=$CORE_MAILBOX SIDE_MAILBOX=$SIDE_MAILBOX forge script script/deployments/DeployPhase2.s.sol:DeployPhase2 --rpc-url "${SCALEX_CORE_RPC}" --broadcast --private-key $PRIVATE_KEY --gas-price 1000000000000 --silent
+fi
 print_success "Phase 2 configuration completed"
 
 # Add delay between Phase 2 and Phase 3 to prevent rate limiting
@@ -725,11 +749,19 @@ ORACLE_ADDRESS=$(cat ./deployments/${CORE_CHAIN_ID}.json | jq -r '.Oracle // "0x
         FACTORY_ADDRESS=$CURRENT_FACTORY
         if [[ "$CURRENT_FACTORY" == "0x0000000000000000000000000000000000000000" ]]; then
             # Deploy SyntheticTokenFactory
-            FACTORY_ADDRESS=$(forge create src/core/SyntheticTokenFactory.sol:SyntheticTokenFactory \
-                --rpc-url "${SCALEX_CORE_RPC}" \
-                --private-key $PRIVATE_KEY \
-                $VERIFY_FLAGS \
-                | grep "Deployed to:" | awk '{print $3}')
+            if [[ -n "$VERIFY_FLAGS" ]]; then
+                # Use eval to properly split verification flags (safer approach with controlled input)
+                FACTORY_ADDRESS=$(eval "forge create src/core/SyntheticTokenFactory.sol:SyntheticTokenFactory \
+                    --rpc-url \"\${SCALEX_CORE_RPC}\" \
+                    --private-key \$PRIVATE_KEY \
+                    $VERIFY_FLAGS" \
+                    | grep "Deployed to:" | awk '{print $3}')
+            else
+                FACTORY_ADDRESS=$(forge create src/core/SyntheticTokenFactory.sol:SyntheticTokenFactory \
+                    --rpc-url "${SCALEX_CORE_RPC}" \
+                    --private-key $PRIVATE_KEY \
+                    | grep "Deployed to:" | awk '{print $3}')
+            fi
             
             if [[ -n "$FACTORY_ADDRESS" ]]; then
                 # Initialize SyntheticTokenFactory
@@ -1064,17 +1096,33 @@ ORACLE_ADDRESS=$(cat ./deployments/${CORE_CHAIN_ID}.json | jq -r '.Oracle // "0x
         
         # Run DeployPhase3 script to create pools
         echo "  📊 Running Phase 3 deployment..."
-        if forge script script/deployments/DeployPhase3.s.sol:DeployPhase3 \
-            --rpc-url "${SCALEX_CORE_RPC}" \
-            --broadcast \
-            --private-key $PRIVATE_KEY \
-            --legacy \
-            --silent $VERIFY_FLAGS; then
-            print_success "Phase 3 pool creation completed successfully"
+        if [[ -n "$VERIFY_FLAGS" ]]; then
+            # Use eval to properly split verification flags (safer approach with controlled input)
+            if eval "forge script script/deployments/DeployPhase3.s.sol:DeployPhase3 \
+                    --rpc-url \"\${SCALEX_CORE_RPC}\" \
+                    --broadcast \
+                    --private-key \$PRIVATE_KEY \
+                    --legacy \
+                    --silent $VERIFY_FLAGS"; then
+                print_success "Phase 3 pool creation completed successfully"
+            else
+                print_error "Phase 3 pool creation failed"
+                echo "  Check the forge script output above for error details"
+                return 1
+            fi
         else
-            print_error "Phase 3 pool creation failed"
-            echo "  Check the forge script output above for error details"
-            return 1
+            if forge script script/deployments/DeployPhase3.s.sol:DeployPhase3 \
+                --rpc-url "${SCALEX_CORE_RPC}" \
+                --broadcast \
+                --private-key $PRIVATE_KEY \
+                --legacy \
+                --silent; then
+                print_success "Phase 3 pool creation completed successfully"
+            else
+                print_error "Phase 3 pool creation failed"
+                echo "  Check the forge script output above for error details"
+                return 1
+            fi
         fi
         
         echo "  📊 Verifying pool addresses in deployment file..."
