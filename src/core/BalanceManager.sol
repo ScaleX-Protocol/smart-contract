@@ -251,15 +251,9 @@ contract BalanceManager is
 
         address tokenAddr = Currency.unwrap(currency);
         address syntheticToken = $.syntheticTokens[tokenAddr];
-        
-        // For synthetic tokens, check the synthetic token balance instead of internal tracking
-        // since synthetic tokens can be transferred freely between users
-        uint256 availableBalance;
-        if (syntheticToken != address(0)) {
-            availableBalance = IERC20(syntheticToken).balanceOf(user);
-        } else {
-            availableBalance = $.balanceOf[user][currency.toId()];
-        }
+
+        // For synthetic tokens deposited via depositLocal, use internal balance tracking
+        uint256 availableBalance = $.balanceOf[user][currency.toId()];
         
         if (availableBalance < amount) {
             revert InsufficientBalance(user, currency.toId(), amount, availableBalance);
@@ -268,7 +262,8 @@ contract BalanceManager is
         // ALWAYS calculate and claim yield on withdrawal
         if (syntheticToken != address(0)) {
             // Calculate ALL accumulated yield (inline to avoid function ordering issues)
-            uint256 userBalance = IERC20(syntheticToken).balanceOf(user);
+            // Use internal balance tracking since tokens are held in the vault
+            uint256 userBalance = $.balanceOf[user][currency.toId()];
             uint256 yieldAmount = 0;
             address underlyingToken = tokenAddr;
             
@@ -348,27 +343,18 @@ contract BalanceManager is
                 }
             }
             
-            // Burn synthetic tokens - only if amount is valid and user has sufficient balance
-            if (amount > 0) {
-                uint256 userSyntheticBalance = IERC20(syntheticToken).balanceOf(user);
-                if (userSyntheticBalance >= amount) {
-                    ISyntheticERC20(syntheticToken).burn(user, amount);
-                } else {
-                    // If for some reason the user doesn't have enough synthetic tokens,
-                    // burn what they actually have to prevent errors
-                    ISyntheticERC20(syntheticToken).burn(user, userSyntheticBalance);
-                }
+            // Burn synthetic tokens from the contract vault (not from user's wallet)
+            // since depositLocal() mints to the contract, not the user
+            if (amount > 0 && syntheticToken != address(0)) {
+                ISyntheticERC20(syntheticToken).burn(address(this), amount);
             }
-            
-            // Update internal balance tracking only for non-synthetic tokens
-            // since synthetic tokens can be transferred freely between users
-            if (syntheticToken == address(0)) {
-                $.balanceOf[user][currency.toId()] -= amount;
-            }
-            
+
+            // Update internal balance tracking
+            $.balanceOf[user][currency.toId()] -= amount;
+
             // Clean up checkpoint if user will have zero balance
-            uint256 remainingBalance = IERC20(syntheticToken).balanceOf(user);
-            if (remainingBalance == 0) {
+            uint256 remainingBalance = $.balanceOf[user][currency.toId()];
+            if (remainingBalance == 0 && syntheticToken != address(0)) {
                 delete $.userYieldCheckpoints[user][syntheticToken];
             }
             
@@ -631,14 +617,14 @@ contract BalanceManager is
     /// @notice Calculate yield for a user on a specific synthetic token
     function calculateUserYield(address user, address syntheticToken) external view returns (uint256) {
         Storage storage $ = getStorage();
-        
-        // Get user's synthetic token balance
-        uint256 userBalance = IERC20(syntheticToken).balanceOf(user);
-        if (userBalance == 0) return 0;
-        
+
         // Get underlying token for this synthetic token
         address underlyingToken = _getUnderlyingToken(syntheticToken);
         if (underlyingToken == address(0)) return 0;
+
+        // Get user's balance from internal tracking since tokens are held in the vault
+        uint256 userBalance = $.balanceOf[user][Currency.wrap(underlyingToken).toId()];
+        if (userBalance == 0) return 0;
         
         // Get current yield per token for this underlying token
         uint256 currentYieldPerToken = $.yieldPerToken[underlyingToken];
@@ -779,7 +765,8 @@ contract BalanceManager is
             address syntheticToken = $.syntheticTokens[underlyingToken];
             
             if (syntheticToken != address(0)) {
-                uint256 userBalance = IERC20(syntheticToken).balanceOf(user);
+                // Use internal balance tracking since tokens are held in the vault
+                uint256 userBalance = $.balanceOf[address(user)][Currency.wrap(underlyingToken).toId()];
                 if (userBalance == 0) continue;
                 
                 // Get current yield per token for this underlying token
