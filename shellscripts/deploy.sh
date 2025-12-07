@@ -674,57 +674,47 @@ ORACLE_ADDRESS=$(cat ./deployments/${CORE_CHAIN_ID}.json | jq -r '.Oracle // "0x
     
     # Configure USDC lending parameters
     if [[ "$USDC_ADDRESS" != "0x0000000000000000000000000000000000000000" ]]; then
-        # Check if already configured
-        IS_CONFIGURED=$(cast call $LENDING_MANAGER_ADDRESS "assetConfigs(address)" $USDC_ADDRESS --rpc-url "${SCALEX_CORE_RPC}" 2>/dev/null | grep -o "true\|false" | head -1 || echo "false")
-        if [[ "$IS_CONFIGURED" == "false" ]]; then
-            cast send $LENDING_MANAGER_ADDRESS "configureAsset(address,uint256,uint256,uint256,uint256)" \
-                $USDC_ADDRESS 7500 8500 800 1000 \
-                --rpc-url "${SCALEX_CORE_RPC}" --private-key $PRIVATE_KEY > /dev/null 2>&1
-            # Set USDC interest rate parameters (2% base, 80% optimal, 10% slope1, 50% slope2)
-            cast send $LENDING_MANAGER_ADDRESS "setInterestRateParams(address,uint256,uint256,uint256,uint256)" \
-                $USDC_ADDRESS 200 8000 1000 5000 \
-                --rpc-url "${SCALEX_CORE_RPC}" --private-key $PRIVATE_KEY > /dev/null 2>&1
-            print_success "USDC lending parameters configured (75% CF, 85% LT, 8% supply, 10% borrow)"
-            print_success "USDC interest rates configured (2% base, 80% optimal, 10% slope1, 50% slope2)"
-        else
-            print_success "USDC lending already configured"
-        fi
+        # Configure USDC asset parameters (75% CF, 85% LT, 8% liquidation bonus, 10% reserve factor) - always set
+        cast send $LENDING_MANAGER_ADDRESS "configureAsset(address,uint256,uint256,uint256,uint256)" \
+            $USDC_ADDRESS 7500 8500 800 1000 \
+            --rpc-url "${SCALEX_CORE_RPC}" --private-key $PRIVATE_KEY > /dev/null 2>&1
+        print_success "USDC asset parameters configured (75% CF, 85% LT, 8% LB, 10% RF)"
+
+        # Set USDC interest rate parameters (2% base, 80% optimal, 10% slope1, 50% slope2) - always set
+        cast send $LENDING_MANAGER_ADDRESS "setInterestRateParams(address,uint256,uint256,uint256,uint256)" \
+            $USDC_ADDRESS 200 8000 1000 5000 \
+            --rpc-url "${SCALEX_CORE_RPC}" --private-key $PRIVATE_KEY > /dev/null 2>&1
+        print_success "USDC interest rates configured (2% base, 80% optimal, 10% slope1, 50% slope2)"
     fi
     
     # Configure WETH lending parameters
     if [[ "$WETH_ADDRESS" != "0x0000000000000000000000000000000000000000" ]]; then
-        IS_CONFIGURED=$(cast call $LENDING_MANAGER_ADDRESS "assetConfigs(address)" $WETH_ADDRESS --rpc-url "${SCALEX_CORE_RPC}" 2>/dev/null | grep -o "true\|false" | head -1 || echo "false")
-        if [[ "$IS_CONFIGURED" == "false" ]]; then
-            cast send $LENDING_MANAGER_ADDRESS "configureAsset(address,uint256,uint256,uint256,uint256)" \
-                $WETH_ADDRESS 8000 8500 1000 1200 \
-                --rpc-url "${SCALEX_CORE_RPC}" --private-key $PRIVATE_KEY > /dev/null 2>&1
-            # Set WETH interest rate parameters (3% base, 80% optimal, 12% slope1, 60% slope2)
-            cast send $LENDING_MANAGER_ADDRESS "setInterestRateParams(address,uint256,uint256,uint256,uint256)" \
-                $WETH_ADDRESS 300 8000 1200 6000 \
-                --rpc-url "${SCALEX_CORE_RPC}" --private-key $PRIVATE_KEY > /dev/null 2>&1
-            print_success "WETH lending parameters configured (80% CF, 85% LT, 10% supply, 12% borrow)"
-            print_success "WETH interest rates configured (3% base, 80% optimal, 12% slope1, 60% slope2)"
-        else
-            print_success "WETH lending already configured"
-        fi
+        # Configure WETH asset parameters (80% CF, 85% LT, 10% liquidation bonus, 12% reserve factor) - always set
+        cast send $LENDING_MANAGER_ADDRESS "configureAsset(address,uint256,uint256,uint256,uint256)" \
+            $WETH_ADDRESS 8000 8500 1000 1200 \
+            --rpc-url "${SCALEX_CORE_RPC}" --private-key $PRIVATE_KEY > /dev/null 2>&1
+        print_success "WETH asset parameters configured (80% CF, 85% LT, 10% LB, 12% RF)"
+
+        # Set WETH interest rate parameters (3% base, 80% optimal, 12% slope1, 60% slope2) - always set
+        cast send $LENDING_MANAGER_ADDRESS "setInterestRateParams(address,uint256,uint256,uint256,uint256)" \
+            $WETH_ADDRESS 300 8000 1200 6000 \
+            --rpc-url "${SCALEX_CORE_RPC}" --private-key $PRIVATE_KEY > /dev/null 2>&1
+        print_success "WETH interest rates configured (3% base, 80% optimal, 12% slope1, 60% slope2)"
     fi
     
     # Configure WBTC lending parameters
     if [[ "$WBTC_ADDRESS" != "0x0000000000000000000000000000000000000000" ]]; then
-        IS_CONFIGURED=$(cast call $LENDING_MANAGER_ADDRESS "assetConfigs(address)" $WBTC_ADDRESS --rpc-url "${SCALEX_CORE_RPC}" 2>/dev/null | grep -o "true\|false" | head -1 || echo "false")
-        if [[ "$IS_CONFIGURED" == "false" ]]; then
-            cast send $LENDING_MANAGER_ADDRESS "configureAsset(address,uint256,uint256,uint256,uint256)" \
-                $WBTC_ADDRESS 7500 8500 900 1100 \
-                --rpc-url "${SCALEX_CORE_RPC}" --private-key $PRIVATE_KEY > /dev/null 2>&1
-            # Set WBTC interest rate parameters (2.5% base, 80% optimal, 11% slope1, 55% slope2)
-            cast send $LENDING_MANAGER_ADDRESS "setInterestRateParams(address,uint256,uint256,uint256,uint256)" \
-                $WBTC_ADDRESS 250 8000 1100 5500 \
-                --rpc-url "${SCALEX_CORE_RPC}" --private-key $PRIVATE_KEY > /dev/null 2>&1
-            print_success "WBTC lending parameters configured (75% CF, 85% LT, 9% supply, 11% borrow)"
-            print_success "WBTC interest rates configured (2.5% base, 80% optimal, 11% slope1, 55% slope2)"
-        else
-            print_success "WBTC lending already configured"
-        fi
+        # Configure WBTC asset parameters (75% CF, 85% LT, 9% liquidation bonus, 11% reserve factor) - always set
+        cast send $LENDING_MANAGER_ADDRESS "configureAsset(address,uint256,uint256,uint256,uint256)" \
+            $WBTC_ADDRESS 7500 8500 900 1100 \
+            --rpc-url "${SCALEX_CORE_RPC}" --private-key $PRIVATE_KEY > /dev/null 2>&1
+        print_success "WBTC asset parameters configured (75% CF, 85% LT, 9% LB, 11% RF)"
+
+        # Set WBTC interest rate parameters (2.5% base, 80% optimal, 11% slope1, 55% slope2) - always set
+        cast send $LENDING_MANAGER_ADDRESS "setInterestRateParams(address,uint256,uint256,uint256,uint256)" \
+            $WBTC_ADDRESS 250 8000 1100 5500 \
+            --rpc-url "${SCALEX_CORE_RPC}" --private-key $PRIVATE_KEY > /dev/null 2>&1
+        print_success "WBTC interest rates configured (2.5% base, 80% optimal, 11% slope1, 55% slope2)"
     fi
         
         # Step 4.4: Deploy and configure SyntheticTokenFactory

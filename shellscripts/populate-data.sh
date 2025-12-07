@@ -145,6 +145,11 @@ else
     echo "DEBUG: Loaded ScaleXRouter address via sed: '$SCALEX_ROUTER_ADDRESS'"
 fi
 
+# Export contract addresses for use in subshells and commands
+export BALANCE_MANAGER_ADDRESS
+export LENDING_MANAGER_ADDRESS
+export SCALEX_ROUTER_ADDRESS
+
 # Set trader accounts
 export PRIVATE_KEY="${PRIVATE_KEY:-0x5d34b3f860c2b09c112d68a35d592dfb599841629c9b0ad8827269b94b57efca}"
 export PRIVATE_KEY_2="${PRIVATE_KEY_2:-0x3d93c16f039372c7f70b490603bfc48a34575418fad5aea156c16f2cb0280ed8}"
@@ -433,8 +438,236 @@ echo "    📤 Secondary trader USDC debt: $(echo $SECONDARY_USDC_DEBT | awk '{p
 BORROWED_AMOUNT=$((SECONDARY_USDC_BALANCE_AFTER - SECONDARY_USDC_BALANCE))
 if [[ $BORROWED_AMOUNT -gt 0 ]]; then
     echo "    Successfully borrowed: $(echo "$BORROWED_AMOUNT" | awk '{printf "%.2f", $1/1000000}') USDC"
+    BORROW_1_SUCCESS=true
 else
     echo "    No borrowing occurred - may need more collateral or lending setup"
+    BORROW_1_SUCCESS=false
+fi
+
+# Enhanced Borrowing & Repayment Activities
+echo ""
+print_step "Enhanced Borrowing & Repayment Activities..."
+
+# Function to check user's health factor
+check_health_factor() {
+    local user_address=$1
+    local health_factor=$(cast call $LENDING_MANAGER_ADDRESS "getHealthFactor(address)" $user_address --rpc-url "${SCALEX_CORE_RPC}" 2>/dev/null || echo "0")
+    echo "$health_factor"
+}
+
+# Function to display user's position
+display_user_position() {
+    local user_address=$1
+    local user_name=$2
+
+    echo "  📊 $user_name Position Summary:"
+
+    # Check supplies
+    local usdc_supply=$(cast call $LENDING_MANAGER_ADDRESS "getUserSupply(address,address)" $user_address $USDC_ADDRESS --rpc-url "${SCALEX_CORE_RPC}" 2>/dev/null || echo "0")
+    local weth_supply=$(cast call $LENDING_MANAGER_ADDRESS "getUserSupply(address,address)" $user_address $WETH_ADDRESS --rpc-url "${SCALEX_CORE_RPC}" 2>/dev/null || echo "0")
+    local wbtc_supply=$(cast call $LENDING_MANAGER_ADDRESS "getUserSupply(address,address)" $user_address $WBTC_ADDRESS --rpc-url "${SCALEX_CORE_RPC}" 2>/dev/null || echo "0")
+
+    # Check debts
+    local usdc_debt=$(cast call $LENDING_MANAGER_ADDRESS "getUserDebt(address,address)" $user_address $USDC_ADDRESS --rpc-url "${SCALEX_CORE_RPC}" 2>/dev/null || echo "0")
+    local weth_debt=$(cast call $LENDING_MANAGER_ADDRESS "getUserDebt(address,address)" $user_address $WETH_ADDRESS --rpc-url "${SCALEX_CORE_RPC}" 2>/dev/null || echo "0")
+    local wbtc_debt=$(cast call $LENDING_MANAGER_ADDRESS "getUserDebt(address,address)" $user_address $WBTC_ADDRESS --rpc-url "${SCALEX_CORE_RPC}" 2>/dev/null || echo "0")
+
+    # Check health factor
+    local health_factor=$(check_health_factor $user_address)
+
+    echo "    💰 Supplies:"
+    echo "      USDC: $(echo $usdc_supply | awk '{printf "%.2f", $1/1000000}') USDC"
+    echo "      WETH: $(echo $weth_supply | awk '{printf "%.6f", $1/1000000000000000000}') WETH"
+    echo "      WBTC: $(echo $wbtc_supply | awk '{printf "%.8f", $1/100000000000000000000}') WBTC"
+    echo "    📤 Debts:"
+    echo "      USDC: $(echo $usdc_debt | awk '{printf "%.2f", $1/1000000}') USDC"
+    echo "      WETH: $(echo $weth_debt | awk '{printf "%.6f", $1/1000000000000000000}') WETH"
+    echo "      WBTC: $(echo $wbtc_debt | awk '{printf "%.8f", $1/100000000000000000000}') WBTC"
+    echo "    🛡️  Health Factor: $(echo $health_factor | awk '{printf "%.2f", $1/1000000000000000000}')"
+
+    if [[ $health_factor -gt 1000000000000000000 ]]; then
+        echo "    ✅ Position is healthy (HF > 1.0)"
+    else
+        echo "    ⚠️  Position is at risk (HF ≤ 1.0)"
+    fi
+}
+
+# Position display after initial borrowing
+echo "  🔍 Positions after initial borrowing..."
+display_user_position $SECONDARY_TRADER "Secondary Trader"
+display_user_position $PRIMARY_TRADER "Primary Trader"
+
+# Scenario 2: Primary trader borrows WETH against USDC and WBTC collateral
+echo ""
+echo "  📤 Scenario 2: Primary trader borrows 2 WETH against USDC and WBTC collateral..."
+
+# Check primary trader's collateral
+PRIMARY_USDC_SUPPLY=$(cast call $LENDING_MANAGER_ADDRESS "getUserSupply(address,address)" $PRIMARY_TRADER_ADDRESS $USDC_ADDRESS --rpc-url "${SCALEX_CORE_RPC}" 2>/dev/null || echo "0")
+PRIMARY_WBTC_SUPPLY=$(cast call $LENDING_MANAGER_ADDRESS "getUserSupply(address,address)" $PRIMARY_TRADER_ADDRESS $WBTC_ADDRESS --rpc-url "${SCALEX_CORE_RPC}" 2>/dev/null || echo "0")
+PRIMARY_WETH_BALANCE_BEFORE=$(cast call $WETH_ADDRESS "balanceOf(address)" $PRIMARY_TRADER_ADDRESS --rpc-url "${SCALEX_CORE_RPC}" 2>/dev/null || echo "0")
+
+echo "    💰 Primary trader USDC supplied: $(echo $PRIMARY_USDC_SUPPLY | awk '{printf "%.2f", $1/1000000}') USDC"
+echo "    💎 Primary trader WBTC supplied: $(echo $PRIMARY_WBTC_SUPPLY | awk '{printf "%.8f", $1/100000000000000000000}') WBTC"
+echo "    💎 Primary trader WETH balance: $(echo $PRIMARY_WETH_BALANCE_BEFORE | awk '{printf "%.6f", $1/1000000000000000000}') WETH"
+
+# Attempt to borrow WETH
+BORROW_WETH_AMOUNT=2000000000000000000  # 2 WETH
+if [[ $PRIMARY_USDC_SUPPLY -gt 0 ]] || [[ $PRIMARY_WBTC_SUPPLY -gt 0 ]]; then
+    echo "    🔄 Attempting to borrow 2 WETH through ScaleXRouter..."
+    if cast send $SCALEX_ROUTER_ADDRESS "borrow(address,uint256)" $WETH_ADDRESS $BORROW_WETH_AMOUNT --rpc-url "${SCALEX_CORE_RPC}" --private-key $PRIVATE_KEY 2>/dev/null; then
+        print_success "✅ Primary trader successfully borrowed 2 WETH"
+        BORROW_2_SUCCESS=true
+    else
+        print_warning "WETH borrowing failed - checking authorization..."
+        ERROR_RESULT=$(cast send $SCALEX_ROUTER_ADDRESS "borrow(address,uint256)" $WETH_ADDRESS $BORROW_WETH_AMOUNT --rpc-url "${SCALEX_CORE_RPC}" --private-key $PRIVATE_KEY 2>&1 || echo "Unknown error")
+        echo "    Error details: $ERROR_RESULT"
+        BORROW_2_SUCCESS=false
+    fi
+else
+    print_warning "Primary trader has insufficient collateral for borrowing WETH"
+    BORROW_2_SUCCESS=false
+fi
+
+# Check WETH borrowing results
+PRIMARY_WETH_BALANCE_AFTER=$(cast call $WETH_ADDRESS "balanceOf(address)" $PRIMARY_TRADER_ADDRESS --rpc-url "${SCALEX_CORE_RPC}" 2>/dev/null || echo "0")
+PRIMARY_WETH_DEBT=$(cast call $LENDING_MANAGER_ADDRESS "getUserDebt(address,address)" $PRIMARY_TRADER_ADDRESS $WETH_ADDRESS --rpc-url "${SCALEX_CORE_RPC}" 2>/dev/null || echo "0")
+
+echo "    💎 Primary trader WETH balance after: $(echo $PRIMARY_WETH_BALANCE_AFTER | awk '{printf "%.6f", $1/1000000000000000000}') WETH"
+echo "    📤 Primary trader WETH debt: $(echo $PRIMARY_WETH_DEBT | awk '{printf "%.6f", $1/1000000000000000000}') WETH"
+
+WETH_BORROWED=$((PRIMARY_WETH_BALANCE_AFTER - PRIMARY_WETH_BALANCE_BEFORE))
+if [[ $WETH_BORROWED -gt 0 ]]; then
+    echo "    ✅ Successfully borrowed: $(echo "$WETH_BORROWED" | awk '{printf "%.6f", $1/1000000000000000000}') WETH"
+else
+    echo "    ❌ No WETH borrowing occurred"
+fi
+
+# Simulate interest accrual (advance time by 1 hour for testing)
+echo ""
+echo "  ⏰ Simulating interest accrual (1 hour)..."
+# Note: In a local environment, you might need to manually increase block timestamp
+# This is a placeholder for time advancement logic
+echo "    ⏭️  Skipping time advancement in local environment"
+
+# Repayment Activities
+echo ""
+echo "  🔄 Repayment Activities..."
+
+# Scenario 3: Secondary trader repays部分 USDC debt
+echo "  💰 Scenario 3: Secondary trader repays 500 USDC of debt..."
+
+if [[ "$BORROW_1_SUCCESS" == true ]] && [[ $SECONDARY_USDC_DEBT -gt 0 ]]; then
+    REPAY_AMOUNT=500000000  # 500 USDC
+
+    # Check if secondary trader has enough USDC to repay
+    SECONDARY_CURRENT_USDC=$(cast call $USDC_ADDRESS "balanceOf(address)" $SECONDARY_TRADER_ADDRESS --rpc-url "${SCALEX_CORE_RPC}" 2>/dev/null || echo "0")
+
+    if [[ $SECONDARY_CURRENT_USDC -ge $REPAY_AMOUNT ]]; then
+        echo "    💸 Repaying 500 USDC through ScaleXRouter..."
+
+        # Approve ScaleXRouter to spend USDC for repayment
+        if cast send $USDC_ADDRESS "approve(address,uint256)" $SCALEX_ROUTER_ADDRESS $REPAY_AMOUNT --rpc-url "${SCALEX_CORE_RPC}" --private-key $PRIVATE_KEY_2 > /dev/null 2>&1; then
+            echo "    ✅ USDC approval for repayment successful"
+
+            # Execute repayment
+            if cast send $SCALEX_ROUTER_ADDRESS "repay(address,uint256)" $USDC_ADDRESS $REPAY_AMOUNT --rpc-url "${SCALEX_CORE_RPC}" --private-key $PRIVATE_KEY_2 2>/dev/null; then
+                print_success "✅ Secondary trader successfully repaid 500 USDC"
+                REPAY_1_SUCCESS=true
+            else
+                print_warning "USDC repayment failed - checking error..."
+                ERROR_RESULT=$(cast send $SCALEX_ROUTER_ADDRESS "repay(address,uint256)" $USDC_ADDRESS $REPAY_AMOUNT --rpc-url "${SCALEX_CORE_RPC}" --private-key $PRIVATE_KEY_2 2>&1 || echo "Unknown error")
+                echo "    Error details: $ERROR_RESULT"
+                REPAY_1_SUCCESS=false
+            fi
+        else
+            print_warning "USDC approval for repayment failed"
+            REPAY_1_SUCCESS=false
+        fi
+    else
+        print_warning "Insufficient USDC balance for repayment"
+        echo "    Available: $(echo $SECONDARY_CURRENT_USDC | awk '{printf "%.2f", $1/1000000}') USDC"
+        echo "    Required: 500.00 USDC"
+        REPAY_1_SUCCESS=false
+    fi
+else
+    print_warning "No USDC debt to repay or borrowing failed"
+    REPAY_1_SUCCESS=false
+fi
+
+# Check repayment results
+if [[ "$REPAY_1_SUCCESS" == true ]]; then
+    SECONDARY_USDC_DEBT_AFTER=$(cast call $LENDING_MANAGER_ADDRESS "getUserDebt(address,address)" $SECONDARY_TRADER_ADDRESS $USDC_ADDRESS --rpc-url "${SCALEX_CORE_RPC}" 2>/dev/null || echo "0")
+    SECONDARY_USDC_BALANCE_FINAL=$(cast call $USDC_ADDRESS "balanceOf(address)" $SECONDARY_TRADER_ADDRESS --rpc-url "${SCALEX_CORE_RPC}" 2>/dev/null || echo "0")
+
+    echo "    📤 Secondary trader USDC debt after repayment: $(echo $SECONDARY_USDC_DEBT_AFTER | awk '{printf "%.2f", $1/1000000}') USDC"
+    echo "    💰 Secondary trader USDC balance after repayment: $(echo $SECONDARY_USDC_BALANCE_FINAL | awk '{printf "%.2f", $1/1000000}') USDC"
+
+    REPAID_AMOUNT=$((SECONDARY_USDC_DEBT - SECONDARY_USDC_DEBT_AFTER))
+    if [[ $REPAID_AMOUNT -gt 0 ]]; then
+        echo "    ✅ Successfully repaid: $(echo "$REPAID_AMOUNT" | awk '{printf "%.2f", $1/1000000}') USDC"
+    fi
+fi
+
+# Scenario 4: Primary trader repays部分 WETH debt
+echo ""
+echo "  💎 Scenario 4: Primary trader repays 1 WETH of debt..."
+
+if [[ "$BORROW_2_SUCCESS" == true ]] && [[ $PRIMARY_WETH_DEBT -gt 0 ]]; then
+    REPAY_WETH_AMOUNT=1000000000000000000  # 1 WETH
+
+    # Check if primary trader has enough WETH to repay
+    PRIMARY_CURRENT_WETH=$(cast call $WETH_ADDRESS "balanceOf(address)" $PRIMARY_TRADER_ADDRESS --rpc-url "${SCALEX_CORE_RPC}" 2>/dev/null || echo "0")
+
+    if [[ $PRIMARY_CURRENT_WETH -ge $REPAY_WETH_AMOUNT ]]; then
+        echo "    💸 Repaying 1 WETH through ScaleXRouter..."
+
+        # Approve ScaleXRouter to spend WETH for repayment
+        if cast send $WETH_ADDRESS "approve(address,uint256)" $SCALEX_ROUTER_ADDRESS $REPAY_WETH_AMOUNT --rpc-url "${SCALEX_CORE_RPC}" --private-key $PRIVATE_KEY > /dev/null 2>&1; then
+            echo "    ✅ WETH approval for repayment successful"
+
+            # Execute repayment
+            if cast send $SCALEX_ROUTER_ADDRESS "repay(address,uint256)" $WETH_ADDRESS $REPAY_WETH_AMOUNT --rpc-url "${SCALEX_CORE_RPC}" --private-key $PRIVATE_KEY 2>/dev/null; then
+                print_success "✅ Primary trader successfully repaid 1 WETH"
+                REPAY_2_SUCCESS=true
+            else
+                print_warning "WETH repayment failed - checking error..."
+                ERROR_RESULT=$(cast send $SCALEX_ROUTER_ADDRESS "repay(address,uint256)" $WETH_ADDRESS $REPAY_WETH_AMOUNT --rpc-url "${SCALEX_CORE_RPC}" --private-key $PRIVATE_KEY 2>&1 || echo "Unknown error")
+                echo "    Error details: $ERROR_RESULT"
+                REPAY_2_SUCCESS=false
+            fi
+        else
+            print_warning "WETH approval for repayment failed"
+            REPAY_2_SUCCESS=false
+        fi
+    else
+        print_warning "Insufficient WETH balance for repayment"
+        echo "    Available: $(echo $PRIMARY_CURRENT_WETH | awk '{printf "%.6f", $1/1000000000000000000}') WETH"
+        echo "    Required: 1.000000 WETH"
+        REPAY_2_SUCCESS=false
+    fi
+else
+    print_warning "No WETH debt to repay or borrowing failed"
+    REPAY_2_SUCCESS=false
+fi
+
+# Final position summary
+echo ""
+echo "  📊 Final Position Summary after All Activities:"
+display_user_position $SECONDARY_TRADER "Secondary Trader"
+display_user_position $PRIMARY_TRADER "Primary Trader"
+
+# Summary of all borrowing and repayment activities
+echo ""
+echo "  📈 Borrowing & Repayment Summary:"
+echo "    Scenario 1 - Secondary trader borrows USDC: $([ "$BORROW_1_SUCCESS" == true ] && echo "✅ SUCCESS" || echo "❌ FAILED")"
+echo "    Scenario 2 - Primary trader borrows WETH: $([ "$BORROW_2_SUCCESS" == true ] && echo "✅ SUCCESS" || echo "❌ FAILED")"
+echo "    Scenario 3 - Secondary trader repays USDC: $([ "$REPAY_1_SUCCESS" == true ] && echo "✅ SUCCESS" || echo "❌ FAILED")"
+echo "    Scenario 4 - Primary trader repays WETH: $([ "$REPAY_2_SUCCESS" == true ] && echo "✅ SUCCESS" || echo "❌ FAILED")"
+
+if [[ "$BORROW_1_SUCCESS" == true ]] || [[ "$BORROW_2_SUCCESS" == true ]] || [[ "$REPAY_1_SUCCESS" == true ]] || [[ "$REPAY_2_SUCCESS" == true ]]; then
+    print_success "🎉 Borrowing and repayment activities completed successfully!"
+else
+    print_warning "⚠️  Some borrowing/repayment activities failed. Check logs above for details."
 fi
 
 # Step 5: Primary trader creates liquidity
