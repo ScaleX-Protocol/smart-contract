@@ -229,7 +229,7 @@ contract OrderBook is Initializable, OwnableUpgradeable, ReentrancyGuardUpgradea
 
         _addOrderToQueue(newOrder);
 
-        emit OrderPlaced(orderId, user, side, price, quantity, newOrder.expiry, false, Status.OPEN, autoRepay, autoBorrow);
+        emit OrderPlaced(orderId, user, side, price, quantity, newOrder.expiry, false, Status.OPEN, autoRepay, autoBorrow, timeInForce);
 
         _handleTimeInForce(newOrder, side, user, timeInForce);
 
@@ -384,9 +384,15 @@ contract OrderBook is Initializable, OwnableUpgradeable, ReentrancyGuardUpgradea
             autoBorrow: autoBorrow
         });
 
-        emit OrderPlaced(orderId, user, side, 0, quantity, marketOrder.expiry, true, Status.OPEN, autoRepay, autoBorrow);
+        emit OrderPlaced(orderId, user, side, 0, quantity, marketOrder.expiry, true, Status.OPEN, autoRepay, autoBorrow, TimeInForce.IOC);
 
         uint128 filled = _matchOrder(marketOrder, side, user, true);
+
+        // Update market order status based on execution result
+        Status finalStatus = filled == 0 ? Status.EXPIRED :
+                           filled == quantity ? Status.FILLED : Status.PARTIALLY_FILLED;
+
+        emit UpdateOrder(orderId, uint48(block.timestamp), filled, finalStatus);
 
         IBalanceManager bm = IBalanceManager($.balanceManager);
         uint256 feeTaker = bm.feeTaker();
@@ -438,9 +444,14 @@ contract OrderBook is Initializable, OwnableUpgradeable, ReentrancyGuardUpgradea
             autoBorrow: autoBorrow
         });
 
-        emit OrderPlaced(orderId, user, side, 0, quoteAmount, marketOrder.expiry, true, Status.OPEN, autoRepay, autoBorrow);
+        emit OrderPlaced(orderId, user, side, 0, quoteAmount, marketOrder.expiry, true, Status.OPEN, autoRepay, autoBorrow, TimeInForce.IOC);
 
         uint128 baseAmountFilled = _matchOrderWithQuoteAmount(marketOrder, side, user, quoteAmount);
+
+        // Update market order status based on execution result
+        Status finalStatus = baseAmountFilled == 0 ? Status.EXPIRED : Status.FILLED;
+
+        emit UpdateOrder(orderId, uint48(block.timestamp), baseAmountFilled, finalStatus);
 
         IBalanceManager bm = IBalanceManager($.balanceManager);
         uint256 feeTaker = bm.feeTaker();

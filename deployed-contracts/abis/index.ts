@@ -5,7 +5,7 @@ export { SyntheticTokenABI } from './SyntheticTokenABI';
 export { SyntheticTokenFactoryABI } from './SyntheticTokenFactoryABI';
 export { ChainRegistryABI } from './ChainRegistryABI';
 export { PoolManagerABI } from './PoolManagerABI';
-export { SCALEXRouterABI } from './SCALEXRouterABI';
+export { ScaleXRouterABI } from './ScaleXRouterABI';
 export { OrderBookABI } from './OrderBookABI';
 export { UpgradeableBeaconABI } from './UpgradeableBeaconABI';
 export { BeaconProxyABI } from './BeaconProxyABI';

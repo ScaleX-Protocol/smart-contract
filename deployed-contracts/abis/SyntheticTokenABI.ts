@@ -3,17 +3,32 @@ export const SyntheticTokenABI: any[] = [
 		"type": "constructor",
 		"inputs": [
 			{
-				"name": "name_",
+				"name": "_name",
 				"type": "string",
 				"internalType": "string"
 			},
 			{
-				"name": "symbol_",
+				"name": "_symbol",
 				"type": "string",
 				"internalType": "string"
 			},
 			{
-				"name": "_bridgeSyntheticTokenReceiver",
+				"name": "_decimals",
+				"type": "uint8",
+				"internalType": "uint8"
+			},
+			{
+				"name": "_minter",
+				"type": "address",
+				"internalType": "address"
+			},
+			{
+				"name": "_burner",
+				"type": "address",
+				"internalType": "address"
+			},
+			{
+				"name": "_underlyingToken",
 				"type": "address",
 				"internalType": "address"
 			}
@@ -54,7 +69,7 @@ export const SyntheticTokenABI: any[] = [
 				"internalType": "address"
 			},
 			{
-				"name": "value",
+				"name": "amount",
 				"type": "uint256",
 				"internalType": "uint256"
 			}
@@ -66,7 +81,7 @@ export const SyntheticTokenABI: any[] = [
 				"internalType": "bool"
 			}
 		],
-		"stateMutability": "nonpayable"
+		"stateMutability": "pure"
 	},
 	{
 		"type": "function",
@@ -83,19 +98,6 @@ export const SyntheticTokenABI: any[] = [
 				"name": "",
 				"type": "uint256",
 				"internalType": "uint256"
-			}
-		],
-		"stateMutability": "view"
-	},
-	{
-		"type": "function",
-		"name": "bridgeSyntheticTokenReceiver",
-		"inputs": [],
-		"outputs": [
-			{
-				"name": "",
-				"type": "address",
-				"internalType": "address"
 			}
 		],
 		"stateMutability": "view"
@@ -120,6 +122,19 @@ export const SyntheticTokenABI: any[] = [
 	},
 	{
 		"type": "function",
+		"name": "burner",
+		"inputs": [],
+		"outputs": [
+			{
+				"name": "",
+				"type": "address",
+				"internalType": "address"
+			}
+		],
+		"stateMutability": "view"
+	},
+	{
+		"type": "function",
 		"name": "decimals",
 		"inputs": [],
 		"outputs": [
@@ -127,6 +142,34 @@ export const SyntheticTokenABI: any[] = [
 				"name": "",
 				"type": "uint8",
 				"internalType": "uint8"
+			}
+		],
+		"stateMutability": "view"
+	},
+	{
+		"type": "function",
+		"name": "getContractInfo",
+		"inputs": [],
+		"outputs": [
+			{
+				"name": "_minter",
+				"type": "address",
+				"internalType": "address"
+			},
+			{
+				"name": "_burner",
+				"type": "address",
+				"internalType": "address"
+			},
+			{
+				"name": "_underlyingToken",
+				"type": "address",
+				"internalType": "address"
+			},
+			{
+				"name": "_totalSupply",
+				"type": "uint256",
+				"internalType": "uint256"
 			}
 		],
 		"stateMutability": "view"
@@ -151,6 +194,19 @@ export const SyntheticTokenABI: any[] = [
 	},
 	{
 		"type": "function",
+		"name": "minter",
+		"inputs": [],
+		"outputs": [
+			{
+				"name": "",
+				"type": "address",
+				"internalType": "address"
+			}
+		],
+		"stateMutability": "view"
+	},
+	{
+		"type": "function",
 		"name": "name",
 		"inputs": [],
 		"outputs": [
@@ -161,6 +217,65 @@ export const SyntheticTokenABI: any[] = [
 			}
 		],
 		"stateMutability": "view"
+	},
+	{
+		"type": "function",
+		"name": "owner",
+		"inputs": [],
+		"outputs": [
+			{
+				"name": "",
+				"type": "address",
+				"internalType": "address"
+			}
+		],
+		"stateMutability": "view"
+	},
+	{
+		"type": "function",
+		"name": "renounceOwnership",
+		"inputs": [],
+		"outputs": [],
+		"stateMutability": "nonpayable"
+	},
+	{
+		"type": "function",
+		"name": "setBurner",
+		"inputs": [
+			{
+				"name": "newBurner",
+				"type": "address",
+				"internalType": "address"
+			}
+		],
+		"outputs": [],
+		"stateMutability": "nonpayable"
+	},
+	{
+		"type": "function",
+		"name": "setMinter",
+		"inputs": [
+			{
+				"name": "newMinter",
+				"type": "address",
+				"internalType": "address"
+			}
+		],
+		"outputs": [],
+		"stateMutability": "nonpayable"
+	},
+	{
+		"type": "function",
+		"name": "setUnderlyingToken",
+		"inputs": [
+			{
+				"name": "newUnderlyingToken",
+				"type": "address",
+				"internalType": "address"
+			}
+		],
+		"outputs": [],
+		"stateMutability": "nonpayable"
 	},
 	{
 		"type": "function",
@@ -198,7 +313,7 @@ export const SyntheticTokenABI: any[] = [
 				"internalType": "address"
 			},
 			{
-				"name": "value",
+				"name": "amount",
 				"type": "uint256",
 				"internalType": "uint256"
 			}
@@ -210,7 +325,7 @@ export const SyntheticTokenABI: any[] = [
 				"internalType": "bool"
 			}
 		],
-		"stateMutability": "nonpayable"
+		"stateMutability": "pure"
 	},
 	{
 		"type": "function",
@@ -227,7 +342,7 @@ export const SyntheticTokenABI: any[] = [
 				"internalType": "address"
 			},
 			{
-				"name": "value",
+				"name": "amount",
 				"type": "uint256",
 				"internalType": "uint256"
 			}
@@ -239,7 +354,33 @@ export const SyntheticTokenABI: any[] = [
 				"internalType": "bool"
 			}
 		],
+		"stateMutability": "pure"
+	},
+	{
+		"type": "function",
+		"name": "transferOwnership",
+		"inputs": [
+			{
+				"name": "newOwner",
+				"type": "address",
+				"internalType": "address"
+			}
+		],
+		"outputs": [],
 		"stateMutability": "nonpayable"
+	},
+	{
+		"type": "function",
+		"name": "underlyingToken",
+		"inputs": [],
+		"outputs": [
+			{
+				"name": "",
+				"type": "address",
+				"internalType": "address"
+			}
+		],
+		"stateMutability": "view"
 	},
 	{
 		"type": "event",
@@ -268,6 +409,101 @@ export const SyntheticTokenABI: any[] = [
 	},
 	{
 		"type": "event",
+		"name": "Burn",
+		"inputs": [
+			{
+				"name": "from",
+				"type": "address",
+				"indexed": true,
+				"internalType": "address"
+			},
+			{
+				"name": "amount",
+				"type": "uint256",
+				"indexed": false,
+				"internalType": "uint256"
+			}
+		],
+		"anonymous": false
+	},
+	{
+		"type": "event",
+		"name": "BurnerUpdated",
+		"inputs": [
+			{
+				"name": "oldBurner",
+				"type": "address",
+				"indexed": true,
+				"internalType": "address"
+			},
+			{
+				"name": "newBurner",
+				"type": "address",
+				"indexed": true,
+				"internalType": "address"
+			}
+		],
+		"anonymous": false
+	},
+	{
+		"type": "event",
+		"name": "Mint",
+		"inputs": [
+			{
+				"name": "to",
+				"type": "address",
+				"indexed": true,
+				"internalType": "address"
+			},
+			{
+				"name": "amount",
+				"type": "uint256",
+				"indexed": false,
+				"internalType": "uint256"
+			}
+		],
+		"anonymous": false
+	},
+	{
+		"type": "event",
+		"name": "MinterUpdated",
+		"inputs": [
+			{
+				"name": "oldMinter",
+				"type": "address",
+				"indexed": true,
+				"internalType": "address"
+			},
+			{
+				"name": "newMinter",
+				"type": "address",
+				"indexed": true,
+				"internalType": "address"
+			}
+		],
+		"anonymous": false
+	},
+	{
+		"type": "event",
+		"name": "OwnershipTransferred",
+		"inputs": [
+			{
+				"name": "previousOwner",
+				"type": "address",
+				"indexed": true,
+				"internalType": "address"
+			},
+			{
+				"name": "newOwner",
+				"type": "address",
+				"indexed": true,
+				"internalType": "address"
+			}
+		],
+		"anonymous": false
+	},
+	{
+		"type": "event",
 		"name": "Transfer",
 		"inputs": [
 			{
@@ -287,6 +523,25 @@ export const SyntheticTokenABI: any[] = [
 				"type": "uint256",
 				"indexed": false,
 				"internalType": "uint256"
+			}
+		],
+		"anonymous": false
+	},
+	{
+		"type": "event",
+		"name": "UnderlyingTokenUpdated",
+		"inputs": [
+			{
+				"name": "oldToken",
+				"type": "address",
+				"indexed": true,
+				"internalType": "address"
+			},
+			{
+				"name": "newToken",
+				"type": "address",
+				"indexed": true,
+				"internalType": "address"
 			}
 		],
 		"anonymous": false
@@ -372,6 +627,48 @@ export const SyntheticTokenABI: any[] = [
 		"inputs": [
 			{
 				"name": "spender",
+				"type": "address",
+				"internalType": "address"
+			}
+		]
+	},
+	{
+		"type": "error",
+		"name": "InsufficientBalance",
+		"inputs": []
+	},
+	{
+		"type": "error",
+		"name": "InvalidAddress",
+		"inputs": []
+	},
+	{
+		"type": "error",
+		"name": "OnlyBurner",
+		"inputs": []
+	},
+	{
+		"type": "error",
+		"name": "OnlyMinter",
+		"inputs": []
+	},
+	{
+		"type": "error",
+		"name": "OwnableInvalidOwner",
+		"inputs": [
+			{
+				"name": "owner",
+				"type": "address",
+				"internalType": "address"
+			}
+		]
+	},
+	{
+		"type": "error",
+		"name": "OwnableUnauthorizedAccount",
+		"inputs": [
+			{
+				"name": "account",
 				"type": "address",
 				"internalType": "address"
 			}

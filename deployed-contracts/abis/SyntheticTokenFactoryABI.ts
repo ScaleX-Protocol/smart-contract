@@ -417,6 +417,39 @@ export const SyntheticTokenFactoryABI: any[] = [
 		"stateMutability": "nonpayable"
 	},
 	{
+		"type": "function",
+		"name": "updateTokenMapping",
+		"inputs": [
+			{
+				"name": "sourceChainId",
+				"type": "uint32",
+				"internalType": "uint32"
+			},
+			{
+				"name": "sourceToken",
+				"type": "address",
+				"internalType": "address"
+			},
+			{
+				"name": "targetChainId",
+				"type": "uint32",
+				"internalType": "uint32"
+			},
+			{
+				"name": "newSyntheticToken",
+				"type": "address",
+				"internalType": "address"
+			},
+			{
+				"name": "newSyntheticDecimals",
+				"type": "uint8",
+				"internalType": "uint8"
+			}
+		],
+		"outputs": [],
+		"stateMutability": "nonpayable"
+	},
+	{
 		"type": "event",
 		"name": "BridgeReceiverUpdated",
 		"inputs": [

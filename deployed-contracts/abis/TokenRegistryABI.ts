@@ -240,6 +240,24 @@ export const TokenRegistryABI: any[] = [
 	},
 	{
 		"type": "function",
+		"name": "initializeUpgrade",
+		"inputs": [
+			{
+				"name": "_newOwner",
+				"type": "address",
+				"internalType": "address"
+			},
+			{
+				"name": "_factory",
+				"type": "address",
+				"internalType": "address"
+			}
+		],
+		"outputs": [],
+		"stateMutability": "nonpayable"
+	},
+	{
+		"type": "function",
 		"name": "isTokenMappingActive",
 		"inputs": [
 			{
@@ -429,6 +447,25 @@ export const TokenRegistryABI: any[] = [
 	},
 	{
 		"type": "event",
+		"name": "FactoryUpdated",
+		"inputs": [
+			{
+				"name": "oldFactory",
+				"type": "address",
+				"indexed": true,
+				"internalType": "address"
+			},
+			{
+				"name": "newFactory",
+				"type": "address",
+				"indexed": true,
+				"internalType": "address"
+			}
+		],
+		"anonymous": false
+	},
+	{
+		"type": "event",
 		"name": "Initialized",
 		"inputs": [
 			{
@@ -590,6 +627,30 @@ export const TokenRegistryABI: any[] = [
 		"anonymous": false
 	},
 	{
+		"type": "event",
+		"name": "UpgradeInitialized",
+		"inputs": [
+			{
+				"name": "factory",
+				"type": "address",
+				"indexed": true,
+				"internalType": "address"
+			},
+			{
+				"name": "owner",
+				"type": "address",
+				"indexed": true,
+				"internalType": "address"
+			}
+		],
+		"anonymous": false
+	},
+	{
+		"type": "error",
+		"name": "AlreadyInitialized",
+		"inputs": []
+	},
+	{
 		"type": "error",
 		"name": "DecimalMismatch",
 		"inputs": [
@@ -608,6 +669,11 @@ export const TokenRegistryABI: any[] = [
 	{
 		"type": "error",
 		"name": "InvalidChainId",
+		"inputs": []
+	},
+	{
+		"type": "error",
+		"name": "InvalidFactory",
 		"inputs": []
 	},
 	{

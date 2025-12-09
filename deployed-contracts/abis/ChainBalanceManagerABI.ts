@@ -19,6 +19,19 @@ export const ChainBalanceManagerABI: any[] = [
 	},
 	{
 		"type": "function",
+		"name": "addWhitelistedToken",
+		"inputs": [
+			{
+				"name": "token",
+				"type": "address",
+				"internalType": "address"
+			}
+		],
+		"outputs": [],
+		"stateMutability": "nonpayable"
+	},
+	{
+		"type": "function",
 		"name": "balanceOf",
 		"inputs": [
 			{
@@ -64,6 +77,35 @@ export const ChainBalanceManagerABI: any[] = [
 		"name": "deposit",
 		"inputs": [
 			{
+				"name": "to",
+				"type": "address",
+				"internalType": "address"
+			},
+			{
+				"name": "currency",
+				"type": "address",
+				"internalType": "Currency"
+			},
+			{
+				"name": "amount",
+				"type": "uint256",
+				"internalType": "uint256"
+			}
+		],
+		"outputs": [
+			{
+				"name": "depositedAmount",
+				"type": "uint256",
+				"internalType": "uint256"
+			}
+		],
+		"stateMutability": "payable"
+	},
+	{
+		"type": "function",
+		"name": "deposit",
+		"inputs": [
+			{
 				"name": "token",
 				"type": "address",
 				"internalType": "address"
@@ -92,9 +134,9 @@ export const ChainBalanceManagerABI: any[] = [
 				"internalType": "address"
 			},
 			{
-				"name": "token",
+				"name": "currency",
 				"type": "address",
-				"internalType": "address"
+				"internalType": "Currency"
 			}
 		],
 		"outputs": [
@@ -126,6 +168,34 @@ export const ChainBalanceManagerABI: any[] = [
 	},
 	{
 		"type": "function",
+		"name": "getCrossChainInfo",
+		"inputs": [],
+		"outputs": [
+			{
+				"name": "mailbox",
+				"type": "address",
+				"internalType": "address"
+			},
+			{
+				"name": "localDomain",
+				"type": "uint32",
+				"internalType": "uint32"
+			},
+			{
+				"name": "destinationDomain",
+				"type": "uint32",
+				"internalType": "uint32"
+			},
+			{
+				"name": "destinationBalanceManager",
+				"type": "address",
+				"internalType": "address"
+			}
+		],
+		"stateMutability": "view"
+	},
+	{
+		"type": "function",
 		"name": "getDestinationConfig",
 		"inputs": [],
 		"outputs": [
@@ -138,6 +208,35 @@ export const ChainBalanceManagerABI: any[] = [
 				"name": "destinationBalanceManager",
 				"type": "address",
 				"internalType": "address"
+			}
+		],
+		"stateMutability": "view"
+	},
+	{
+		"type": "function",
+		"name": "getLockedBalance",
+		"inputs": [
+			{
+				"name": "user",
+				"type": "address",
+				"internalType": "address"
+			},
+			{
+				"name": "manager",
+				"type": "address",
+				"internalType": "address"
+			},
+			{
+				"name": "currency",
+				"type": "address",
+				"internalType": "Currency"
+			}
+		],
+		"outputs": [
+			{
+				"name": "",
+				"type": "uint256",
+				"internalType": "uint256"
 			}
 		],
 		"stateMutability": "view"
@@ -295,7 +394,7 @@ export const ChainBalanceManagerABI: any[] = [
 		"name": "initialize",
 		"inputs": [
 			{
-				"name": "_owner",
+				"name": "",
 				"type": "address",
 				"internalType": "address"
 			}
@@ -306,6 +405,34 @@ export const ChainBalanceManagerABI: any[] = [
 	{
 		"type": "function",
 		"name": "initialize",
+		"inputs": [
+			{
+				"name": "_owner",
+				"type": "address",
+				"internalType": "address"
+			},
+			{
+				"name": "_mailbox",
+				"type": "address",
+				"internalType": "address"
+			},
+			{
+				"name": "_destinationDomain",
+				"type": "uint32",
+				"internalType": "uint32"
+			},
+			{
+				"name": "_destinationBalanceManager",
+				"type": "address",
+				"internalType": "address"
+			}
+		],
+		"outputs": [],
+		"stateMutability": "nonpayable"
+	},
+	{
+		"type": "function",
+		"name": "initializeCrossChain",
 		"inputs": [
 			{
 				"name": "_owner",
@@ -368,6 +495,34 @@ export const ChainBalanceManagerABI: any[] = [
 			}
 		],
 		"stateMutability": "view"
+	},
+	{
+		"type": "function",
+		"name": "lock",
+		"inputs": [
+			{
+				"name": "to",
+				"type": "address",
+				"internalType": "address"
+			},
+			{
+				"name": "currency",
+				"type": "address",
+				"internalType": "Currency"
+			},
+			{
+				"name": "amount",
+				"type": "uint256",
+				"internalType": "uint256"
+			},
+			{
+				"name": "",
+				"type": "uint256",
+				"internalType": "uint256"
+			}
+		],
+		"outputs": [],
+		"stateMutability": "nonpayable"
 	},
 	{
 		"type": "function",
@@ -477,6 +632,34 @@ export const ChainBalanceManagerABI: any[] = [
 	},
 	{
 		"type": "function",
+		"name": "unlock",
+		"inputs": [
+			{
+				"name": "to",
+				"type": "address",
+				"internalType": "address"
+			},
+			{
+				"name": "currency",
+				"type": "address",
+				"internalType": "Currency"
+			},
+			{
+				"name": "amount",
+				"type": "uint256",
+				"internalType": "uint256"
+			},
+			{
+				"name": "manager",
+				"type": "address",
+				"internalType": "address"
+			}
+		],
+		"outputs": [],
+		"stateMutability": "nonpayable"
+	},
+	{
+		"type": "function",
 		"name": "unlockedBalanceOf",
 		"inputs": [
 			{
@@ -512,6 +695,42 @@ export const ChainBalanceManagerABI: any[] = [
 				"name": "_destinationBalanceManager",
 				"type": "address",
 				"internalType": "address"
+			}
+		],
+		"outputs": [],
+		"stateMutability": "nonpayable"
+	},
+	{
+		"type": "function",
+		"name": "updateCrossChainConfig",
+		"inputs": [
+			{
+				"name": "_mailbox",
+				"type": "address",
+				"internalType": "address"
+			},
+			{
+				"name": "_destinationDomain",
+				"type": "uint32",
+				"internalType": "uint32"
+			},
+			{
+				"name": "_destinationBalanceManager",
+				"type": "address",
+				"internalType": "address"
+			}
+		],
+		"outputs": [],
+		"stateMutability": "nonpayable"
+	},
+	{
+		"type": "function",
+		"name": "updateLocalDomain",
+		"inputs": [
+			{
+				"name": "_localDomain",
+				"type": "uint32",
+				"internalType": "uint32"
 			}
 		],
 		"outputs": [],
@@ -560,11 +779,34 @@ export const ChainBalanceManagerABI: any[] = [
 		"stateMutability": "nonpayable"
 	},
 	{
+		"type": "function",
+		"name": "withdraw",
+		"inputs": [
+			{
+				"name": "to",
+				"type": "address",
+				"internalType": "address"
+			},
+			{
+				"name": "currency",
+				"type": "address",
+				"internalType": "Currency"
+			},
+			{
+				"name": "amount",
+				"type": "uint256",
+				"internalType": "uint256"
+			}
+		],
+		"outputs": [],
+		"stateMutability": "nonpayable"
+	},
+	{
 		"type": "event",
 		"name": "BridgeToSynthetic",
 		"inputs": [
 			{
-				"name": "user",
+				"name": "to",
 				"type": "address",
 				"indexed": true,
 				"internalType": "address"
@@ -639,13 +881,13 @@ export const ChainBalanceManagerABI: any[] = [
 		"name": "Deposit",
 		"inputs": [
 			{
-				"name": "depositor",
+				"name": "from",
 				"type": "address",
 				"indexed": true,
 				"internalType": "address"
 			},
 			{
-				"name": "recipient",
+				"name": "to",
 				"type": "address",
 				"indexed": true,
 				"internalType": "address"
@@ -667,6 +909,25 @@ export const ChainBalanceManagerABI: any[] = [
 	},
 	{
 		"type": "event",
+		"name": "DestinationChainConfigUpdated",
+		"inputs": [
+			{
+				"name": "isMailbox",
+				"type": "bool",
+				"indexed": false,
+				"internalType": "bool"
+			},
+			{
+				"name": "value",
+				"type": "address",
+				"indexed": true,
+				"internalType": "address"
+			}
+		],
+		"anonymous": false
+	},
+	{
+		"type": "event",
 		"name": "Initialized",
 		"inputs": [
 			{
@@ -674,6 +935,25 @@ export const ChainBalanceManagerABI: any[] = [
 				"type": "uint64",
 				"indexed": false,
 				"internalType": "uint64"
+			}
+		],
+		"anonymous": false
+	},
+	{
+		"type": "event",
+		"name": "LocalDomainUpdated",
+		"inputs": [
+			{
+				"name": "oldDomain",
+				"type": "uint32",
+				"indexed": false,
+				"internalType": "uint32"
+			},
+			{
+				"name": "newDomain",
+				"type": "uint32",
+				"indexed": false,
+				"internalType": "uint32"
 			}
 		],
 		"anonymous": false
@@ -689,7 +969,7 @@ export const ChainBalanceManagerABI: any[] = [
 				"internalType": "address"
 			},
 			{
-				"name": "newNonce",
+				"name": "nonce",
 				"type": "uint256",
 				"indexed": false,
 				"internalType": "uint256"
@@ -712,6 +992,31 @@ export const ChainBalanceManagerABI: any[] = [
 				"type": "address",
 				"indexed": true,
 				"internalType": "address"
+			}
+		],
+		"anonymous": false
+	},
+	{
+		"type": "event",
+		"name": "TokenDeposited",
+		"inputs": [
+			{
+				"name": "to",
+				"type": "address",
+				"indexed": true,
+				"internalType": "address"
+			},
+			{
+				"name": "token",
+				"type": "address",
+				"indexed": true,
+				"internalType": "address"
+			},
+			{
+				"name": "amount",
+				"type": "uint256",
+				"indexed": false,
+				"internalType": "uint256"
 			}
 		],
 		"anonymous": false
@@ -757,6 +1062,31 @@ export const ChainBalanceManagerABI: any[] = [
 				"type": "address",
 				"indexed": true,
 				"internalType": "address"
+			}
+		],
+		"anonymous": false
+	},
+	{
+		"type": "event",
+		"name": "TokenWithdrawn",
+		"inputs": [
+			{
+				"name": "to",
+				"type": "address",
+				"indexed": true,
+				"internalType": "address"
+			},
+			{
+				"name": "token",
+				"type": "address",
+				"indexed": true,
+				"internalType": "address"
+			},
+			{
+				"name": "amount",
+				"type": "uint256",
+				"indexed": false,
+				"internalType": "uint256"
 			}
 		],
 		"anonymous": false
@@ -816,13 +1146,13 @@ export const ChainBalanceManagerABI: any[] = [
 		"name": "WithdrawMessageReceived",
 		"inputs": [
 			{
-				"name": "user",
+				"name": "recipient",
 				"type": "address",
 				"indexed": true,
 				"internalType": "address"
 			},
 			{
-				"name": "token",
+				"name": "sourceToken",
 				"type": "address",
 				"indexed": true,
 				"internalType": "address"
@@ -838,6 +1168,27 @@ export const ChainBalanceManagerABI: any[] = [
 	},
 	{
 		"type": "error",
+		"name": "DifferentChainDomains",
+		"inputs": [
+			{
+				"name": "local",
+				"type": "uint32",
+				"internalType": "uint32"
+			},
+			{
+				"name": "destination",
+				"type": "uint32",
+				"internalType": "uint32"
+			}
+		]
+	},
+	{
+		"type": "error",
+		"name": "EthSentForErc20Deposit",
+		"inputs": []
+	},
+	{
+		"type": "error",
 		"name": "InsufficientBalance",
 		"inputs": [
 			{
@@ -846,21 +1197,26 @@ export const ChainBalanceManagerABI: any[] = [
 				"internalType": "address"
 			},
 			{
-				"name": "id",
+				"name": "tokenId",
 				"type": "uint256",
 				"internalType": "uint256"
 			},
 			{
-				"name": "want",
+				"name": "requested",
 				"type": "uint256",
 				"internalType": "uint256"
 			},
 			{
-				"name": "have",
+				"name": "available",
 				"type": "uint256",
 				"internalType": "uint256"
 			}
 		]
+	},
+	{
+		"type": "error",
+		"name": "InsufficientLockedBalance",
+		"inputs": []
 	},
 	{
 		"type": "error",
@@ -872,21 +1228,26 @@ export const ChainBalanceManagerABI: any[] = [
 				"internalType": "address"
 			},
 			{
-				"name": "id",
+				"name": "tokenId",
 				"type": "uint256",
 				"internalType": "uint256"
 			},
 			{
-				"name": "want",
+				"name": "requested",
 				"type": "uint256",
 				"internalType": "uint256"
 			},
 			{
-				"name": "have",
+				"name": "available",
 				"type": "uint256",
 				"internalType": "uint256"
 			}
 		]
+	},
+	{
+		"type": "error",
+		"name": "InvalidAmount",
+		"inputs": []
 	},
 	{
 		"type": "error",
@@ -899,8 +1260,8 @@ export const ChainBalanceManagerABI: any[] = [
 		"inputs": [
 			{
 				"name": "messageType",
-				"type": "uint8",
-				"internalType": "uint8"
+				"type": "uint256",
+				"internalType": "uint256"
 			}
 		]
 	},
@@ -1035,17 +1396,6 @@ export const ChainBalanceManagerABI: any[] = [
 		"inputs": [
 			{
 				"name": "token",
-				"type": "address",
-				"internalType": "address"
-			}
-		]
-	},
-	{
-		"type": "error",
-		"name": "UnauthorizedWithdraw",
-		"inputs": [
-			{
-				"name": "caller",
 				"type": "address",
 				"internalType": "address"
 			}
