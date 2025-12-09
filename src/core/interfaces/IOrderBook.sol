@@ -106,7 +106,8 @@ interface IOrderBook is IOrderBookErrors {
         bool isMarketOrder,
         Status status,
         bool autoRepay,
-        bool autoBorrow
+        bool autoBorrow,
+        TimeInForce timeInForce
     );
 
     event OrderMatched(

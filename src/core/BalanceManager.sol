@@ -252,18 +252,19 @@ contract BalanceManager is
         address tokenAddr = Currency.unwrap(currency);
         address syntheticToken = $.syntheticTokens[tokenAddr];
 
-        // For synthetic tokens deposited via depositLocal, use internal balance tracking
-        uint256 availableBalance = $.balanceOf[user][currency.toId()];
+        // For synthetic tokens deposited via depositLocal, use synthetic token's currency ID for balance tracking
+        uint256 currencyId = syntheticToken != address(0) ? Currency.wrap(syntheticToken).toId() : currency.toId();
+        uint256 availableBalance = $.balanceOf[user][currencyId];
         
         if (availableBalance < amount) {
-            revert InsufficientBalance(user, currency.toId(), amount, availableBalance);
+            revert InsufficientBalance(user, currencyId, amount, availableBalance);
         }
         
         // ALWAYS calculate and claim yield on withdrawal
         if (syntheticToken != address(0)) {
             // Calculate ALL accumulated yield (inline to avoid function ordering issues)
             // Use internal balance tracking since tokens are held in the vault
-            uint256 userBalance = $.balanceOf[user][currency.toId()];
+            uint256 userBalance = $.balanceOf[user][currencyId];
             uint256 yieldAmount = 0;
             address underlyingToken = tokenAddr;
             
@@ -350,23 +351,23 @@ contract BalanceManager is
             }
 
             // Update internal balance tracking
-            $.balanceOf[user][currency.toId()] -= amount;
+            $.balanceOf[user][currencyId] -= amount;
 
             // Clean up checkpoint if user will have zero balance
-            uint256 remainingBalance = $.balanceOf[user][currency.toId()];
+            uint256 remainingBalance = $.balanceOf[user][currencyId];
             if (remainingBalance == 0 && syntheticToken != address(0)) {
                 delete $.userYieldCheckpoints[user][syntheticToken];
             }
             
             // Emit event with safety checks
             uint256 yieldToEmit = yieldAmount <= totalAmount ? yieldAmount : 0;
-            emit WithdrawalWithYield(user, currency.toId(), amount, yieldToEmit, remainingBalance);
+            emit WithdrawalWithYield(user, currencyId, amount, yieldToEmit, remainingBalance);
         } else {
             // No synthetic token case - regular withdrawal
             totalAmount = amount;
-            $.balanceOf[user][currency.toId()] -= amount;
+            $.balanceOf[user][currencyId] -= amount;
             currency.transfer(user, amount);
-            emit Withdrawal(user, currency.toId(), amount);
+            emit Withdrawal(user, currencyId, amount);
         }
         
         return totalAmount;

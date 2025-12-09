@@ -6,6 +6,91 @@ export const BalanceManagerABI: any[] = [
 	},
 	{
 		"type": "function",
+		"name": "accrueYield",
+		"inputs": [],
+		"outputs": [],
+		"stateMutability": "nonpayable"
+	},
+	{
+		"type": "function",
+		"name": "addAuthorizedOperator",
+		"inputs": [
+			{
+				"name": "operator",
+				"type": "address",
+				"internalType": "address"
+			}
+		],
+		"outputs": [],
+		"stateMutability": "nonpayable"
+	},
+	{
+		"type": "function",
+		"name": "addSupportedAsset",
+		"inputs": [
+			{
+				"name": "realToken",
+				"type": "address",
+				"internalType": "address"
+			},
+			{
+				"name": "syntheticToken",
+				"type": "address",
+				"internalType": "address"
+			}
+		],
+		"outputs": [],
+		"stateMutability": "nonpayable"
+	},
+	{
+		"type": "function",
+		"name": "borrowForUser",
+		"inputs": [
+			{
+				"name": "user",
+				"type": "address",
+				"internalType": "address"
+			},
+			{
+				"name": "token",
+				"type": "address",
+				"internalType": "address"
+			},
+			{
+				"name": "amount",
+				"type": "uint256",
+				"internalType": "uint256"
+			}
+		],
+		"outputs": [],
+		"stateMutability": "nonpayable"
+	},
+	{
+		"type": "function",
+		"name": "calculateUserYield",
+		"inputs": [
+			{
+				"name": "user",
+				"type": "address",
+				"internalType": "address"
+			},
+			{
+				"name": "syntheticToken",
+				"type": "address",
+				"internalType": "address"
+			}
+		],
+		"outputs": [
+			{
+				"name": "",
+				"type": "uint256",
+				"internalType": "uint256"
+			}
+		],
+		"stateMutability": "view"
+	},
+	{
+		"type": "function",
 		"name": "deposit",
 		"inputs": [
 			{
@@ -29,7 +114,13 @@ export const BalanceManagerABI: any[] = [
 				"internalType": "address"
 			}
 		],
-		"outputs": [],
+		"outputs": [
+			{
+				"name": "",
+				"type": "uint256",
+				"internalType": "uint256"
+			}
+		],
 		"stateMutability": "payable"
 	},
 	{
@@ -68,6 +159,29 @@ export const BalanceManagerABI: any[] = [
 	},
 	{
 		"type": "function",
+		"name": "depositLocal",
+		"inputs": [
+			{
+				"name": "token",
+				"type": "address",
+				"internalType": "address"
+			},
+			{
+				"name": "amount",
+				"type": "uint256",
+				"internalType": "uint256"
+			},
+			{
+				"name": "recipient",
+				"type": "address",
+				"internalType": "address"
+			}
+		],
+		"outputs": [],
+		"stateMutability": "nonpayable"
+	},
+	{
+		"type": "function",
 		"name": "feeMaker",
 		"inputs": [],
 		"outputs": [
@@ -96,6 +210,30 @@ export const BalanceManagerABI: any[] = [
 		"type": "function",
 		"name": "feeTaker",
 		"inputs": [],
+		"outputs": [
+			{
+				"name": "",
+				"type": "uint256",
+				"internalType": "uint256"
+			}
+		],
+		"stateMutability": "view"
+	},
+	{
+		"type": "function",
+		"name": "getAvailableBalance",
+		"inputs": [
+			{
+				"name": "user",
+				"type": "address",
+				"internalType": "address"
+			},
+			{
+				"name": "currency",
+				"type": "address",
+				"internalType": "Currency"
+			}
+		],
 		"outputs": [
 			{
 				"name": "",
@@ -150,6 +288,24 @@ export const BalanceManagerABI: any[] = [
 	},
 	{
 		"type": "function",
+		"name": "getCrossChainConfig",
+		"inputs": [],
+		"outputs": [
+			{
+				"name": "mailbox",
+				"type": "address",
+				"internalType": "address"
+			},
+			{
+				"name": "localDomain",
+				"type": "uint32",
+				"internalType": "uint32"
+			}
+		],
+		"stateMutability": "view"
+	},
+	{
+		"type": "function",
 		"name": "getFeeUnit",
 		"inputs": [],
 		"outputs": [
@@ -157,6 +313,19 @@ export const BalanceManagerABI: any[] = [
 				"name": "",
 				"type": "uint256",
 				"internalType": "uint256"
+			}
+		],
+		"stateMutability": "pure"
+	},
+	{
+		"type": "function",
+		"name": "getLendingManager",
+		"inputs": [],
+		"outputs": [
+			{
+				"name": "",
+				"type": "address",
+				"internalType": "address"
 			}
 		],
 		"stateMutability": "view"
@@ -204,6 +373,51 @@ export const BalanceManagerABI: any[] = [
 				"name": "localDomain",
 				"type": "uint32",
 				"internalType": "uint32"
+			}
+		],
+		"stateMutability": "view"
+	},
+	{
+		"type": "function",
+		"name": "getSupportedAssets",
+		"inputs": [],
+		"outputs": [
+			{
+				"name": "",
+				"type": "address[]",
+				"internalType": "address[]"
+			}
+		],
+		"stateMutability": "view"
+	},
+	{
+		"type": "function",
+		"name": "getSyntheticToken",
+		"inputs": [
+			{
+				"name": "realToken",
+				"type": "address",
+				"internalType": "address"
+			}
+		],
+		"outputs": [
+			{
+				"name": "",
+				"type": "address",
+				"internalType": "address"
+			}
+		],
+		"stateMutability": "view"
+	},
+	{
+		"type": "function",
+		"name": "getTokenRegistry",
+		"inputs": [],
+		"outputs": [
+			{
+				"name": "",
+				"type": "address",
+				"internalType": "address"
 			}
 		],
 		"stateMutability": "view"
@@ -298,6 +512,25 @@ export const BalanceManagerABI: any[] = [
 	},
 	{
 		"type": "function",
+		"name": "isAssetSupported",
+		"inputs": [
+			{
+				"name": "realToken",
+				"type": "address",
+				"internalType": "address"
+			}
+		],
+		"outputs": [
+			{
+				"name": "",
+				"type": "bool",
+				"internalType": "bool"
+			}
+		],
+		"stateMutability": "view"
+	},
+	{
+		"type": "function",
 		"name": "isMessageProcessed",
 		"inputs": [
 			{
@@ -311,6 +544,19 @@ export const BalanceManagerABI: any[] = [
 				"name": "",
 				"type": "bool",
 				"internalType": "bool"
+			}
+		],
+		"stateMutability": "view"
+	},
+	{
+		"type": "function",
+		"name": "lendingManager",
+		"inputs": [],
+		"outputs": [
+			{
+				"name": "",
+				"type": "address",
+				"internalType": "address"
 			}
 		],
 		"stateMutability": "view"
@@ -381,8 +627,44 @@ export const BalanceManagerABI: any[] = [
 	},
 	{
 		"type": "function",
+		"name": "removeSupportedAsset",
+		"inputs": [
+			{
+				"name": "realToken",
+				"type": "address",
+				"internalType": "address"
+			}
+		],
+		"outputs": [],
+		"stateMutability": "nonpayable"
+	},
+	{
+		"type": "function",
 		"name": "renounceOwnership",
 		"inputs": [],
+		"outputs": [],
+		"stateMutability": "nonpayable"
+	},
+	{
+		"type": "function",
+		"name": "repayForUser",
+		"inputs": [
+			{
+				"name": "user",
+				"type": "address",
+				"internalType": "address"
+			},
+			{
+				"name": "token",
+				"type": "address",
+				"internalType": "address"
+			},
+			{
+				"name": "amount",
+				"type": "uint256",
+				"internalType": "uint256"
+			}
+		],
 		"outputs": [],
 		"stateMutability": "nonpayable"
 	},
@@ -470,6 +752,19 @@ export const BalanceManagerABI: any[] = [
 	},
 	{
 		"type": "function",
+		"name": "setLendingManager",
+		"inputs": [
+			{
+				"name": "_lendingManager",
+				"type": "address",
+				"internalType": "address"
+			}
+		],
+		"outputs": [],
+		"stateMutability": "nonpayable"
+	},
+	{
+		"type": "function",
 		"name": "setMailbox",
 		"inputs": [
 			{
@@ -496,6 +791,19 @@ export const BalanceManagerABI: any[] = [
 	},
 	{
 		"type": "function",
+		"name": "setTokenFactory",
+		"inputs": [
+			{
+				"name": "_tokenFactory",
+				"type": "address",
+				"internalType": "address"
+			}
+		],
+		"outputs": [],
+		"stateMutability": "nonpayable"
+	},
+	{
+		"type": "function",
 		"name": "setTokenRegistry",
 		"inputs": [
 			{
@@ -506,6 +814,19 @@ export const BalanceManagerABI: any[] = [
 		],
 		"outputs": [],
 		"stateMutability": "nonpayable"
+	},
+	{
+		"type": "function",
+		"name": "tokenFactory",
+		"inputs": [],
+		"outputs": [
+			{
+				"name": "",
+				"type": "address",
+				"internalType": "address"
+			}
+		],
+		"stateMutability": "view"
 	},
 	{
 		"type": "function",
@@ -629,6 +950,24 @@ export const BalanceManagerABI: any[] = [
 	},
 	{
 		"type": "function",
+		"name": "updateCrossChainConfig",
+		"inputs": [
+			{
+				"name": "_mailbox",
+				"type": "address",
+				"internalType": "address"
+			},
+			{
+				"name": "_localDomain",
+				"type": "uint32",
+				"internalType": "uint32"
+			}
+		],
+		"outputs": [],
+		"stateMutability": "nonpayable"
+	},
+	{
+		"type": "function",
 		"name": "withdraw",
 		"inputs": [
 			{
@@ -647,7 +986,13 @@ export const BalanceManagerABI: any[] = [
 				"internalType": "address"
 			}
 		],
-		"outputs": [],
+		"outputs": [
+			{
+				"name": "totalAmount",
+				"type": "uint256",
+				"internalType": "uint256"
+			}
+		],
 		"stateMutability": "nonpayable"
 	},
 	{
@@ -670,6 +1015,75 @@ export const BalanceManagerABI: any[] = [
 	},
 	{
 		"type": "event",
+		"name": "AssetAdded",
+		"inputs": [
+			{
+				"name": "realToken",
+				"type": "address",
+				"indexed": true,
+				"internalType": "address"
+			},
+			{
+				"name": "syntheticToken",
+				"type": "address",
+				"indexed": true,
+				"internalType": "address"
+			}
+		],
+		"anonymous": false
+	},
+	{
+		"type": "event",
+		"name": "AssetConfigured",
+		"inputs": [
+			{
+				"name": "token",
+				"type": "address",
+				"indexed": true,
+				"internalType": "address"
+			},
+			{
+				"name": "collateralFactor",
+				"type": "uint256",
+				"indexed": false,
+				"internalType": "uint256"
+			},
+			{
+				"name": "liquidationThreshold",
+				"type": "uint256",
+				"indexed": false,
+				"internalType": "uint256"
+			},
+			{
+				"name": "liquidationBonus",
+				"type": "uint256",
+				"indexed": false,
+				"internalType": "uint256"
+			},
+			{
+				"name": "reserveFactor",
+				"type": "uint256",
+				"indexed": false,
+				"internalType": "uint256"
+			}
+		],
+		"anonymous": false
+	},
+	{
+		"type": "event",
+		"name": "AssetRemoved",
+		"inputs": [
+			{
+				"name": "realToken",
+				"type": "address",
+				"indexed": true,
+				"internalType": "address"
+			}
+		],
+		"anonymous": false
+	},
+	{
+		"type": "event",
 		"name": "ChainBalanceManagerSet",
 		"inputs": [
 			{
@@ -683,6 +1097,37 @@ export const BalanceManagerABI: any[] = [
 				"type": "address",
 				"indexed": true,
 				"internalType": "address"
+			}
+		],
+		"anonymous": false
+	},
+	{
+		"type": "event",
+		"name": "CrossChainConfigUpdated",
+		"inputs": [
+			{
+				"name": "oldMailbox",
+				"type": "address",
+				"indexed": true,
+				"internalType": "address"
+			},
+			{
+				"name": "newMailbox",
+				"type": "address",
+				"indexed": true,
+				"internalType": "address"
+			},
+			{
+				"name": "oldDomain",
+				"type": "uint32",
+				"indexed": false,
+				"internalType": "uint32"
+			},
+			{
+				"name": "newDomain",
+				"type": "uint32",
+				"indexed": false,
+				"internalType": "uint32"
 			}
 		],
 		"anonymous": false
@@ -713,6 +1158,25 @@ export const BalanceManagerABI: any[] = [
 				"name": "sourceChain",
 				"type": "uint32",
 				"indexed": false,
+				"internalType": "uint32"
+			}
+		],
+		"anonymous": false
+	},
+	{
+		"type": "event",
+		"name": "CrossChainInitialized",
+		"inputs": [
+			{
+				"name": "mailbox",
+				"type": "address",
+				"indexed": true,
+				"internalType": "address"
+			},
+			{
+				"name": "localDomain",
+				"type": "uint32",
+				"indexed": true,
 				"internalType": "uint32"
 			}
 		],
@@ -776,6 +1240,62 @@ export const BalanceManagerABI: any[] = [
 	},
 	{
 		"type": "event",
+		"name": "DepositedWithYield",
+		"inputs": [
+			{
+				"name": "user",
+				"type": "address",
+				"indexed": true,
+				"internalType": "address"
+			},
+			{
+				"name": "realToken",
+				"type": "address",
+				"indexed": true,
+				"internalType": "address"
+			},
+			{
+				"name": "syntheticToken",
+				"type": "address",
+				"indexed": true,
+				"internalType": "address"
+			},
+			{
+				"name": "amount",
+				"type": "uint256",
+				"indexed": false,
+				"internalType": "uint256"
+			},
+			{
+				"name": "timestamp",
+				"type": "uint256",
+				"indexed": false,
+				"internalType": "uint256"
+			}
+		],
+		"anonymous": false
+	},
+	{
+		"type": "event",
+		"name": "FeeUpdated",
+		"inputs": [
+			{
+				"name": "feeMaker",
+				"type": "uint256",
+				"indexed": true,
+				"internalType": "uint256"
+			},
+			{
+				"name": "feeTaker",
+				"type": "uint256",
+				"indexed": true,
+				"internalType": "uint256"
+			}
+		],
+		"anonymous": false
+	},
+	{
+		"type": "event",
 		"name": "Initialized",
 		"inputs": [
 			{
@@ -783,6 +1303,56 @@ export const BalanceManagerABI: any[] = [
 				"type": "uint64",
 				"indexed": false,
 				"internalType": "uint64"
+			}
+		],
+		"anonymous": false
+	},
+	{
+		"type": "event",
+		"name": "LendingManagerSet",
+		"inputs": [
+			{
+				"name": "lendingManager",
+				"type": "address",
+				"indexed": true,
+				"internalType": "address"
+			}
+		],
+		"anonymous": false
+	},
+	{
+		"type": "event",
+		"name": "LocalDeposit",
+		"inputs": [
+			{
+				"name": "recipient",
+				"type": "address",
+				"indexed": true,
+				"internalType": "address"
+			},
+			{
+				"name": "sourceToken",
+				"type": "address",
+				"indexed": true,
+				"internalType": "address"
+			},
+			{
+				"name": "syntheticToken",
+				"type": "address",
+				"indexed": true,
+				"internalType": "address"
+			},
+			{
+				"name": "sourceAmount",
+				"type": "uint256",
+				"indexed": false,
+				"internalType": "uint256"
+			},
+			{
+				"name": "syntheticAmount",
+				"type": "uint256",
+				"indexed": false,
+				"internalType": "uint256"
 			}
 		],
 		"anonymous": false
@@ -823,7 +1393,7 @@ export const BalanceManagerABI: any[] = [
 				"internalType": "address"
 			},
 			{
-				"name": "approved",
+				"name": "authorized",
 				"type": "bool",
 				"indexed": false,
 				"internalType": "bool"
@@ -865,6 +1435,19 @@ export const BalanceManagerABI: any[] = [
 	},
 	{
 		"type": "event",
+		"name": "TokenFactorySet",
+		"inputs": [
+			{
+				"name": "tokenFactory",
+				"type": "address",
+				"indexed": true,
+				"internalType": "address"
+			}
+		],
+		"anonymous": false
+	},
+	{
+		"type": "event",
 		"name": "TransferFrom",
 		"inputs": [
 			{
@@ -874,19 +1457,19 @@ export const BalanceManagerABI: any[] = [
 				"internalType": "address"
 			},
 			{
-				"name": "sender",
+				"name": "from",
 				"type": "address",
 				"indexed": true,
 				"internalType": "address"
 			},
 			{
-				"name": "receiver",
+				"name": "to",
 				"type": "address",
 				"indexed": true,
 				"internalType": "address"
 			},
 			{
-				"name": "id",
+				"name": "currencyId",
 				"type": "uint256",
 				"indexed": false,
 				"internalType": "uint256"
@@ -898,7 +1481,7 @@ export const BalanceManagerABI: any[] = [
 				"internalType": "uint256"
 			},
 			{
-				"name": "feeAmount",
+				"name": "fee",
 				"type": "uint256",
 				"indexed": false,
 				"internalType": "uint256"
@@ -917,19 +1500,19 @@ export const BalanceManagerABI: any[] = [
 				"internalType": "address"
 			},
 			{
-				"name": "sender",
+				"name": "from",
 				"type": "address",
 				"indexed": true,
 				"internalType": "address"
 			},
 			{
-				"name": "receiver",
+				"name": "to",
 				"type": "address",
 				"indexed": true,
 				"internalType": "address"
 			},
 			{
-				"name": "id",
+				"name": "currencyId",
 				"type": "uint256",
 				"indexed": false,
 				"internalType": "uint256"
@@ -941,7 +1524,7 @@ export const BalanceManagerABI: any[] = [
 				"internalType": "uint256"
 			},
 			{
-				"name": "feeAmount",
+				"name": "fee",
 				"type": "uint256",
 				"indexed": false,
 				"internalType": "uint256"
@@ -1000,6 +1583,215 @@ export const BalanceManagerABI: any[] = [
 		"anonymous": false
 	},
 	{
+		"type": "event",
+		"name": "WithdrawalWithYield",
+		"inputs": [
+			{
+				"name": "user",
+				"type": "address",
+				"indexed": true,
+				"internalType": "address"
+			},
+			{
+				"name": "currencyId",
+				"type": "uint256",
+				"indexed": true,
+				"internalType": "uint256"
+			},
+			{
+				"name": "principal",
+				"type": "uint256",
+				"indexed": false,
+				"internalType": "uint256"
+			},
+			{
+				"name": "yield",
+				"type": "uint256",
+				"indexed": false,
+				"internalType": "uint256"
+			},
+			{
+				"name": "remainingBalance",
+				"type": "uint256",
+				"indexed": false,
+				"internalType": "uint256"
+			}
+		],
+		"anonymous": false
+	},
+	{
+		"type": "event",
+		"name": "WithdrawnWithYield",
+		"inputs": [
+			{
+				"name": "user",
+				"type": "address",
+				"indexed": true,
+				"internalType": "address"
+			},
+			{
+				"name": "realToken",
+				"type": "address",
+				"indexed": true,
+				"internalType": "address"
+			},
+			{
+				"name": "syntheticToken",
+				"type": "address",
+				"indexed": true,
+				"internalType": "address"
+			},
+			{
+				"name": "amount",
+				"type": "uint256",
+				"indexed": false,
+				"internalType": "uint256"
+			},
+			{
+				"name": "yieldAmount",
+				"type": "uint256",
+				"indexed": false,
+				"internalType": "uint256"
+			},
+			{
+				"name": "timestamp",
+				"type": "uint256",
+				"indexed": false,
+				"internalType": "uint256"
+			}
+		],
+		"anonymous": false
+	},
+	{
+		"type": "event",
+		"name": "YieldAccrued",
+		"inputs": [
+			{
+				"name": "timestamp",
+				"type": "uint256",
+				"indexed": false,
+				"internalType": "uint256"
+			}
+		],
+		"anonymous": false
+	},
+	{
+		"type": "event",
+		"name": "YieldAutoClaimed",
+		"inputs": [
+			{
+				"name": "user",
+				"type": "address",
+				"indexed": true,
+				"internalType": "address"
+			},
+			{
+				"name": "currencyId",
+				"type": "uint256",
+				"indexed": true,
+				"internalType": "uint256"
+			},
+			{
+				"name": "timestamp",
+				"type": "uint256",
+				"indexed": false,
+				"internalType": "uint256"
+			}
+		],
+		"anonymous": false
+	},
+	{
+		"type": "event",
+		"name": "YieldDistributed",
+		"inputs": [
+			{
+				"name": "underlyingToken",
+				"type": "address",
+				"indexed": true,
+				"internalType": "address"
+			},
+			{
+				"name": "syntheticToken",
+				"type": "address",
+				"indexed": true,
+				"internalType": "address"
+			},
+			{
+				"name": "amount",
+				"type": "uint256",
+				"indexed": false,
+				"internalType": "uint256"
+			},
+			{
+				"name": "yieldPerToken",
+				"type": "uint256",
+				"indexed": false,
+				"internalType": "uint256"
+			}
+		],
+		"anonymous": false
+	},
+	{
+		"type": "event",
+		"name": "YieldDistributorSet",
+		"inputs": [
+			{
+				"name": "yieldDistributor",
+				"type": "address",
+				"indexed": true,
+				"internalType": "address"
+			}
+		],
+		"anonymous": false
+	},
+	{
+		"type": "error",
+		"name": "AlreadyInitialized",
+		"inputs": []
+	},
+	{
+		"type": "error",
+		"name": "BorrowFailed",
+		"inputs": []
+	},
+	{
+		"type": "error",
+		"name": "EthSentForErc20Deposit",
+		"inputs": []
+	},
+	{
+		"type": "error",
+		"name": "FeeExceedsTransferAmount",
+		"inputs": [
+			{
+				"name": "fee",
+				"type": "uint256",
+				"internalType": "uint256"
+			},
+			{
+				"name": "amount",
+				"type": "uint256",
+				"internalType": "uint256"
+			}
+		]
+	},
+	{
+		"type": "error",
+		"name": "IncorrectEthAmount",
+		"inputs": [
+			{
+				"name": "expected",
+				"type": "uint256",
+				"internalType": "uint256"
+			},
+			{
+				"name": "actual",
+				"type": "uint256",
+				"internalType": "uint256"
+			}
+		]
+	},
+	{
 		"type": "error",
 		"name": "InsufficientBalance",
 		"inputs": [
@@ -1032,7 +1824,80 @@ export const BalanceManagerABI: any[] = [
 	},
 	{
 		"type": "error",
+		"name": "InvalidRecipientAddress",
+		"inputs": []
+	},
+	{
+		"type": "error",
+		"name": "InvalidSender",
+		"inputs": [
+			{
+				"name": "expected",
+				"type": "bytes32",
+				"internalType": "bytes32"
+			},
+			{
+				"name": "actual",
+				"type": "bytes32",
+				"internalType": "bytes32"
+			}
+		]
+	},
+	{
+		"type": "error",
+		"name": "InvalidTokenAddress",
+		"inputs": []
+	},
+	{
+		"type": "error",
+		"name": "InvalidTokenRegistry",
+		"inputs": []
+	},
+	{
+		"type": "error",
+		"name": "LendingManagerNotSet",
+		"inputs": []
+	},
+	{
+		"type": "error",
+		"name": "LendingManagerSupplyFailed",
+		"inputs": [
+			{
+				"name": "user",
+				"type": "address",
+				"internalType": "address"
+			},
+			{
+				"name": "token",
+				"type": "address",
+				"internalType": "address"
+			},
+			{
+				"name": "amount",
+				"type": "uint256",
+				"internalType": "uint256"
+			}
+		]
+	},
+	{
+		"type": "error",
+		"name": "MessageAlreadyProcessed",
+		"inputs": [
+			{
+				"name": "messageId",
+				"type": "bytes32",
+				"internalType": "bytes32"
+			}
+		]
+	},
+	{
+		"type": "error",
 		"name": "NotInitializing",
+		"inputs": []
+	},
+	{
+		"type": "error",
+		"name": "OnlyMailbox",
 		"inputs": []
 	},
 	{
@@ -1060,6 +1925,49 @@ export const BalanceManagerABI: any[] = [
 	{
 		"type": "error",
 		"name": "ReentrancyGuardReentrantCall",
+		"inputs": []
+	},
+	{
+		"type": "error",
+		"name": "RepayFailed",
+		"inputs": []
+	},
+	{
+		"type": "error",
+		"name": "SyntheticTokenNotFound",
+		"inputs": [
+			{
+				"name": "token",
+				"type": "address",
+				"internalType": "address"
+			}
+		]
+	},
+	{
+		"type": "error",
+		"name": "TargetChainNotSupported",
+		"inputs": [
+			{
+				"name": "chainId",
+				"type": "uint32",
+				"internalType": "uint32"
+			}
+		]
+	},
+	{
+		"type": "error",
+		"name": "TokenNotSupportedForLocalDeposits",
+		"inputs": [
+			{
+				"name": "token",
+				"type": "address",
+				"internalType": "address"
+			}
+		]
+	},
+	{
+		"type": "error",
+		"name": "TokenRegistryNotSet",
 		"inputs": []
 	},
 	{
@@ -1104,6 +2012,32 @@ export const BalanceManagerABI: any[] = [
 				"internalType": "address"
 			}
 		]
+	},
+	{
+		"type": "error",
+		"name": "UnknownMessageType",
+		"inputs": []
+	},
+	{
+		"type": "error",
+		"name": "UnknownOriginChain",
+		"inputs": [
+			{
+				"name": "chainId",
+				"type": "uint32",
+				"internalType": "uint32"
+			}
+		]
+	},
+	{
+		"type": "error",
+		"name": "YieldAccrualFailed",
+		"inputs": []
+	},
+	{
+		"type": "error",
+		"name": "YieldClaimFailed",
+		"inputs": []
 	},
 	{
 		"type": "error",

@@ -1,4 +1,4 @@
-export const SCALEXRouterABI: any[] = [
+export const ScaleXRouterABI: any[] = [
 	{
 		"type": "constructor",
 		"inputs": [],
@@ -38,6 +38,24 @@ export const SCALEXRouterABI: any[] = [
 		],
 		"outputs": [],
 		"stateMutability": "pure"
+	},
+	{
+		"type": "function",
+		"name": "borrow",
+		"inputs": [
+			{
+				"name": "token",
+				"type": "address",
+				"internalType": "address"
+			},
+			{
+				"name": "amount",
+				"type": "uint256",
+				"internalType": "uint256"
+			}
+		],
+		"outputs": [],
+		"stateMutability": "nonpayable"
 	},
 	{
 		"type": "function",
@@ -161,6 +179,43 @@ export const SCALEXRouterABI: any[] = [
 	},
 	{
 		"type": "function",
+		"name": "deposit",
+		"inputs": [
+			{
+				"name": "token",
+				"type": "address",
+				"internalType": "address"
+			},
+			{
+				"name": "amount",
+				"type": "uint256",
+				"internalType": "uint256"
+			}
+		],
+		"outputs": [],
+		"stateMutability": "nonpayable"
+	},
+	{
+		"type": "function",
+		"name": "getAvailableLiquidity",
+		"inputs": [
+			{
+				"name": "token",
+				"type": "address",
+				"internalType": "address"
+			}
+		],
+		"outputs": [
+			{
+				"name": "",
+				"type": "uint256",
+				"internalType": "uint256"
+			}
+		],
+		"stateMutability": "view"
+	},
+	{
+		"type": "function",
 		"name": "getBestPrice",
 		"inputs": [
 			{
@@ -196,6 +251,44 @@ export const SCALEXRouterABI: any[] = [
 						"internalType": "uint256"
 					}
 				]
+			}
+		],
+		"stateMutability": "view"
+	},
+	{
+		"type": "function",
+		"name": "getGeneratedInterest",
+		"inputs": [
+			{
+				"name": "token",
+				"type": "address",
+				"internalType": "address"
+			}
+		],
+		"outputs": [
+			{
+				"name": "",
+				"type": "uint256",
+				"internalType": "uint256"
+			}
+		],
+		"stateMutability": "view"
+	},
+	{
+		"type": "function",
+		"name": "getHealthFactor",
+		"inputs": [
+			{
+				"name": "user",
+				"type": "address",
+				"internalType": "address"
+			}
+		],
+		"outputs": [
+			{
+				"name": "",
+				"type": "uint256",
+				"internalType": "uint256"
 			}
 		],
 		"stateMutability": "view"
@@ -343,6 +436,16 @@ export const SCALEXRouterABI: any[] = [
 						"name": "side",
 						"type": "uint8",
 						"internalType": "enum IOrderBook.Side"
+					},
+					{
+						"name": "autoRepay",
+						"type": "bool",
+						"internalType": "bool"
+					},
+					{
+						"name": "autoBorrow",
+						"type": "bool",
+						"internalType": "bool"
 					}
 				]
 			}
@@ -390,6 +493,54 @@ export const SCALEXRouterABI: any[] = [
 	},
 	{
 		"type": "function",
+		"name": "getUserDebt",
+		"inputs": [
+			{
+				"name": "user",
+				"type": "address",
+				"internalType": "address"
+			},
+			{
+				"name": "token",
+				"type": "address",
+				"internalType": "address"
+			}
+		],
+		"outputs": [
+			{
+				"name": "",
+				"type": "uint256",
+				"internalType": "uint256"
+			}
+		],
+		"stateMutability": "view"
+	},
+	{
+		"type": "function",
+		"name": "getUserSupply",
+		"inputs": [
+			{
+				"name": "user",
+				"type": "address",
+				"internalType": "address"
+			},
+			{
+				"name": "token",
+				"type": "address",
+				"internalType": "address"
+			}
+		],
+		"outputs": [
+			{
+				"name": "",
+				"type": "uint256",
+				"internalType": "uint256"
+			}
+		],
+		"stateMutability": "view"
+	},
+	{
+		"type": "function",
 		"name": "initialize",
 		"inputs": [
 			{
@@ -401,6 +552,70 @@ export const SCALEXRouterABI: any[] = [
 				"name": "_balanceManager",
 				"type": "address",
 				"internalType": "address"
+			}
+		],
+		"outputs": [],
+		"stateMutability": "nonpayable"
+	},
+	{
+		"type": "function",
+		"name": "initializeWithLending",
+		"inputs": [
+			{
+				"name": "_poolManager",
+				"type": "address",
+				"internalType": "address"
+			},
+			{
+				"name": "_balanceManager",
+				"type": "address",
+				"internalType": "address"
+			},
+			{
+				"name": "_lendingManager",
+				"type": "address",
+				"internalType": "address"
+			}
+		],
+		"outputs": [],
+		"stateMutability": "nonpayable"
+	},
+	{
+		"type": "function",
+		"name": "lendingManager",
+		"inputs": [],
+		"outputs": [
+			{
+				"name": "",
+				"type": "address",
+				"internalType": "address"
+			}
+		],
+		"stateMutability": "view"
+	},
+	{
+		"type": "function",
+		"name": "liquidate",
+		"inputs": [
+			{
+				"name": "borrower",
+				"type": "address",
+				"internalType": "address"
+			},
+			{
+				"name": "debtToken",
+				"type": "address",
+				"internalType": "address"
+			},
+			{
+				"name": "collateralToken",
+				"type": "address",
+				"internalType": "address"
+			},
+			{
+				"name": "debtToCover",
+				"type": "uint256",
+				"internalType": "uint256"
 			}
 		],
 		"outputs": [],
@@ -482,6 +697,77 @@ export const SCALEXRouterABI: any[] = [
 	},
 	{
 		"type": "function",
+		"name": "placeLimitOrderWithFlags",
+		"inputs": [
+			{
+				"name": "pool",
+				"type": "tuple",
+				"internalType": "struct IPoolManager.Pool",
+				"components": [
+					{
+						"name": "baseCurrency",
+						"type": "address",
+						"internalType": "Currency"
+					},
+					{
+						"name": "quoteCurrency",
+						"type": "address",
+						"internalType": "Currency"
+					},
+					{
+						"name": "orderBook",
+						"type": "address",
+						"internalType": "contract IOrderBook"
+					}
+				]
+			},
+			{
+				"name": "_price",
+				"type": "uint128",
+				"internalType": "uint128"
+			},
+			{
+				"name": "_quantity",
+				"type": "uint128",
+				"internalType": "uint128"
+			},
+			{
+				"name": "_side",
+				"type": "uint8",
+				"internalType": "enum IOrderBook.Side"
+			},
+			{
+				"name": "_timeInForce",
+				"type": "uint8",
+				"internalType": "enum IOrderBook.TimeInForce"
+			},
+			{
+				"name": "depositAmount",
+				"type": "uint128",
+				"internalType": "uint128"
+			},
+			{
+				"name": "autoRepay",
+				"type": "bool",
+				"internalType": "bool"
+			},
+			{
+				"name": "autoBorrow",
+				"type": "bool",
+				"internalType": "bool"
+			}
+		],
+		"outputs": [
+			{
+				"name": "orderId",
+				"type": "uint48",
+				"internalType": "uint48"
+			}
+		],
+		"stateMutability": "nonpayable"
+	},
+	{
+		"type": "function",
 		"name": "placeMarketOrder",
 		"inputs": [
 			{
@@ -543,8 +829,110 @@ export const SCALEXRouterABI: any[] = [
 	},
 	{
 		"type": "function",
+		"name": "placeMarketOrder",
+		"inputs": [
+			{
+				"name": "pool",
+				"type": "tuple",
+				"internalType": "struct IPoolManager.Pool",
+				"components": [
+					{
+						"name": "baseCurrency",
+						"type": "address",
+						"internalType": "Currency"
+					},
+					{
+						"name": "quoteCurrency",
+						"type": "address",
+						"internalType": "Currency"
+					},
+					{
+						"name": "orderBook",
+						"type": "address",
+						"internalType": "contract IOrderBook"
+					}
+				]
+			},
+			{
+				"name": "_quantity",
+				"type": "uint128",
+				"internalType": "uint128"
+			},
+			{
+				"name": "_side",
+				"type": "uint8",
+				"internalType": "enum IOrderBook.Side"
+			},
+			{
+				"name": "depositAmount",
+				"type": "uint128",
+				"internalType": "uint128"
+			},
+			{
+				"name": "minOutAmount",
+				"type": "uint128",
+				"internalType": "uint128"
+			},
+			{
+				"name": "autoRepay",
+				"type": "bool",
+				"internalType": "bool"
+			},
+			{
+				"name": "autoBorrow",
+				"type": "bool",
+				"internalType": "bool"
+			}
+		],
+		"outputs": [
+			{
+				"name": "orderId",
+				"type": "uint48",
+				"internalType": "uint48"
+			},
+			{
+				"name": "filled",
+				"type": "uint128",
+				"internalType": "uint128"
+			}
+		],
+		"stateMutability": "nonpayable"
+	},
+	{
+		"type": "function",
 		"name": "renounceOwnership",
 		"inputs": [],
+		"outputs": [],
+		"stateMutability": "nonpayable"
+	},
+	{
+		"type": "function",
+		"name": "repay",
+		"inputs": [
+			{
+				"name": "token",
+				"type": "address",
+				"internalType": "address"
+			},
+			{
+				"name": "amount",
+				"type": "uint256",
+				"internalType": "uint256"
+			}
+		],
+		"outputs": [],
+		"stateMutability": "nonpayable"
+	},
+	{
+		"type": "function",
+		"name": "setLendingManager",
+		"inputs": [
+			{
+				"name": "_lendingManager",
+				"type": "address",
+				"internalType": "address"
+			}
+		],
 		"outputs": [],
 		"stateMutability": "nonpayable"
 	},
@@ -654,6 +1042,26 @@ export const SCALEXRouterABI: any[] = [
 			}
 		],
 		"anonymous": false
+	},
+	{
+		"type": "error",
+		"name": "AlreadyInitialized",
+		"inputs": []
+	},
+	{
+		"type": "error",
+		"name": "BalanceManagerNotSet",
+		"inputs": []
+	},
+	{
+		"type": "error",
+		"name": "BorrowFailed",
+		"inputs": []
+	},
+	{
+		"type": "error",
+		"name": "DepositFailed",
+		"inputs": []
 	},
 	{
 		"type": "error",
@@ -778,8 +1186,29 @@ export const SCALEXRouterABI: any[] = [
 	},
 	{
 		"type": "error",
+		"name": "InvalidRecipientAddress",
+		"inputs": []
+	},
+	{
+		"type": "error",
 		"name": "InvalidRouter",
 		"inputs": []
+	},
+	{
+		"type": "error",
+		"name": "InvalidSender",
+		"inputs": [
+			{
+				"name": "expected",
+				"type": "bytes32",
+				"internalType": "bytes32"
+			},
+			{
+				"name": "actual",
+				"type": "bytes32",
+				"internalType": "bytes32"
+			}
+		]
 	},
 	{
 		"type": "error",
@@ -799,12 +1228,43 @@ export const SCALEXRouterABI: any[] = [
 	},
 	{
 		"type": "error",
+		"name": "InvalidTokenAddress",
+		"inputs": []
+	},
+	{
+		"type": "error",
+		"name": "InvalidTokenRegistry",
+		"inputs": []
+	},
+	{
+		"type": "error",
 		"name": "InvalidTradingRule",
 		"inputs": [
 			{
 				"name": "reason",
 				"type": "string",
 				"internalType": "string"
+			}
+		]
+	},
+	{
+		"type": "error",
+		"name": "LendingManagerNotSet",
+		"inputs": []
+	},
+	{
+		"type": "error",
+		"name": "LiquidationFailed",
+		"inputs": []
+	},
+	{
+		"type": "error",
+		"name": "MessageAlreadyProcessed",
+		"inputs": [
+			{
+				"name": "messageId",
+				"type": "bytes32",
+				"internalType": "bytes32"
 			}
 		]
 	},
@@ -831,6 +1291,11 @@ export const SCALEXRouterABI: any[] = [
 	},
 	{
 		"type": "error",
+		"name": "OnlyMailbox",
+		"inputs": []
+	},
+	{
+		"type": "error",
 		"name": "OrderHasNoLiquidity",
 		"inputs": []
 	},
@@ -841,7 +1306,7 @@ export const SCALEXRouterABI: any[] = [
 			{
 				"name": "status",
 				"type": "uint8",
-				"internalType": "enum IOrderBook.Status"
+				"internalType": "uint8"
 			}
 		]
 	},
@@ -927,6 +1392,22 @@ export const SCALEXRouterABI: any[] = [
 	},
 	{
 		"type": "error",
+		"name": "RepayFailed",
+		"inputs": []
+	},
+	{
+		"type": "error",
+		"name": "SafeERC20FailedOperation",
+		"inputs": [
+			{
+				"name": "token",
+				"type": "address",
+				"internalType": "address"
+			}
+		]
+	},
+	{
+		"type": "error",
 		"name": "SlippageExceeded",
 		"inputs": [
 			{
@@ -972,6 +1453,33 @@ export const SCALEXRouterABI: any[] = [
 				"internalType": "uint256"
 			}
 		]
+	},
+	{
+		"type": "error",
+		"name": "TargetChainNotSupported",
+		"inputs": [
+			{
+				"name": "chainId",
+				"type": "uint32",
+				"internalType": "uint32"
+			}
+		]
+	},
+	{
+		"type": "error",
+		"name": "TokenNotSupportedForLocalDeposits",
+		"inputs": [
+			{
+				"name": "token",
+				"type": "address",
+				"internalType": "address"
+			}
+		]
+	},
+	{
+		"type": "error",
+		"name": "TokenRegistryNotSet",
+		"inputs": []
 	},
 	{
 		"type": "error",
@@ -1050,6 +1558,17 @@ export const SCALEXRouterABI: any[] = [
 				"name": "reouter",
 				"type": "address",
 				"internalType": "address"
+			}
+		]
+	},
+	{
+		"type": "error",
+		"name": "UnknownOriginChain",
+		"inputs": [
+			{
+				"name": "chainId",
+				"type": "uint32",
+				"internalType": "uint32"
 			}
 		]
 	},

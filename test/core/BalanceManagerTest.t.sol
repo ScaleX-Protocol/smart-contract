@@ -121,20 +121,15 @@ contract BalanceManagerTest is Test {
 
         vm.startPrank(user);
         IERC20(Currency.unwrap(weth)).approve(address(balanceManager), depositAmount);
-        balanceManager.deposit(weth, depositAmount, user, user);
+        // Use depositLocal which mints synthetic tokens to the contract (vault pattern)
+        balanceManager.depositLocal(Currency.unwrap(weth), depositAmount, user);
         balanceManager.withdraw(weth, withdrawAmount);
         vm.stopPrank();
 
-        // For synthetic tokens, check the synthetic token balance directly
-        // since internal balance tracking doesn't reflect synthetic token transfers
+        // Balance tracking is done internally in BalanceManager using synthetic token's currency ID
         address syntheticToken = balanceManager.getSyntheticToken(Currency.unwrap(weth));
-        if (syntheticToken != address(0)) {
-            uint256 userBalance = IERC20(syntheticToken).balanceOf(user);
-            assertEq(userBalance, depositAmount - withdrawAmount);
-        } else {
-            uint256 userBalance = balanceManager.getBalance(user, weth);
-            assertEq(userBalance, depositAmount - withdrawAmount);
-        }
+        uint256 userBalance = balanceManager.getBalance(user, Currency.wrap(syntheticToken));
+        assertEq(userBalance, depositAmount - withdrawAmount);
     }
 
     function testLock() public {
