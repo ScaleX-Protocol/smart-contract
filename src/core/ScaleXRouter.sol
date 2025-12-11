@@ -508,6 +508,7 @@ contract ScaleXRouter is IScaleXRouter, ScaleXRouterStorage, Initializable, Owna
     }
 
     /// @notice Swaps tokens with automatic routing through intermediary pools
+    /// @dev Default behavior: deposits from wallet and transfers output to wallet
     function swap(
         Currency srcCurrency,
         Currency dstCurrency,
@@ -516,11 +517,12 @@ contract ScaleXRouter is IScaleXRouter, ScaleXRouterStorage, Initializable, Owna
         uint8 maxHops,
         address user
     ) external returns (uint256 receivedAmount) {
-        // Default behavior: deposit the full srcAmount from user's wallet
-        return swap(srcCurrency, dstCurrency, srcAmount, minDstAmount, maxHops, user, srcAmount);
+        // Default behavior: deposit the full srcAmount from user's wallet, transfer out to wallet
+        return swap(srcCurrency, dstCurrency, srcAmount, minDstAmount, maxHops, user, srcAmount, false);
     }
 
     /// @notice Swaps tokens with automatic routing and optional deposit
+    /// @dev Output is transferred to user's wallet
     /// @param srcCurrency Source token currency
     /// @param dstCurrency Destination token currency
     /// @param srcAmount Amount of source tokens to swap
@@ -537,6 +539,28 @@ contract ScaleXRouter is IScaleXRouter, ScaleXRouterStorage, Initializable, Owna
         address user,
         uint256 depositAmount
     ) public returns (uint256 receivedAmount) {
+        return swap(srcCurrency, dstCurrency, srcAmount, minDstAmount, maxHops, user, depositAmount, false);
+    }
+
+    /// @notice Swaps tokens with automatic routing, optional deposit, and optional output destination
+    /// @param srcCurrency Source token currency
+    /// @param dstCurrency Destination token currency
+    /// @param srcAmount Amount of source tokens to swap
+    /// @param minDstAmount Minimum amount of destination tokens to receive
+    /// @param maxHops Maximum number of hops for multi-hop swaps
+    /// @param user User address to execute swap for
+    /// @param depositAmount Amount to deposit from wallet (0 = use existing balance)
+    /// @param keepInBalance If true, keeps output in BalanceManager; if false, transfers to wallet
+    function swap(
+        Currency srcCurrency,
+        Currency dstCurrency,
+        uint256 srcAmount,
+        uint256 minDstAmount,
+        uint8 maxHops,
+        address user,
+        uint256 depositAmount,
+        bool keepInBalance
+    ) public returns (uint256 receivedAmount) {
         if (Currency.unwrap(srcCurrency) == Currency.unwrap(dstCurrency)) {
             revert IdenticalCurrencies(Currency.unwrap(srcCurrency));
         }
@@ -544,7 +568,7 @@ contract ScaleXRouter is IScaleXRouter, ScaleXRouterStorage, Initializable, Owna
             revert TooManyHops(maxHops, 3);
         }
 
-        return _executeSwap(srcCurrency, dstCurrency, srcAmount, minDstAmount, user, depositAmount);
+        return _executeSwap(srcCurrency, dstCurrency, srcAmount, minDstAmount, user, depositAmount, keepInBalance);
     }
 
     /// @dev Internal function to execute swap logic with reduced stack depth
@@ -554,7 +578,8 @@ contract ScaleXRouter is IScaleXRouter, ScaleXRouterStorage, Initializable, Owna
         uint256 srcAmount,
         uint256 minDstAmount,
         address user,
-        uint256 depositAmount
+        uint256 depositAmount,
+        bool keepInBalance
     ) internal returns (uint256 receivedAmount) {
         Storage storage $ = getStorage();
         IBalanceManager balanceManager = IBalanceManager($.balanceManager);
@@ -563,12 +588,12 @@ contract ScaleXRouter is IScaleXRouter, ScaleXRouterStorage, Initializable, Owna
 
         // Try direct swap first
         if (_tryDirectSwap(srcCurrency, dstCurrency, srcAmount, minDstAmount, user, depositAmount)) {
-            return _calculateReceivedAmount(balanceManager, user, dstCurrency, dstBalanceBefore);
+            return _calculateReceivedAmount(balanceManager, user, dstCurrency, dstBalanceBefore, keepInBalance);
         }
 
         // Try multi-hop swap
         if (_tryMultiHopSwap(srcCurrency, dstCurrency, srcAmount, minDstAmount, user, depositAmount)) {
-            return _calculateReceivedAmount(balanceManager, user, dstCurrency, dstBalanceBefore);
+            return _calculateReceivedAmount(balanceManager, user, dstCurrency, dstBalanceBefore, keepInBalance);
         }
 
         revert NoValidSwapPath(Currency.unwrap(srcCurrency), Currency.unwrap(dstCurrency));
@@ -643,18 +668,23 @@ contract ScaleXRouter is IScaleXRouter, ScaleXRouterStorage, Initializable, Owna
             || (poolManager.poolExists(intermediary, srcCurrency) && poolManager.poolExists(dstCurrency, intermediary));
     }
 
-    /// @dev Calculate received amount and transfer to user
+    /// @dev Calculate received amount and optionally transfer to user's wallet
+    /// @param keepInBalance If true, keeps output in BalanceManager; if false, transfers to wallet
     function _calculateReceivedAmount(
         IBalanceManager balanceManager,
         address user,
         Currency dstCurrency,
-        uint256 dstBalanceBefore
+        uint256 dstBalanceBefore,
+        bool keepInBalance
     ) internal returns (uint256 receivedAmount) {
         uint256 dstBalanceAfter = balanceManager.getBalance(user, dstCurrency);
         receivedAmount = dstBalanceAfter > dstBalanceBefore ? dstBalanceAfter - dstBalanceBefore : 0;
 
         if (receivedAmount > 0) {
-            balanceManager.transferOut(user, user, dstCurrency, receivedAmount);
+            // Only transfer out if keepInBalance is false
+            if (!keepInBalance) {
+                balanceManager.transferOut(user, user, dstCurrency, receivedAmount);
+            }
         } else {
             revert NoValidSwapPath(Currency.unwrap(dstCurrency), Currency.unwrap(dstCurrency));
         }

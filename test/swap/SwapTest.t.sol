@@ -328,4 +328,116 @@ contract SwapTest is Test {
         console.log("Received WETH:", receivedWeth);
         assertGt(receivedWeth, 0, "Should receive WETH");
     }
+
+    function testSwapKeepInBalance() public {
+        // Alice deposits WETH and places a sell order
+        vm.startPrank(alice);
+        balanceManager.deposit(Currency.wrap(address(weth)), 10 ether, alice, alice);
+
+        // Get pool
+        PoolKey memory poolKey = poolManager.createPoolKey(Currency.wrap(address(weth)), Currency.wrap(address(usdc)));
+        IPoolManager.Pool memory pool = poolManager.getPool(poolKey);
+
+        // Place sell order at 2000 USDC per WETH
+        router.placeLimitOrder(
+            pool,
+            2000e6, // 2000 USDC
+            5 ether, // 5 WETH
+            IOrderBook.Side.SELL,
+            IOrderBook.TimeInForce.GTC,
+            0
+        );
+        vm.stopPrank();
+
+        // Bob swaps with keepInBalance = true
+        vm.startPrank(bob);
+        usdc.approve(address(balanceManager), type(uint256).max);
+
+        uint256 walletWethBefore = weth.balanceOf(bob);
+        uint256 bmWethBefore = balanceManager.getBalance(bob, Currency.wrap(address(weth)));
+
+        // Swap with keepInBalance = true (output stays in BalanceManager)
+        uint256 receivedWeth = router.swap(
+            Currency.wrap(address(usdc)),
+            Currency.wrap(address(weth)),
+            2000 * 1e6, // 2000 USDC
+            0,
+            2,
+            bob,
+            2000 * 1e6, // deposit from wallet
+            true // keepInBalance = true
+        );
+
+        uint256 walletWethAfter = weth.balanceOf(bob);
+        uint256 bmWethAfter = balanceManager.getBalance(bob, Currency.wrap(address(weth)));
+
+        vm.stopPrank();
+
+        console.log("Received WETH:", receivedWeth);
+        console.log("Wallet WETH before:", walletWethBefore);
+        console.log("Wallet WETH after:", walletWethAfter);
+        console.log("BalanceManager WETH before:", bmWethBefore);
+        console.log("BalanceManager WETH after:", bmWethAfter);
+
+        // Verify: wallet balance unchanged, BalanceManager balance increased
+        assertEq(walletWethAfter, walletWethBefore, "Wallet WETH should not change");
+        assertEq(bmWethAfter, bmWethBefore + receivedWeth, "BalanceManager should have received WETH");
+        assertGt(receivedWeth, 0, "Should receive WETH");
+    }
+
+    function testSwapTransferOut() public {
+        // Alice deposits WETH and places a sell order
+        vm.startPrank(alice);
+        balanceManager.deposit(Currency.wrap(address(weth)), 10 ether, alice, alice);
+
+        // Get pool
+        PoolKey memory poolKey = poolManager.createPoolKey(Currency.wrap(address(weth)), Currency.wrap(address(usdc)));
+        IPoolManager.Pool memory pool = poolManager.getPool(poolKey);
+
+        // Place sell order at 2000 USDC per WETH
+        router.placeLimitOrder(
+            pool,
+            2000e6, // 2000 USDC
+            5 ether, // 5 WETH
+            IOrderBook.Side.SELL,
+            IOrderBook.TimeInForce.GTC,
+            0
+        );
+        vm.stopPrank();
+
+        // Bob swaps with keepInBalance = false (default, transfers to wallet)
+        vm.startPrank(bob);
+        usdc.approve(address(balanceManager), type(uint256).max);
+
+        uint256 walletWethBefore = weth.balanceOf(bob);
+        uint256 bmWethBefore = balanceManager.getBalance(bob, Currency.wrap(address(weth)));
+
+        // Swap with keepInBalance = false (output goes to wallet)
+        uint256 receivedWeth = router.swap(
+            Currency.wrap(address(usdc)),
+            Currency.wrap(address(weth)),
+            2000 * 1e6, // 2000 USDC
+            0,
+            2,
+            bob,
+            2000 * 1e6, // deposit from wallet
+            false // keepInBalance = false (transfer to wallet)
+        );
+
+        uint256 walletWethAfter = weth.balanceOf(bob);
+        uint256 bmWethAfter = balanceManager.getBalance(bob, Currency.wrap(address(weth)));
+
+        vm.stopPrank();
+
+        console.log("Received WETH:", receivedWeth);
+        console.log("Wallet WETH before:", walletWethBefore);
+        console.log("Wallet WETH after:", walletWethAfter);
+        console.log("BalanceManager WETH before:", bmWethBefore);
+        console.log("BalanceManager WETH after:", bmWethAfter);
+
+        // Verify: wallet balance increased, BalanceManager balance unchanged
+        assertEq(walletWethAfter, walletWethBefore + receivedWeth, "Wallet should have received WETH");
+        assertEq(bmWethAfter, bmWethBefore, "BalanceManager WETH should not change");
+        assertGt(receivedWeth, 0, "Should receive WETH");
+    }
 }
