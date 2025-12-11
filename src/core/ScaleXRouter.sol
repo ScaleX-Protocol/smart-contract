@@ -516,6 +516,27 @@ contract ScaleXRouter is IScaleXRouter, ScaleXRouterStorage, Initializable, Owna
         uint8 maxHops,
         address user
     ) external returns (uint256 receivedAmount) {
+        // Default behavior: deposit the full srcAmount from user's wallet
+        return swap(srcCurrency, dstCurrency, srcAmount, minDstAmount, maxHops, user, srcAmount);
+    }
+
+    /// @notice Swaps tokens with automatic routing and optional deposit
+    /// @param srcCurrency Source token currency
+    /// @param dstCurrency Destination token currency
+    /// @param srcAmount Amount of source tokens to swap
+    /// @param minDstAmount Minimum amount of destination tokens to receive
+    /// @param maxHops Maximum number of hops for multi-hop swaps
+    /// @param user User address to execute swap for
+    /// @param depositAmount Amount to deposit from wallet (0 = use existing balance)
+    function swap(
+        Currency srcCurrency,
+        Currency dstCurrency,
+        uint256 srcAmount,
+        uint256 minDstAmount,
+        uint8 maxHops,
+        address user,
+        uint256 depositAmount
+    ) public returns (uint256 receivedAmount) {
         if (Currency.unwrap(srcCurrency) == Currency.unwrap(dstCurrency)) {
             revert IdenticalCurrencies(Currency.unwrap(srcCurrency));
         }
@@ -523,7 +544,7 @@ contract ScaleXRouter is IScaleXRouter, ScaleXRouterStorage, Initializable, Owna
             revert TooManyHops(maxHops, 3);
         }
 
-        return _executeSwap(srcCurrency, dstCurrency, srcAmount, minDstAmount, user);
+        return _executeSwap(srcCurrency, dstCurrency, srcAmount, minDstAmount, user, depositAmount);
     }
 
     /// @dev Internal function to execute swap logic with reduced stack depth
@@ -532,7 +553,8 @@ contract ScaleXRouter is IScaleXRouter, ScaleXRouterStorage, Initializable, Owna
         Currency dstCurrency,
         uint256 srcAmount,
         uint256 minDstAmount,
-        address user
+        address user,
+        uint256 depositAmount
     ) internal returns (uint256 receivedAmount) {
         Storage storage $ = getStorage();
         IBalanceManager balanceManager = IBalanceManager($.balanceManager);
@@ -540,12 +562,12 @@ contract ScaleXRouter is IScaleXRouter, ScaleXRouterStorage, Initializable, Owna
         uint256 dstBalanceBefore = balanceManager.getBalance(user, dstCurrency);
 
         // Try direct swap first
-        if (_tryDirectSwap(srcCurrency, dstCurrency, srcAmount, minDstAmount, user)) {
+        if (_tryDirectSwap(srcCurrency, dstCurrency, srcAmount, minDstAmount, user, depositAmount)) {
             return _calculateReceivedAmount(balanceManager, user, dstCurrency, dstBalanceBefore);
         }
 
         // Try multi-hop swap
-        if (_tryMultiHopSwap(srcCurrency, dstCurrency, srcAmount, minDstAmount, user)) {
+        if (_tryMultiHopSwap(srcCurrency, dstCurrency, srcAmount, minDstAmount, user, depositAmount)) {
             return _calculateReceivedAmount(balanceManager, user, dstCurrency, dstBalanceBefore);
         }
 
@@ -558,18 +580,19 @@ contract ScaleXRouter is IScaleXRouter, ScaleXRouterStorage, Initializable, Owna
         Currency dstCurrency,
         uint256 srcAmount,
         uint256 minDstAmount,
-        address user
+        address user,
+        uint256 depositAmount
     ) internal returns (bool success) {
         Storage storage $ = getStorage();
         IPoolManager poolManager = IPoolManager($.poolManager);
 
         if (poolManager.poolExists(srcCurrency, dstCurrency) && _hasLiquidity(poolManager, srcCurrency, dstCurrency)) {
-            executeDirectSwap(srcCurrency, dstCurrency, srcCurrency, dstCurrency, srcAmount, minDstAmount, user);
+            executeDirectSwap(srcCurrency, dstCurrency, srcCurrency, dstCurrency, srcAmount, minDstAmount, user, depositAmount);
             return true;
         } else if (
             poolManager.poolExists(dstCurrency, srcCurrency) && _hasLiquidity(poolManager, dstCurrency, srcCurrency)
         ) {
-            executeDirectSwap(dstCurrency, srcCurrency, srcCurrency, dstCurrency, srcAmount, minDstAmount, user);
+            executeDirectSwap(dstCurrency, srcCurrency, srcCurrency, dstCurrency, srcAmount, minDstAmount, user, depositAmount);
             return true;
         }
 
@@ -582,7 +605,8 @@ contract ScaleXRouter is IScaleXRouter, ScaleXRouterStorage, Initializable, Owna
         Currency dstCurrency,
         uint256 srcAmount,
         uint256 minDstAmount,
-        address user
+        address user,
+        uint256 depositAmount
     ) internal returns (bool success) {
         Storage storage $ = getStorage();
         IPoolManager poolManager = IPoolManager($.poolManager);
@@ -599,7 +623,7 @@ contract ScaleXRouter is IScaleXRouter, ScaleXRouterStorage, Initializable, Owna
             }
 
             if (_canExecuteMultiHop(poolManager, srcCurrency, intermediary, dstCurrency)) {
-                executeMultiHopSwap(srcCurrency, intermediary, dstCurrency, srcAmount, minDstAmount, user);
+                executeMultiHopSwap(srcCurrency, intermediary, dstCurrency, srcAmount, minDstAmount, user, depositAmount);
                 return true;
             }
         }
@@ -661,7 +685,8 @@ contract ScaleXRouter is IScaleXRouter, ScaleXRouterStorage, Initializable, Owna
         Currency /* dstCurrency */,
         uint256 srcAmount,
         uint256 minDstAmount,
-        address user
+        address user,
+        uint256 depositAmount
     ) internal {
         Storage storage $ = getStorage();
         IPoolManager poolManager = IPoolManager($.poolManager);
@@ -671,7 +696,9 @@ contract ScaleXRouter is IScaleXRouter, ScaleXRouterStorage, Initializable, Owna
         IOrderBook.Side side =
             Currency.unwrap(srcCurrency) == Currency.unwrap(baseCurrency) ? IOrderBook.Side.SELL : IOrderBook.Side.BUY;
 
-        balanceManager.deposit(srcCurrency, srcAmount, msg.sender, user);
+        if (depositAmount > 0) {
+            balanceManager.deposit(srcCurrency, depositAmount, msg.sender, user);
+        }
         _placeMarketOrderForSwap(key, srcAmount, side, user, uint128(minDstAmount));
     }
 
@@ -682,13 +709,16 @@ contract ScaleXRouter is IScaleXRouter, ScaleXRouterStorage, Initializable, Owna
         Currency dstCurrency,
         uint256 srcAmount,
         uint256 minDstAmount,
-        address user
+        address user,
+        uint256 depositAmount
     ) internal {
         Storage storage $ = getStorage();
         IBalanceManager balanceManager = IBalanceManager($.balanceManager);
         IPoolManager poolManager = IPoolManager($.poolManager);
 
-        balanceManager.deposit(srcCurrency, srcAmount, msg.sender, user);
+        if (depositAmount > 0) {
+            balanceManager.deposit(srcCurrency, depositAmount, msg.sender, user);
+        }
 
         uint256 intermediateBalanceBefore = balanceManager.getBalance(user, intermediary);
 
