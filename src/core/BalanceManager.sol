@@ -1079,16 +1079,16 @@ contract BalanceManager is
     /// @param amount The amount to repay
     function repayForUser(address user, address token, uint256 amount) external nonReentrant {
         Storage storage $ = getStorage();
-        
+
         if ($.lendingManager == address(0)) revert LendingManagerNotSet();
-        
+
         // Only authorized callers can repay on behalf of users
         bool isAuthorized = msg.sender == user || $.authorizedOperators[msg.sender];
         require(isAuthorized, "Unauthorized");
-        
+
         // Transfer tokens from this contract (received from router) to LendingManager
         IERC20(token).transfer($.lendingManager, amount);
-        
+
         // Now call LendingManager to handle the repayment logic
         try ILendingManager($.lendingManager).repayForUser(user, token, amount) {
             // Success - repayment completed
@@ -1096,4 +1096,45 @@ contract BalanceManager is
             revert RepayFailed();
         }
     }
+
+    /// @notice Repay debt using user's synthetic token balance (for auto-repay from OrderBook)
+    /// @dev Deducts synthetic balance and reduces debt in LendingManager
+    /// @param user The user to repay for
+    /// @param syntheticToken The synthetic token to deduct from user's balance
+    /// @param underlyingToken The underlying token for debt repayment
+    /// @param amount The amount to repay
+    function repayFromSyntheticBalance(
+        address user,
+        address syntheticToken,
+        address underlyingToken,
+        uint256 amount
+    ) external nonReentrant {
+        Storage storage $ = getStorage();
+
+        if ($.lendingManager == address(0)) revert LendingManagerNotSet();
+
+        // Only authorized operators (OrderBooks) can call this
+        require($.authorizedOperators[msg.sender], "Unauthorized");
+
+        // Verify synthetic token maps to underlying
+        require($.syntheticTokens[underlyingToken] == syntheticToken, "Token mismatch");
+
+        // Deduct synthetic token balance from user
+        uint256 currencyId = Currency.wrap(syntheticToken).toId();
+        require($.balanceOf[user][currencyId] >= amount, "Insufficient balance");
+        $.balanceOf[user][currencyId] -= amount;
+
+        // Execute repayment through LendingManager
+        // LendingManager already holds the underlying tokens from deposits
+        // We just need to reduce the user's debt
+        try ILendingManager($.lendingManager).repayFromBalance(user, underlyingToken, amount) {
+            emit AutoRepayFromBalance(user, syntheticToken, underlyingToken, amount);
+        } catch {
+            // Revert the balance deduction if repayment fails
+            $.balanceOf[user][currencyId] += amount;
+            revert RepayFailed();
+        }
+    }
+
+    event AutoRepayFromBalance(address indexed user, address indexed syntheticToken, address indexed underlyingToken, uint256 amount);
 }

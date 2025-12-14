@@ -454,6 +454,41 @@ contract LendingManager is
         emit Repaid(user, token, principalPayment, interestPayment, block.timestamp);
     }
 
+    /// @notice Repay debt from user's balance (for auto-repay from OrderBook)
+    /// @dev No token transfer needed - LendingManager already holds the underlying
+    /// @param user The user to repay for
+    /// @param token The token to repay
+    /// @param amount The amount to repay
+    function repayFromBalance(address user, address token, uint256 amount) external onlyBalanceManager {
+        Storage storage $ = getStorage();
+        if (!$.assetConfigs[token].enabled) revert UnsupportedAsset();
+        if (amount == 0) revert InvalidAmount();
+
+        _updateInterest(token);
+
+        UserPosition storage position = $.userPositions[user][token];
+        _updateUserPosition(user, token);
+
+        uint256 interest = _calculateUserDebt(user, token) - position.borrowed;
+        uint256 totalRepayment = amount;
+
+        uint256 totalDebt = position.borrowed + interest;
+        if (totalRepayment > totalDebt) {
+            totalRepayment = totalDebt;
+        }
+
+        uint256 interestPayment = interest > totalRepayment ? totalRepayment : interest;
+        uint256 principalPayment = totalRepayment - interestPayment;
+
+        // No token transfer - underlying tokens are already held by LendingManager
+        // This effectively converts synthetic balance to debt reduction
+
+        position.borrowed -= principalPayment;
+        $.totalBorrowed[token] -= principalPayment;
+
+        emit Repaid(user, token, principalPayment, interestPayment, block.timestamp);
+    }
+
     // =============================================================
     //                   LIQUIDATION FUNCTIONS
     // =============================================================

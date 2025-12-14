@@ -17,6 +17,7 @@ interface ILendingManager {
     function repay(address token, uint256 amount) external;
     function borrowForUser(address user, address token, uint256 amount) external;
     function repayForUser(address user, address token, uint256 amount) external;
+    function repayFromBalance(address user, address token, uint256 amount) external;
     function liquidate(address borrower, address debtToken, address collateralToken, uint256 debtToCover) external;
     function getUserLiquidity(address user, address token) external view returns (uint256);
     function getUserDebt(address user, address token) external view returns (uint256);
