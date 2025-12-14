@@ -116,6 +116,12 @@ interface IBalanceManager {
 
     function borrowForUser(address user, address token, uint256 amount) external;
     function repayForUser(address user, address token, uint256 amount) external;
+    function repayFromSyntheticBalance(
+        address user,
+        address syntheticToken,
+        address underlyingToken,
+        uint256 amount
+    ) external;
 
     // Events
     event DepositedWithYield(

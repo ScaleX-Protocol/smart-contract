@@ -19,6 +19,7 @@ import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Ini
 import "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
 import {RedBlackTreeLib} from "@solady/utils/RedBlackTreeLib.sol";
 
+
 contract OrderBook is Initializable, OwnableUpgradeable, ReentrancyGuardUpgradeable, IOrderBook, OrderBookStorage {
     using RedBlackTreeLib for RedBlackTreeLib.Tree;
     using EnumerableSet for EnumerableSet.UintSet;
@@ -241,16 +242,21 @@ contract OrderBook is Initializable, OwnableUpgradeable, ReentrancyGuardUpgradea
     }
 
     function _validateAutoRepay(address user, Side side) private view {
-        // Auto-repay only works for BUY orders (acquiring debt tokens)
-        if (side != Side.BUY) {
-            revert AutoRepayOnlyForBuyOrders();
-        }
-
-        // Check if user has debt to repay (base currency is the debt token)
+        // Auto-repay works for both BUY and SELL orders:
+        // - BUY orders: receive base tokens (synthetic), can repay base underlying debt
+        // - SELL orders: receive quote tokens (synthetic), can repay quote underlying debt
         IBalanceManager bm = IBalanceManager(getStorage().balanceManager);
         address lendingManager = bm.lendingManager();
-        address debtToken = Currency.unwrap(getStorage().poolKey.baseCurrency);
-        
+
+        // Determine synthetic token based on order side (token user will receive)
+        address syntheticToken = side == Side.BUY
+            ? Currency.unwrap(getStorage().poolKey.baseCurrency)
+            : Currency.unwrap(getStorage().poolKey.quoteCurrency);
+
+        // Get the underlying token from the synthetic token
+        // Debt is tracked in underlying tokens, not synthetic tokens
+        address debtToken = _getUnderlyingToken(syntheticToken);
+
         if (lendingManager != address(0)) {
             try ILendingManager(lendingManager).getUserDebt(user, debtToken) returns (uint256 userDebt) {
                 if (userDebt == 0) {
@@ -260,6 +266,22 @@ contract OrderBook is Initializable, OwnableUpgradeable, ReentrancyGuardUpgradea
                 // If LendingManager call fails, allow order placement anyway
             }
         }
+    }
+
+    /// @dev Get underlying token from synthetic token using BalanceManager's mapping
+    function _getUnderlyingToken(address syntheticToken) private view returns (address) {
+        Storage storage $ = getStorage();
+        IBalanceManager bm = IBalanceManager($.balanceManager);
+
+        // Use BalanceManager's mapping to find underlying token
+        address[] memory supportedAssets = bm.getSupportedAssets();
+        for (uint256 i = 0; i < supportedAssets.length; i++) {
+            if (bm.getSyntheticToken(supportedAssets[i]) == syntheticToken) {
+                return supportedAssets[i];
+            }
+        }
+
+        return syntheticToken; // Fallback to the token itself
     }
 
     function _validateAutoBorrow(address user, Side side) private view {
@@ -1000,7 +1022,7 @@ contract OrderBook is Initializable, OwnableUpgradeable, ReentrancyGuardUpgradea
             // Check for auto-repay on successful SELL orders only if enabled
             // SELL orders receive quote tokens, can repay quote token debt
             if (traderAutoRepay) {
-                _handleAutoRepay(trader, baseAmount, matchPrice, side, traderOrderId);
+                _handleAutoRepay(trader, quoteAmount, matchPrice, side, traderOrderId);
             }
         } else {
             _handleBuyTransfer(bm, trader, matchingUser, baseAmount, quoteAmount, isMarketOrder);
@@ -1175,7 +1197,7 @@ contract OrderBook is Initializable, OwnableUpgradeable, ReentrancyGuardUpgradea
 
     function _handleAutoRepay(
         address user,
-        uint256 amount,
+        uint256 receivedAmount,
         uint128 fillPrice,
         Side orderSide,
         uint48 orderId
@@ -1183,42 +1205,43 @@ contract OrderBook is Initializable, OwnableUpgradeable, ReentrancyGuardUpgradea
         Storage storage $ = getStorage();
         IBalanceManager bm = IBalanceManager($.balanceManager);
         address lendingManager = bm.lendingManager();
-        
+
         if (lendingManager == address(0)) {
             return; // No lending manager available
         }
 
-        // Auto-repay logic depends on order side
-        if (orderSide == Side.BUY) {
-            // BUY orders: User acquires base tokens, can repay base token debt
-            address baseToken = Currency.unwrap($.poolKey.baseCurrency);
-            _repayToken(user, baseToken, lendingManager, bm, fillPrice, orderId);
-        } else {
-            // SELL orders: User receives quote tokens, can repay quote token debt
-            address quoteToken = Currency.unwrap($.poolKey.quoteCurrency);
-            _repayToken(user, quoteToken, lendingManager, bm, fillPrice, orderId);
-        }
+        // Get synthetic token based on order side (token user receives)
+        address syntheticToken = orderSide == Side.BUY
+            ? Currency.unwrap($.poolKey.baseCurrency)
+            : Currency.unwrap($.poolKey.quoteCurrency);
+
+        // Get the underlying token - debt is tracked in underlying, not synthetic
+        address underlyingToken = _getUnderlyingToken(syntheticToken);
+
+        _repayToken(user, syntheticToken, underlyingToken, receivedAmount, lendingManager, bm, fillPrice, orderId);
     }
 
     function _repayToken(
         address user,
-        address token,
+        address syntheticToken,
+        address underlyingToken,
+        uint256 receivedAmount,
         address lendingManager,
         IBalanceManager balanceManager,
         uint128 fillPrice,
         uint48 orderId
     ) private {
-        try ILendingManager(lendingManager).getUserDebt(user, token) returns (uint256 userDebt) {
+        // Check debt in underlying token (lending is in underlying)
+        try ILendingManager(lendingManager).getUserDebt(user, underlyingToken) returns (uint256 userDebt) {
             if (userDebt == 0) {
                 return; // No debt to repay for this token
             }
 
-            // Repay maximum possible: min(user balance, user debt)
-            uint256 userBalance = balanceManager.getBalance(user, Currency.wrap(token));
-            uint256 repayAmount = userBalance > userDebt ? userDebt : userBalance;
+            // Only repay up to the amount received from the trade, capped by user's debt
+            uint256 repayAmount = receivedAmount > userDebt ? userDebt : receivedAmount;
 
             if (repayAmount > 0) {
-                _executeAutoRepayment(user, token, repayAmount, fillPrice, orderId);
+                _executeAutoRepayment(user, syntheticToken, underlyingToken, repayAmount, fillPrice, orderId);
             }
         } catch {
             // If checking debt fails, skip auto-repay for this token
@@ -1261,32 +1284,26 @@ contract OrderBook is Initializable, OwnableUpgradeable, ReentrancyGuardUpgradea
         }
     }
 
-    // Simplified auto-repay - no complex benefit calculations needed
+    // Simplified auto-repay - uses BalanceManager to deduct synthetic and repay underlying
 
     function _executeAutoRepayment(
         address user,
-        address debtToken,
+        address syntheticToken,
+        address underlyingToken,
         uint256 repayAmount,
         uint128 fillPrice,
         uint48 orderId
     ) private {
         Storage storage $ = getStorage();
-        
-        // Get lending manager and execute repayment
         IBalanceManager bm = IBalanceManager($.balanceManager);
-        address lendingManager = bm.lendingManager();
-        
-        if (lendingManager != address(0)) {
-            // Calculate simple savings estimate
-            uint256 savings = 0; // Simplified: we don't track target prices anymore
-            
-            // Execute repayment
-            try ILendingManager(lendingManager).repay(debtToken, repayAmount) {
-                emit AutoRepaymentExecuted(user, debtToken, repayAmount, savings, block.timestamp, orderId);
-            } catch {
-                // If repayment fails, emit event and continue
-                emit AutoRepaymentFailed(user, debtToken, repayAmount, block.timestamp, orderId);
-            }
+
+        // Execute repayment through BalanceManager
+        // This deducts synthetic balance and repays underlying debt
+        try bm.repayFromSyntheticBalance(user, syntheticToken, underlyingToken, repayAmount) {
+            emit AutoRepaymentExecuted(user, underlyingToken, repayAmount, 0, block.timestamp, orderId);
+        } catch {
+            // If repayment fails, emit event and continue (don't revert the trade)
+            emit AutoRepaymentFailed(user, underlyingToken, repayAmount, block.timestamp, orderId);
         }
     }
 
@@ -1294,7 +1311,6 @@ contract OrderBook is Initializable, OwnableUpgradeable, ReentrancyGuardUpgradea
 
     // Auto-repay errors
     error NoDebtToRepay();
-    error AutoRepayOnlyForBuyOrders();
     
     // Auto-borrow errors  
     error NoCollateralToBorrow();
