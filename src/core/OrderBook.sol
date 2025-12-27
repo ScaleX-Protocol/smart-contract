@@ -234,6 +234,8 @@ contract OrderBook is Initializable, OwnableUpgradeable, ReentrancyGuardUpgradea
 
         _handleTimeInForce(newOrder, side, user, timeInForce);
 
+        _validateNoNegativeSpread();
+
         unchecked {
             $.nextOrderId++;
         }
@@ -311,6 +313,30 @@ contract OrderBook is Initializable, OwnableUpgradeable, ReentrancyGuardUpgradea
         } catch {
             // If checking specific token supply fails, allow auto-borrow
             // (user may have other collateral or different lending protocol)
+        }
+    }
+
+    /// @dev Validates that no negative spread exists (best bid < best ask)
+    /// @notice This catches cases where self-trade prevention skips matches, creating crossed markets
+    function _validateNoNegativeSpread() private view {
+        Storage storage $ = getStorage();
+
+        // Get best bid (highest buy price)
+        bytes32 bestBidPtr = $.priceTrees[Side.BUY].last();
+        uint128 bestBid = uint128(RedBlackTreeLib.value(bestBidPtr));
+
+        // Get best ask (lowest sell price)
+        bytes32 bestAskPtr = $.priceTrees[Side.SELL].first();
+        uint128 bestAsk = uint128(RedBlackTreeLib.value(bestAskPtr));
+
+        // If either side is empty, no spread issue
+        if (bestBid == 0 || bestAsk == 0) {
+            return;
+        }
+
+        // Negative spread: best bid >= best ask (should have matched but didn't)
+        if (bestBid >= bestAsk) {
+            revert NegativeSpreadCreated(bestBid, bestAsk);
         }
     }
 
