@@ -30,6 +30,7 @@ interface ILendingManager {
     
     // Additional view functions
     function getHealthFactor(address user) external view returns (uint256);
+    function getProjectedHealthFactor(address user, address token, uint256 additionalBorrowAmount) external view returns (uint256);
     function getAvailableLiquidity(address token) external view returns (uint256);
     function calculateYield(address user, address currency) external view returns (uint256);
 }
