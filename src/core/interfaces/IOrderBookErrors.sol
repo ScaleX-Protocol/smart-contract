@@ -28,5 +28,7 @@ interface IOrderBookErrors {
     error IdenticalCurrencies(address currency);
     error TooManyHops(uint8 maxHops, uint8 limit);
     error InsufficientSwapBalance(uint256 available, uint256 required);
+    error InsufficientOrderBalance(uint256 available, uint256 required);
+    error InsufficientHealthFactorForBorrow(uint256 projected, uint256 minimum);
     error NegativeSpreadCreated(uint128 bestBid, uint128 bestAsk);
 }

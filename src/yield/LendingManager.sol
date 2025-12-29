@@ -551,15 +551,49 @@ contract LendingManager is
     function getHealthFactor(address user) external view returns (uint256) {
         uint256 totalCollateralValue = _getTotalCollateralValueRaw(user);
         uint256 totalDebtValue = _getTotalDebtValue(user);
-        
+
         if (totalDebtValue == 0) {
             return type(uint256).max;
         }
-        
+
         Storage storage $ = getStorage();
         uint256 minLiquidationThreshold = _getMinLiquidationThreshold(user);
         uint256 weightedCollateralValue = (totalCollateralValue * minLiquidationThreshold) / $.BASIS_POINTS;
-        
+
+        return (weightedCollateralValue * $.PRECISION) / totalDebtValue;
+    }
+
+    /**
+     * @notice Calculate the projected health factor if user borrows additional amount
+     * @param user The user address
+     * @param token The token to borrow (underlying token, not synthetic)
+     * @param additionalBorrowAmount The additional amount to borrow
+     * @return The projected health factor after the borrow (1e18 = 1.0)
+     */
+    function getProjectedHealthFactor(
+        address user,
+        address token,
+        uint256 additionalBorrowAmount
+    ) external view returns (uint256) {
+        Storage storage $ = getStorage();
+
+        uint256 totalCollateralValue = _getTotalCollateralValueRaw(user);
+        uint256 totalDebtValue = _getTotalDebtValue(user);
+
+        // Add the additional borrow amount to the debt (converted to USD value)
+        if (additionalBorrowAmount > 0) {
+            uint256 price = _getTokenPrice(token);
+            uint256 additionalDebtValue = (additionalBorrowAmount * price) / (10 ** _getTokenDecimals(token));
+            totalDebtValue += additionalDebtValue;
+        }
+
+        if (totalDebtValue == 0) {
+            return type(uint256).max;
+        }
+
+        uint256 minLiquidationThreshold = _getMinLiquidationThreshold(user);
+        uint256 weightedCollateralValue = (totalCollateralValue * minLiquidationThreshold) / $.BASIS_POINTS;
+
         return (weightedCollateralValue * $.PRECISION) / totalDebtValue;
     }
 
