@@ -1102,7 +1102,37 @@ contract LendingManager is
         UserPosition storage position = $.userPositions[user][syntheticToken];
         position.supplied += amount;
         position.lastYieldUpdate = block.timestamp;
-        
+
         emit CollateralUpdated(user, syntheticToken, amount);
+    }
+
+    /// @notice Transfer supply position between users when gsTokens are traded
+    /// @param from The user losing supply
+    /// @param to The user gaining supply
+    /// @param token The underlying token address
+    /// @param amount The amount to transfer
+    function transferSupply(address from, address to, address token, uint256 amount) external onlyBalanceManager {
+        Storage storage $ = getStorage();
+
+        UserPosition storage fromPosition = $.userPositions[from][token];
+        UserPosition storage toPosition = $.userPositions[to][token];
+
+        // Only transfer if sender has supply to transfer
+        if (fromPosition.supplied >= amount) {
+            fromPosition.supplied -= amount;
+            toPosition.supplied += amount;
+        } else if (fromPosition.supplied > 0) {
+            // Transfer whatever supply the sender has
+            uint256 transferAmount = fromPosition.supplied;
+            fromPosition.supplied = 0;
+            toPosition.supplied += transferAmount;
+        }
+        // If sender has no supply, receiver just gets the gsTokens without supply tracking
+        // This can happen when gsTokens were received from trades, not from supplying
+
+        fromPosition.lastYieldUpdate = block.timestamp;
+        toPosition.lastYieldUpdate = block.timestamp;
+
+        emit SupplyTransferred(from, to, token, amount);
     }
 }
