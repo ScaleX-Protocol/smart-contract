@@ -475,6 +475,20 @@ contract BalanceManager is
         // Transfer the fee to the feeReceiver
         $.balanceOf[$.feeReceiver][currency.toId()] += feeAmount;
 
+        // Update LendingManager supply positions when gsTokens are transferred
+        if ($.lendingManager != address(0)) {
+            address syntheticToken = Currency.unwrap(currency);
+            address underlyingToken = _getUnderlyingToken(syntheticToken);
+            if (underlyingToken != address(0)) {
+                // Transfer supply from sender to receiver (amount after fee)
+                try ILendingManager($.lendingManager).transferSupply(sender, receiver, underlyingToken, amountAfterFee) {} catch {}
+                // Transfer supply from sender to feeReceiver (fee amount)
+                if (feeAmount > 0) {
+                    try ILendingManager($.lendingManager).transferSupply(sender, $.feeReceiver, underlyingToken, feeAmount) {} catch {}
+                }
+            }
+        }
+
         emit TransferLockedFrom(msg.sender, sender, receiver, currency.toId(), amount, feeAmount);
     }
 
@@ -500,6 +514,20 @@ contract BalanceManager is
 
         // Transfer the fee to the feeReceiver
         $.balanceOf[$.feeReceiver][currency.toId()] += feeAmount;
+
+        // Update LendingManager supply positions when gsTokens are transferred
+        if ($.lendingManager != address(0)) {
+            address syntheticToken = Currency.unwrap(currency);
+            address underlyingToken = _getUnderlyingToken(syntheticToken);
+            if (underlyingToken != address(0)) {
+                // Transfer supply from sender to receiver (amount after fee)
+                try ILendingManager($.lendingManager).transferSupply(sender, receiver, underlyingToken, amountAfterFee) {} catch {}
+                // Transfer supply from sender to feeReceiver (fee amount)
+                if (feeAmount > 0) {
+                    try ILendingManager($.lendingManager).transferSupply(sender, $.feeReceiver, underlyingToken, feeAmount) {} catch {}
+                }
+            }
+        }
 
         emit TransferFrom(msg.sender, sender, receiver, currency.toId(), amount, feeAmount);
     }

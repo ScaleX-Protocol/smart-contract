@@ -123,6 +123,12 @@ abstract contract LendingManagerStorage {
         uint256 rateSlope2
     );
     event BalanceManagerSet(address indexed balanceManager);
+    event SupplyTransferred(
+        address indexed from,
+        address indexed to,
+        address indexed token,
+        uint256 amount
+    );
 
     function getStorage() internal pure returns (Storage storage $) {
         bytes32 slot = STORAGE_SLOT;
