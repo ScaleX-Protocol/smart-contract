@@ -122,13 +122,29 @@ contract BalanceManager is
         $.feeTaker = _feeTaker;
     }
 
+    /// @notice Resolve currency to use synthetic token's ID if available
+    /// @dev This ensures consistent balance tracking - all balances are stored under synthetic token IDs
+    /// @param currency The currency to resolve
+    /// @return The currency ID to use for balance tracking
+    function _resolveCurrencyId(Currency currency) internal view returns (uint256) {
+        Storage storage $ = getStorage();
+        address tokenAddr = Currency.unwrap(currency);
+        address syntheticToken = $.syntheticTokens[tokenAddr];
+
+        // If this is an underlying token with a synthetic, use synthetic's ID
+        // If this is already a synthetic token or no mapping exists, use as-is
+        return syntheticToken != address(0)
+            ? Currency.wrap(syntheticToken).toId()
+            : currency.toId();
+    }
+
     // Allow anyone to check balanceOf
     function getBalance(address user, Currency currency) external view returns (uint256) {
-        return getStorage().balanceOf[user][currency.toId()];
+        return getStorage().balanceOf[user][_resolveCurrencyId(currency)];
     }
 
     function getLockedBalance(address user, address operator, Currency currency) external view returns (uint256) {
-        return getStorage().lockedBalanceOf[user][operator][currency.toId()];
+        return getStorage().lockedBalanceOf[user][operator][_resolveCurrencyId(currency)];
     }
 
     function deposit(Currency currency, uint256 amount, address sender, address user) public payable nonReentrant returns (uint256) {
@@ -154,47 +170,35 @@ contract BalanceManager is
         }
 
         address tokenAddr = Currency.unwrap(currency);
-        
+
         // Only use existing synthetic tokens - don't create new ones automatically
         if ($.syntheticTokens[tokenAddr] == address(0)) {
             revert TokenNotSupportedForLocalDeposits(tokenAddr);
         }
 
-        // Mint synthetic tokens to user
         address syntheticToken = $.syntheticTokens[tokenAddr];
-        if (syntheticToken != address(0)) {
-            uint256 existingBalance = IERC20(syntheticToken).balanceOf(user);
-            
-            // Mint synthetic tokens
-            ISyntheticERC20(syntheticToken).mint(user, amount);
-            
-            // Update checkpoint with weighted average for additional deposits
-            if (existingBalance > 0) {
-                uint256 currentCheckpoint = $.userYieldCheckpoints[user][syntheticToken];
-                uint256 newYieldPerToken = $.yieldPerToken[tokenAddr];
-                
-                // Weighted average checkpoint: (old_balance × old_checkpoint + new_amount × new_checkpoint) / total_amount
-                uint256 newCheckpoint = (existingBalance * currentCheckpoint + amount * newYieldPerToken) / (existingBalance + amount);
-                $.userYieldCheckpoints[user][syntheticToken] = newCheckpoint;
-            }
-            // If first deposit, checkpoint remains 0 (default)
-        }
 
         // Deposit underlying tokens to unified liquidity pool in LendingManager
         // Track user's individual position in the unified pool
         if ($.lendingManager != address(0)) {
             // Approve lending manager to spend tokens
             IERC20(tokenAddr).approve($.lendingManager, amount);
-            
+
             // Call LendingManager to deposit under the user's address for yield management
             ILendingManager($.lendingManager).supplyForUser(user, tokenAddr, amount);
             // If lending manager deposit fails, tokens remain in contract
         }
 
-        uint256 currencyId = currency.toId();
+        // Mint synthetic tokens to BalanceManager (vault) to represent underlying assets
+        ISyntheticERC20(syntheticToken).mint(address(this), amount);
+
+        // Update internal balance for trading (synthetic token's currency ID)
+        uint256 currencyId = _resolveCurrencyId(currency);
 
         unchecked {
             $.balanceOf[user][currencyId] += amount;
+            // Track total internal supply for yield calculations
+            $.totalInternalSupply[syntheticToken] += amount;
         }
 
         emit Deposit(user, currencyId, amount);
@@ -222,7 +226,7 @@ contract BalanceManager is
         currency.transferFrom(user, address(this), amount);
 
         // Credit directly to locked balance, bypassing the regular balance
-        uint256 currencyId = currency.toId();
+        uint256 currencyId = _resolveCurrencyId(currency);
 
         unchecked {
             $.lockedBalanceOf[user][orderBook][currencyId] += amount;
@@ -252,8 +256,8 @@ contract BalanceManager is
         address tokenAddr = Currency.unwrap(currency);
         address syntheticToken = $.syntheticTokens[tokenAddr];
 
-        // For synthetic tokens deposited via depositLocal, use synthetic token's currency ID for balance tracking
-        uint256 currencyId = syntheticToken != address(0) ? Currency.wrap(syntheticToken).toId() : currency.toId();
+        // Use resolved currency ID (synthetic token's ID for underlying tokens)
+        uint256 currencyId = _resolveCurrencyId(currency);
         uint256 availableBalance = $.balanceOf[user][currencyId];
         
         if (availableBalance < amount) {
@@ -343,15 +347,14 @@ contract BalanceManager is
                     IERC20(underlyingToken).transfer(user, totalAmount);
                 }
             }
-            
-            // Burn synthetic tokens from the contract vault (not from user's wallet)
-            // since depositLocal() mints to the contract, not the user
-            if (amount > 0 && syntheticToken != address(0)) {
-                ISyntheticERC20(syntheticToken).burn(address(this), amount);
-            }
+
+            // Note: We don't burn synthetic tokens - internal balance IS the ownership.
+            // Synthetic tokens are not minted during deposit, so nothing to burn.
 
             // Update internal balance tracking
             $.balanceOf[user][currencyId] -= amount;
+            // Update total internal supply for yield calculations
+            $.totalInternalSupply[syntheticToken] -= amount;
 
             // Clean up checkpoint if user will have zero balance
             uint256 remainingBalance = $.balanceOf[user][currencyId];
@@ -395,27 +398,29 @@ contract BalanceManager is
 
     function _lock(address user, Currency currency, uint256 amount, address locker) private {
         Storage storage $ = getStorage();
+        uint256 currencyId = _resolveCurrencyId(currency);
 
-        if ($.balanceOf[user][currency.toId()] < amount) {
-            revert InsufficientBalance(user, currency.toId(), amount, $.balanceOf[user][currency.toId()]);
+        if ($.balanceOf[user][currencyId] < amount) {
+            revert InsufficientBalance(user, currencyId, amount, $.balanceOf[user][currencyId]);
         }
 
-        $.balanceOf[user][currency.toId()] -= amount;
-        $.lockedBalanceOf[user][locker][currency.toId()] += amount;
+        $.balanceOf[user][currencyId] -= amount;
+        $.lockedBalanceOf[user][locker][currencyId] += amount;
 
-        emit Lock(user, currency.toId(), amount);
+        emit Lock(user, currencyId, amount);
     }
 
     function unlock(address user, Currency currency, uint256 amount) external {
         Storage storage $ = getStorage();
+        uint256 currencyId = _resolveCurrencyId(currency);
 
         if (!$.authorizedOperators[msg.sender]) {
             revert UnauthorizedOperator(msg.sender);
         }
 
-        if ($.lockedBalanceOf[user][msg.sender][currency.toId()] < amount) {
+        if ($.lockedBalanceOf[user][msg.sender][currencyId] < amount) {
             revert InsufficientBalance(
-                user, currency.toId(), amount, $.lockedBalanceOf[user][msg.sender][currency.toId()]
+                user, currencyId, amount, $.lockedBalanceOf[user][msg.sender][currencyId]
             );
         }
 
@@ -424,13 +429,13 @@ contract BalanceManager is
         _claimUserYield(user);
 
         // Step 2: Return funds to user's balance (same currency)
-        $.balanceOf[user][currency.toId()] += amount;
+        $.balanceOf[user][currencyId] += amount;
 
         // Step 3: Reduce locked balance
-        $.lockedBalanceOf[user][msg.sender][currency.toId()] -= amount;
+        $.lockedBalanceOf[user][msg.sender][currencyId] -= amount;
 
-        emit Unlock(user, currency.toId(), amount);
-        emit YieldAutoClaimed(user, currency.toId(), block.timestamp);
+        emit Unlock(user, currencyId, amount);
+        emit YieldAutoClaimed(user, currencyId, block.timestamp);
     }
 
     // unlockWithYield function removed - unlock() now always claims yield
@@ -438,26 +443,30 @@ contract BalanceManager is
     
     function transferOut(address sender, address receiver, Currency currency, uint256 amount) external {
         Storage storage $ = getStorage();
+        uint256 currencyId = _resolveCurrencyId(currency);
+
         if (!$.authorizedOperators[msg.sender]) {
             revert UnauthorizedOperator(msg.sender);
         }
-        if ($.balanceOf[sender][currency.toId()] < amount) {
-            revert InsufficientBalance(sender, currency.toId(), amount, $.balanceOf[sender][currency.toId()]);
+        if ($.balanceOf[sender][currencyId] < amount) {
+            revert InsufficientBalance(sender, currencyId, amount, $.balanceOf[sender][currencyId]);
         }
 
         currency.transfer(receiver, amount);
 
-        $.balanceOf[sender][currency.toId()] -= amount;
+        $.balanceOf[sender][currencyId] -= amount;
     }
 
     function transferLockedFrom(address sender, address receiver, Currency currency, uint256 amount) external {
         Storage storage $ = getStorage();
+        uint256 currencyId = _resolveCurrencyId(currency);
+
         if (!$.authorizedOperators[msg.sender]) {
             revert UnauthorizedOperator(msg.sender);
         }
-        if ($.lockedBalanceOf[sender][msg.sender][currency.toId()] < amount) {
+        if ($.lockedBalanceOf[sender][msg.sender][currencyId] < amount) {
             revert InsufficientBalance(
-                sender, currency.toId(), amount, $.lockedBalanceOf[sender][msg.sender][currency.toId()]
+                sender, currencyId, amount, $.lockedBalanceOf[sender][msg.sender][currencyId]
             );
         }
 
@@ -468,37 +477,28 @@ contract BalanceManager is
         }
 
         // Deduct fee and update balances
-        $.lockedBalanceOf[sender][msg.sender][currency.toId()] -= amount;
+        $.lockedBalanceOf[sender][msg.sender][currencyId] -= amount;
         uint256 amountAfterFee = amount - feeAmount;
-        $.balanceOf[receiver][currency.toId()] += amountAfterFee;
+        $.balanceOf[receiver][currencyId] += amountAfterFee;
 
         // Transfer the fee to the feeReceiver
-        $.balanceOf[$.feeReceiver][currency.toId()] += feeAmount;
+        $.balanceOf[$.feeReceiver][currencyId] += feeAmount;
 
-        // Update LendingManager supply positions when gsTokens are transferred
-        if ($.lendingManager != address(0)) {
-            address syntheticToken = Currency.unwrap(currency);
-            address underlyingToken = _getUnderlyingToken(syntheticToken);
-            if (underlyingToken != address(0)) {
-                // Transfer supply from sender to receiver (amount after fee)
-                try ILendingManager($.lendingManager).transferSupply(sender, receiver, underlyingToken, amountAfterFee) {} catch {}
-                // Transfer supply from sender to feeReceiver (fee amount)
-                if (feeAmount > 0) {
-                    try ILendingManager($.lendingManager).transferSupply(sender, $.feeReceiver, underlyingToken, feeAmount) {} catch {}
-                }
-            }
-        }
+        // Note: LendingManager supply tracking is no longer needed here.
+        // Supply ownership is determined by gsToken balance directly.
 
-        emit TransferLockedFrom(msg.sender, sender, receiver, currency.toId(), amount, feeAmount);
+        emit TransferLockedFrom(msg.sender, sender, receiver, currencyId, amount, feeAmount);
     }
 
     function transferFrom(address sender, address receiver, Currency currency, uint256 amount) external {
         Storage storage $ = getStorage();
+        uint256 currencyId = _resolveCurrencyId(currency);
+
         if (!$.authorizedOperators[msg.sender]) {
             revert UnauthorizedOperator(msg.sender);
         }
-        if ($.balanceOf[sender][currency.toId()] < amount) {
-            revert InsufficientBalance(sender, currency.toId(), amount, $.balanceOf[sender][currency.toId()]);
+        if ($.balanceOf[sender][currencyId] < amount) {
+            revert InsufficientBalance(sender, currencyId, amount, $.balanceOf[sender][currencyId]);
         }
 
         // Determine fee based on the role (maker/taker)
@@ -508,28 +508,17 @@ contract BalanceManager is
         }
 
         // Deduct fee and update balances
-        $.balanceOf[sender][currency.toId()] -= amount;
+        $.balanceOf[sender][currencyId] -= amount;
         uint256 amountAfterFee = amount - feeAmount;
-        $.balanceOf[receiver][currency.toId()] += amountAfterFee;
+        $.balanceOf[receiver][currencyId] += amountAfterFee;
 
         // Transfer the fee to the feeReceiver
-        $.balanceOf[$.feeReceiver][currency.toId()] += feeAmount;
+        $.balanceOf[$.feeReceiver][currencyId] += feeAmount;
 
-        // Update LendingManager supply positions when gsTokens are transferred
-        if ($.lendingManager != address(0)) {
-            address syntheticToken = Currency.unwrap(currency);
-            address underlyingToken = _getUnderlyingToken(syntheticToken);
-            if (underlyingToken != address(0)) {
-                // Transfer supply from sender to receiver (amount after fee)
-                try ILendingManager($.lendingManager).transferSupply(sender, receiver, underlyingToken, amountAfterFee) {} catch {}
-                // Transfer supply from sender to feeReceiver (fee amount)
-                if (feeAmount > 0) {
-                    try ILendingManager($.lendingManager).transferSupply(sender, $.feeReceiver, underlyingToken, feeAmount) {} catch {}
-                }
-            }
-        }
+        // Note: LendingManager supply tracking is no longer needed here.
+        // Supply ownership is determined by gsToken balance directly.
 
-        emit TransferFrom(msg.sender, sender, receiver, currency.toId(), amount, feeAmount);
+        emit TransferFrom(msg.sender, sender, receiver, currencyId, amount, feeAmount);
     }
 
     // Add public getters for fees and feeReceiver
@@ -651,8 +640,8 @@ contract BalanceManager is
         address underlyingToken = _getUnderlyingToken(syntheticToken);
         if (underlyingToken == address(0)) return 0;
 
-        // Get user's balance from internal tracking since tokens are held in the vault
-        uint256 userBalance = $.balanceOf[user][Currency.wrap(underlyingToken).toId()];
+        // Get user's balance from internal tracking - stored under synthetic token's currency ID
+        uint256 userBalance = $.balanceOf[user][Currency.wrap(syntheticToken).toId()];
         if (userBalance == 0) return 0;
         
         // Get current yield per token for this underlying token
@@ -687,12 +676,13 @@ contract BalanceManager is
     /// @notice Get available balance including yield
     function getAvailableBalance(address user, Currency currency) external view returns (uint256) {
         Storage storage $ = getStorage();
-        uint256 baseBalance = $.balanceOf[user][currency.toId()];
-        
+        uint256 currencyId = _resolveCurrencyId(currency);
+        uint256 baseBalance = $.balanceOf[user][currencyId];
+
         if ($.lendingManager == address(0)) {
             return baseBalance;
         }
-        
+
         // Get yield from lending manager
         try ILendingManager($.lendingManager).calculateYield(user, Currency.unwrap(currency)) returns (uint256 yieldAmount) {
             return baseBalance + yieldAmount;
@@ -722,11 +712,13 @@ contract BalanceManager is
     /// @notice Accrue yield for a specific token
     function _accrueYieldForToken(address underlyingToken) internal {
         Storage storage $ = getStorage();
-        
+
         address syntheticToken = $.syntheticTokens[underlyingToken];
         if (syntheticToken == address(0)) return;
-        
-        uint256 totalSupply = IERC20(syntheticToken).totalSupply();
+
+        // Use internal supply tracking instead of ERC20 totalSupply
+        // (gsTokens are not minted to ERC20 during deposit)
+        uint256 totalSupply = $.totalInternalSupply[syntheticToken];
         if (totalSupply == 0) return;
         
         uint256 interestGenerated = _getInterestGenerated(underlyingToken);
@@ -794,8 +786,8 @@ contract BalanceManager is
             address syntheticToken = $.syntheticTokens[underlyingToken];
             
             if (syntheticToken != address(0)) {
-                // Use internal balance tracking since tokens are held in the vault
-                uint256 userBalance = $.balanceOf[address(user)][Currency.wrap(underlyingToken).toId()];
+                // Use internal balance tracking - balances are stored under synthetic token's currency ID
+                uint256 userBalance = $.balanceOf[address(user)][Currency.wrap(syntheticToken).toId()];
                 if (userBalance == 0) continue;
                 
                 // Get current yield per token for this underlying token
@@ -1050,6 +1042,8 @@ contract BalanceManager is
         // Update internal balance tracking for CLOB system
         uint256 currencyId = Currency.wrap(syntheticToken).toId();
         $.balanceOf[recipient][currencyId] += syntheticAmount;
+        // Track total internal supply for yield calculations
+        $.totalInternalSupply[syntheticToken] += syntheticAmount;
 
         emit LocalDeposit(recipient, token, syntheticToken, amount, syntheticAmount);
         emit Deposit(recipient, currencyId, syntheticAmount);
@@ -1164,5 +1158,33 @@ contract BalanceManager is
         }
     }
 
+    /// @notice Seize collateral from a user during liquidation (reduces gsToken balance)
+    /// @param user The user whose collateral is being seized
+    /// @param underlyingToken The underlying token address
+    /// @param amount The amount of collateral to seize
+    function seizeCollateral(
+        address user,
+        address underlyingToken,
+        uint256 amount
+    ) external {
+        Storage storage $ = getStorage();
+
+        // Only LendingManager can seize collateral
+        require(msg.sender == $.lendingManager, "Only LendingManager");
+
+        address syntheticToken = $.syntheticTokens[underlyingToken];
+        require(syntheticToken != address(0), "Unknown token");
+
+        uint256 currencyId = Currency.wrap(syntheticToken).toId();
+        uint256 userBalance = $.balanceOf[user][currencyId];
+
+        // Seize up to the user's balance
+        uint256 seizeAmount = amount > userBalance ? userBalance : amount;
+        $.balanceOf[user][currencyId] -= seizeAmount;
+
+        emit CollateralSeized(user, syntheticToken, underlyingToken, seizeAmount);
+    }
+
     event AutoRepayFromBalance(address indexed user, address indexed syntheticToken, address indexed underlyingToken, uint256 amount);
+    event CollateralSeized(address indexed user, address indexed syntheticToken, address indexed underlyingToken, uint256 amount);
 }

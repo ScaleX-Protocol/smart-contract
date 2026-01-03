@@ -223,10 +223,11 @@ contract TwoContractArchitectureTest is Test {
         uint256 receivedAmount = balanceManager.deposit(Currency.wrap(address(usdc)), depositAmount, user1, user1);
         
         vm.stopPrank();
-        
-        // Verify user received synthetic tokens 1:1
-        assertEq(IERC20(syntheticUSDC).balanceOf(user1), depositAmount, "User didn't receive synthetic tokens 1:1");
-        
+
+        // Verify user has internal balance 1:1 (gsTokens stay within BalanceManager)
+        uint256 internalBalance = balanceManager.getBalance(user1, Currency.wrap(syntheticUSDC));
+        assertEq(internalBalance, depositAmount, "User didn't receive internal balance 1:1");
+
         // Verify deposit was recorded in LendingManager under user's address for yield management
         assertEq(lendingManager.getUserSupply(user1, address(usdc)), depositAmount, "Deposit not recorded in LendingManager");
     }
@@ -596,9 +597,10 @@ contract TwoContractArchitectureTest is Test {
         vm.stopPrank();
         
         syntheticUSDC = balanceManager.getSyntheticToken(address(usdc));
-        
-        // Verify BalanceManager handles synthetic tokens
-        assertEq(IERC20(syntheticUSDC).balanceOf(user1), 1000 * 1e6, "Synthetic tokens not created");
+
+        // Verify BalanceManager handles internal balance (gsTokens stay within BalanceManager)
+        uint256 internalBalance = balanceManager.getBalance(user1, Currency.wrap(syntheticUSDC));
+        assertEq(internalBalance, 1000 * 1e6, "Internal balance not created");
         
         // Verify BalanceManager handles yield distribution
         vm.startPrank(borrower);
@@ -895,15 +897,16 @@ contract TwoContractArchitectureTest is Test {
         // Check pre-accrual state
         uint256 generatedInterest = lendingManager.getGeneratedInterest(address(usdc));
         uint256 availableLiquidity = lendingManager.getAvailableLiquidity(address(usdc));
-        uint256 syntheticTotalSupply = IERC20(syntheticUSDC).totalSupply();
+        // Check provider's internal balance instead of ERC20 total supply (gsTokens stay in BalanceManager)
+        uint256 providerInternalBalance = balanceManager.getBalance(provider, Currency.wrap(syntheticUSDC));
         address underlyingToken = address(usdc);
-        
+
         console.log("=== PRE-ACCRUAL STATE ===");
         console.log("Generated interest:", generatedInterest / 1e6, "USDC");
         console.log("Available liquidity:", availableLiquidity / 1e6, "USDC");
-        console.log("Synthetic token total supply:", syntheticTotalSupply / 1e6, "USDC");
+        console.log("Provider internal balance:", providerInternalBalance / 1e6, "USDC");
         console.log("Underlying token address:", underlyingToken);
-        
+
         // Step 1: Check _getSupportedAssets()
         address[] memory supportedAssets = balanceManager.getSupportedAssets();
         console.log("Supported assets count:", supportedAssets.length);
@@ -915,18 +918,18 @@ contract TwoContractArchitectureTest is Test {
             }
         }
         assertTrue(usdcIsSupported, "USDC should be in supported assets");
-        
+
         // Step 2: Check _accrueYieldForToken conditions
         console.log("\n=== CHECKING _accrueYieldForToken CONDITIONS ===");
-        
+
         // Check synthetic token exists
         address retrievedSyntheticToken = balanceManager.getSyntheticToken(underlyingToken);
         console.log("Retrieved synthetic token:", retrievedSyntheticToken);
         assertTrue(retrievedSyntheticToken != address(0), "Synthetic token should exist");
         assertTrue(retrievedSyntheticToken == syntheticUSDC, "Synthetic token should match");
-        
-        // Check total supply > 0
-        assertTrue(syntheticTotalSupply > 0, "Synthetic token total supply should be > 0");
+
+        // Check internal balance > 0 (represents deposited supply)
+        assertTrue(providerInternalBalance > 0, "Provider internal balance should be > 0");
         
         // Check interest generated > 0
         assertTrue(generatedInterest > 0, "Generated interest should be > 0");

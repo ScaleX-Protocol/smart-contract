@@ -413,9 +413,10 @@ contract AutoRepayTest is Test, IPriceOracle {
         IPoolManager.Pool memory pool = poolManager.getPool(poolKey);
         
         // Should now work: autoBorrow works for both BUY and SELL orders
+        // Use different prices to avoid negative spread protection
         uint48 buyOrderId = scalexRouter.placeLimitOrderWithFlags(
             pool,
-            1000 * 1e6,
+            900 * 1e6,   // BUY at 900 (lower price)
             100 * 1e6,
             IOrderBook.Side.BUY,  // BUY order - should now work
             IOrderBook.TimeInForce.GTC,
@@ -423,10 +424,10 @@ contract AutoRepayTest is Test, IPriceOracle {
             false,
             true
         );
-        
+
         uint48 sellOrderId = scalexRouter.placeLimitOrderWithFlags(
             pool,
-            1000 * 1e6,
+            1100 * 1e6,  // SELL at 1100 (higher price)
             100 * 1e6,
             IOrderBook.Side.SELL, // SELL order - should work
             IOrderBook.TimeInForce.GTC,
