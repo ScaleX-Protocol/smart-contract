@@ -193,10 +193,10 @@ contract WeightedCheckpointTest is Test {
         syntheticTokenAddr = balanceManager.getSyntheticToken(address(usdc));
         syntheticToken = SyntheticToken(syntheticTokenAddr);
         
-        // Verify synthetic tokens created
-        uint256 user1Balance = IERC20(syntheticTokenAddr).balanceOf(user1);
-        assertTrue(user1Balance > 0, "Should have synthetic tokens");
-        console.log("User1 synthetic tokens:", user1Balance / 1e6, "tokens");
+        // Verify internal balance created (gsTokens stay within BalanceManager)
+        uint256 user1Balance = balanceManager.getBalance(user1, Currency.wrap(syntheticTokenAddr));
+        assertTrue(user1Balance > 0, "Should have internal balance");
+        console.log("User1 internal balance:", user1Balance / 1e6, "tokens");
         
         // Simple withdrawal (no yield to claim in this simplified test)
         uint256 usdcBalanceBefore = usdc.balanceOf(user1);
@@ -215,8 +215,8 @@ contract WeightedCheckpointTest is Test {
         // Check if withdrawal succeeded but didn't transfer USDC due to liquidity constraints
         assertTrue(totalReceived > 0, "Should receive something from withdrawal");
         
-        uint256 remainingSynthetic = IERC20(syntheticTokenAddr).balanceOf(user1);
-        assertEq(remainingSynthetic, depositAmount1 - withdrawAmount, "Remaining synthetic tokens incorrect");
+        uint256 remainingBalance = balanceManager.getBalance(user1, Currency.wrap(syntheticTokenAddr));
+        assertEq(remainingBalance, depositAmount1 - withdrawAmount, "Remaining internal balance incorrect");
         
         // For now, just verify the synthetic token accounting works correctly
         // The underlying token transfer may fail due to liquidity constraints in the lending pool
@@ -353,24 +353,24 @@ contract WeightedCheckpointTest is Test {
         if (syntheticTokenAddr == address(0)) {
             syntheticTokenAddr = balanceManager.getSyntheticToken(address(usdc));
         }
-        console.log("  Remaining synthetic tokens:", IERC20(syntheticTokenAddr).balanceOf(user1) / 1e6);
-        
+        console.log("  Remaining internal balance:", balanceManager.getBalance(user1, Currency.wrap(syntheticTokenAddr)) / 1e6);
+
         // Generate more yield
         vm.warp(block.timestamp + 86400 * 10); // 10 more days
-        
+
         vm.startPrank(owner);
         balanceManager.accrueYield();
         vm.stopPrank();
-        
+
         // Second withdrawal
         vm.startPrank(user1);
         uint256 withdrawAmount2 = 700 * 1e6;
         uint256 totalReceived2 = balanceManager.withdraw(Currency.wrap(address(usdc)), withdrawAmount2, user1);
         vm.stopPrank();
-        
+
         uint256 yield2 = totalReceived2 - withdrawAmount2;
         uint256 balanceAfter2 = usdc.balanceOf(user1);
-        
+
         console.log("Second withdrawal:");
         console.log("  Amount:", withdrawAmount2 / 1e6, "USDC");
         console.log("  Yield:", yield2 / 1e6, "USDC");
@@ -379,11 +379,11 @@ contract WeightedCheckpointTest is Test {
         if (syntheticTokenAddr == address(0)) {
             syntheticTokenAddr = balanceManager.getSyntheticToken(address(usdc));
         }
-        console.log("  Remaining synthetic tokens:", IERC20(syntheticTokenAddr).balanceOf(user1) / 1e6);
-        
+        console.log("  Remaining internal balance:", balanceManager.getBalance(user1, Currency.wrap(syntheticTokenAddr)) / 1e6);
+
         // Final withdrawal
         vm.startPrank(user1);
-        uint256 withdrawAmount3 = IERC20(syntheticTokenAddr).balanceOf(user1); // Remaining amount
+        uint256 withdrawAmount3 = balanceManager.getBalance(user1, Currency.wrap(syntheticTokenAddr)); // Remaining amount
         uint256 totalReceived3 = balanceManager.withdraw(Currency.wrap(address(usdc)), withdrawAmount3, user1);
         vm.stopPrank();
         
@@ -398,10 +398,10 @@ contract WeightedCheckpointTest is Test {
         if (syntheticTokenAddr == address(0)) {
             syntheticTokenAddr = balanceManager.getSyntheticToken(address(usdc));
         }
-        console.log("  Remaining synthetic tokens:", IERC20(syntheticTokenAddr).balanceOf(user1) / 1e6);
-        
-        // Verify all synthetic tokens are burned
-        assertEq(IERC20(syntheticTokenAddr).balanceOf(user1), 0, "All synthetic tokens should be burned");
+        console.log("  Remaining internal balance:", balanceManager.getBalance(user1, Currency.wrap(syntheticTokenAddr)) / 1e6);
+
+        // Verify all internal balance is withdrawn
+        assertEq(balanceManager.getBalance(user1, Currency.wrap(syntheticTokenAddr)), 0, "All internal balance should be withdrawn");
         
         // Verify total received equals balance change
         uint256 totalReceived = totalReceived1 + totalReceived2 + totalReceived3;

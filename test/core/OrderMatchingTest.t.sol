@@ -360,10 +360,11 @@ contract OrderMatchingTest is Test {
             marketSide,
             slippageToleranceBps
         );
-        
+
+        // For BUY market orders, quantity is the quote amount (USDC to spend)
         router.placeMarketOrder(
             pool,
-            buyQuantity,
+            maxQuoteAmount, // quote amount to spend (USDC)
             marketSide,
             maxQuoteAmount, // deposit amount (quote currency for BUY)
             minOutAmount // min out amount in base currency (ETH)

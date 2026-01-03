@@ -34,6 +34,9 @@ abstract contract BalanceManagerStorage {
         // Yield tracking fields
         mapping(address => uint256) yieldPerToken;        // underlying token => yield per token (in PRECISION)
         mapping(address => mapping(address => uint256)) userYieldCheckpoints; // user => synthetic token => yield per token checkpoint
+
+        // Total internal supply tracking (replaces ERC20 totalSupply for yield calculations)
+        mapping(address => uint256) totalInternalSupply;  // synthetic token => total internal balance
       }
 
     function getStorage() internal pure returns (Storage storage $) {

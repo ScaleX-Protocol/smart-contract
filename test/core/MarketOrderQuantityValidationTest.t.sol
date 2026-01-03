@@ -187,15 +187,10 @@ contract MarketOrderQuantityValidationTest is Test {
         vm.stopPrank();
 
         // Bob buys with 2000 USD (should get 1 ETH)
+        // For BUY market orders, quantity is the quote amount (USDC)
         vm.startPrank(bob);
-        // uint128 minOutAmount = router.calculateMinOutAmountForMarket(
-        //     pool,
-        //     2000e6,
-        //     IOrderBook.Side.BUY,
-        //     500
-        // );
 
-        router.placeMarketOrder(pool, 1e18, IOrderBook.Side.BUY, 2000e6, 0);
+        router.placeMarketOrder(pool, 2000e6, IOrderBook.Side.BUY, 2000e6, 0);
         vm.stopPrank();
 
         // Verify order book state: 3 ETH remaining

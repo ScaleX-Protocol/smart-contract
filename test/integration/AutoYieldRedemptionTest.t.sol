@@ -311,17 +311,18 @@ contract AutoYieldRedemptionTest is Test {
         vm.stopPrank();
         
         uint256 finalUsdcBalance = usdc.balanceOf(user1);
-        uint256 finalSyntheticUsdcBalance = IERC20(usdcSynthetic).balanceOf(user1);
-        
+        // Check internal balance instead of ERC20 balance (new architecture)
+        uint256 finalInternalBalance = balanceManager.getBalance(user1, Currency.wrap(usdcSynthetic));
+
         console.log("Initial USDC balance:", initialUsdcBalance / 1e6);
         console.log("Final USDC balance:", finalUsdcBalance / 1e6);
-        console.log("Final synthetic USDC balance:", finalSyntheticUsdcBalance / 1e6);
-        
+        console.log("Final internal balance:", finalInternalBalance / 1e6);
+
         // Order cancellation should NOT claim yield - balance should be the same
         assertEq(finalUsdcBalance, initialUsdcBalance, "Order cancellation should not claim yield");
-        
-        // But synthetic tokens should be returned to balance (8K original - 3K locked + 3K unlocked = 8K)
-        assertEq(finalSyntheticUsdcBalance, 8000000000, "Should have all synthetic tokens available");
+
+        // Internal balance should have all tokens available (8K original - 3K locked + 3K unlocked = 8K)
+        assertEq(finalInternalBalance, 8000000000, "Should have all synthetic tokens available");
         
         console.log("Order cancellation test passed - no yield claimed");
     }
@@ -379,17 +380,18 @@ contract AutoYieldRedemptionTest is Test {
         
         uint256 finalUsdc = usdc.balanceOf(user1);
         uint256 finalWeth = weth.balanceOf(user1);
-        uint256 finalUsdcSynthetic = IERC20(usdcSynthetic).balanceOf(user1);
-        uint256 finalWethSynthetic = IERC20(wethSynthetic).balanceOf(user1);
-        
+        // Check internal balance instead of ERC20 balance (gsTokens stay within BalanceManager)
+        uint256 finalUsdcInternal = balanceManager.getBalance(user1, Currency.wrap(usdcSynthetic));
+        uint256 finalWethInternal = balanceManager.getBalance(user1, Currency.wrap(wethSynthetic));
+
         console.log("Initial USDC:", initialUsdc / 1e6, "Final USDC:", finalUsdc / 1e6);
         console.log("Initial WETH:", initialWeth / 1e18, "Final WETH:", finalWeth / 1e18);
-        console.log("Final USDC synthetic tokens:", finalUsdcSynthetic / 1e6);
-        console.log("Final WETH synthetic tokens:", finalWethSynthetic / 1e18);
-        
-        // Test that multiple token operations work
-        assertTrue(finalUsdcSynthetic > 0, "Should have USDC synthetic tokens");
-        assertTrue(finalWethSynthetic > 0, "Should have WETH synthetic tokens");
+        console.log("Final USDC internal balance:", finalUsdcInternal / 1e6);
+        console.log("Final WETH internal balance:", finalWethInternal / 1e18);
+
+        // Test that multiple token operations work (check internal balance, not ERC20)
+        assertTrue(finalUsdcInternal > 0, "Should have USDC internal balance");
+        assertTrue(finalWethInternal > 0, "Should have WETH internal balance");
         
         // Note: No token conversion happened - BalanceManager only manages balances
         // Users would trade externally if they wanted to convert tokens
