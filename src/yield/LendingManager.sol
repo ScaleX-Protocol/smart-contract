@@ -3,6 +3,7 @@ pragma solidity ^0.8.26;
 
 // import {console} from "forge-std/Test.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {OwnableUpgradeable} from "../../lib/openzeppelin-contracts-upgradeable/contracts/access/OwnableUpgradeable.sol";
 import {ReentrancyGuardUpgradeable} from "../../lib/openzeppelin-contracts-upgradeable/contracts/utils/ReentrancyGuardUpgradeable.sol";
@@ -208,6 +209,29 @@ contract LendingManager is
             revert InsufficientLiquidity();
         }
 
+        // Check if user has debt - if so, ensure withdrawal won't make them liquidatable
+        uint256 totalDebtValue = _getTotalDebtValue(msg.sender);
+        if (totalDebtValue > 0) {
+            // User has debt, validate that withdrawal won't make them liquidatable
+            uint256 tokenPrice = _getTokenPrice(token);
+            uint256 withdrawValue = (amount * tokenPrice) / (10 ** IERC20Metadata(token).decimals());
+
+            // Get current collateral value and calculate new value after withdrawal
+            uint256 currentCollateralValue = _getTotalCollateralValueRaw(msg.sender);
+            uint256 newCollateralValue = currentCollateralValue - withdrawValue;
+
+            // Calculate minimum liquidation threshold across all collateral assets
+            uint256 minLiquidationThreshold = _getMinLiquidationThreshold(msg.sender);
+
+            // Calculate new health factor: (newCollateral * minThreshold * PRECISION) / totalDebt
+            uint256 newHealthFactor = (newCollateralValue * minLiquidationThreshold * getStorage().PRECISION) / totalDebtValue;
+
+            // Revert if new health factor would be below 1.0
+            if (newHealthFactor < getStorage().PRECISION) {
+                revert InsufficientCollateral();
+            }
+        }
+
         // Only decrease total pool liquidity - per-user supply is tracked via gsToken balance
         $.totalLiquidity[token] -= amount;
 
@@ -244,6 +268,29 @@ contract LendingManager is
         uint256 userSupply = _getUserSupplyBalance(user, token);
         if (userSupply < amount) {
             revert InsufficientLiquidity();
+        }
+
+        // Check if user has debt - if so, ensure withdrawal won't make them liquidatable
+        uint256 totalDebtValue = _getTotalDebtValue(user);
+        if (totalDebtValue > 0) {
+            // User has debt, validate that withdrawal won't make them liquidatable
+            uint256 tokenPrice = _getTokenPrice(token);
+            uint256 withdrawValue = (amount * tokenPrice) / (10 ** IERC20Metadata(token).decimals());
+
+            // Get current collateral value and calculate new value after withdrawal
+            uint256 currentCollateralValue = _getTotalCollateralValueRaw(user);
+            uint256 newCollateralValue = currentCollateralValue - withdrawValue;
+
+            // Calculate minimum liquidation threshold across all collateral assets
+            uint256 minLiquidationThreshold = _getMinLiquidationThreshold(user);
+
+            // Calculate new health factor: (newCollateral * minThreshold * PRECISION) / totalDebt
+            uint256 newHealthFactor = (newCollateralValue * minLiquidationThreshold * getStorage().PRECISION) / totalDebtValue;
+
+            // Revert if new health factor would be below 1.0
+            if (newHealthFactor < getStorage().PRECISION) {
+                revert InsufficientCollateral();
+            }
         }
 
         // Only decrease total pool liquidity - per-user supply is tracked via gsToken balance
@@ -580,6 +627,18 @@ contract LendingManager is
         return (weightedCollateralValue * $.PRECISION) / totalDebtValue;
     }
 
+    function _hasSufficientCollateral(
+        address user,
+        address token,
+        uint256 additionalAmount
+    ) internal view returns (bool) {
+        // Get the projected health factor after borrowing additional amount
+        uint256 projectedHealthFactor = this.getProjectedHealthFactor(user, token, additionalAmount);
+
+        // User must have health factor >= 1.0 (PRECISION) after borrowing
+        return projectedHealthFactor >= getStorage().PRECISION;
+    }
+
     function getGeneratedInterest(address token) external view returns (uint256) {
         Storage storage $ = getStorage();
         uint256 accumulated = $.totalAccumulatedInterest[token];
@@ -881,14 +940,6 @@ contract LendingManager is
         // console.log("=== END _calculateSupplyRate DEBUG ===");
         
         return result;
-    }
-
-    function _hasSufficientCollateral(
-        address user,
-        address token,
-        uint256 additionalAmount
-    ) internal view returns (bool) {
-        return true;
     }
 
     function _isLiquidatable(address user) internal view returns (bool) {
