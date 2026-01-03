@@ -192,23 +192,24 @@ contract AutoRepayTest is Test, IPriceOracle {
         usdc.approve(address(balanceManager), 5000 * 1e6);
         balanceManager.deposit(Currency.wrap(address(usdc)), 5000 * 1e6, trader, trader);
         vm.stopPrank();
-        
+
         vm.startPrank(borrower);
-        
-        // Supply collateral through BalanceManager (proper architecture)
-        weth.mint(borrower, 2 ether);
-        weth.approve(address(balanceManager), 2 ether);
-        balanceManager.deposit(Currency.wrap(address(weth)), 2 ether, borrower, borrower);
-        
-        // Borrow USDC (smaller amount that's available)
-        lendingManager.borrow(address(usdc), 1000 * 1e6);
-        
+
+        // Supply collateral through BalanceManager
+        // Using a larger amount to ensure health factor passes
+        weth.mint(borrower, 50 ether);
+        weth.approve(address(balanceManager), 50 ether);
+        balanceManager.deposit(Currency.wrap(address(weth)), 50 ether, borrower, borrower);
+
+        // Borrow USDC through the router (proper flow)
+        scalexRouter.borrow(address(usdc), 1000 * 1e6);
+
         vm.stopPrank();
-        
+
         // Verify borrower has debt
         uint256 debt = lendingManager.getUserDebt(borrower, address(usdc));
         assertEq(debt, 1000 * 1e6, "Borrower should have 1000 USDC debt");
-        
+
         // Give borrower some tokens to trade with
         vm.startPrank(borrower);
         weth.mint(borrower, 5 ether);
@@ -473,11 +474,32 @@ contract AutoRepayTest is Test, IPriceOracle {
         vm.stopPrank();
     }
     
-    // Mock oracle for testing
+    // Mock oracle for testing - implements IPriceOracle and extends to IOracle
     function getAssetPrice(address asset) external view returns (uint256) {
         if (asset == address(weth)) return 2000e18;
         if (asset == address(usdc)) return 1e18;
         return 1e18;
+    }
+
+    // Additional oracle functions required by LendingManager (IOracle interface)
+    function getPriceForCollateral(address token) external view returns (uint256) {
+        if (token == address(weth)) return 2000e18;
+        if (token == address(usdc)) return 1e18;
+        return 1e18;
+    }
+
+    function getPriceForBorrowing(address token) external view returns (uint256) {
+        if (token == address(weth)) return 2000e18;
+        if (token == address(usdc)) return 1e18;
+        return 1e18;
+    }
+
+    function getPriceConfidence(address token) external view returns (uint256) {
+        return 10000; // 100% confidence
+    }
+
+    function isPriceStale(address token) external view returns (bool) {
+        return false; // Never stale
     }
     
     event AutoRepaymentExecuted(
