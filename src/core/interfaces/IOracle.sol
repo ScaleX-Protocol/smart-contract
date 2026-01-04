@@ -22,9 +22,10 @@ interface IOracle {
     // Token management
     function addToken(address token, uint256 priceId) external;
     function removeToken(address token) external;
+    function setTokenOrderBook(address token, address orderBook) external;
+    function initializePrice(address token, uint256 price) external;
     function getAllSupportedTokens() external view returns (address[] memory supportedTokens);
-    function addAllSupportedTokens() external;
-    
+
     // OrderBook integration
     function updateOrderBook(address orderBook) external;
     

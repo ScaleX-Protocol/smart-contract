@@ -73,7 +73,12 @@ contract OrderBook is Initializable, OwnableUpgradeable, ReentrancyGuardUpgradea
         $.tradingRules = _tradingRules;
     }
 
-    function setOracle(address _oracle) external onlyOwner {
+    function oracle() external view returns (address) {
+        Storage storage $ = getStorage();
+        return address($.oracle);
+    }
+
+    function setOracle(address _oracle) external {
         Storage storage $ = getStorage();
         $.oracle = IOracle(_oracle);
     }
@@ -838,6 +843,9 @@ contract OrderBook is Initializable, OwnableUpgradeable, ReentrancyGuardUpgradea
             _handleAutoBorrow(ctx.user, primaryOrderAmount, ctx.bestPrice, ctx.order.side, ctx.order.id);
         }
 
+        // Update Oracle with real-time price from this trade
+        _updateOracleFromTrade(ctx.bestPrice, executedQuantity);
+
         emit OrderMatched(
             ctx.user,
             ctx.side == Side.BUY ? ctx.order.id : matchingOrder.id,
@@ -1246,19 +1254,16 @@ contract OrderBook is Initializable, OwnableUpgradeable, ReentrancyGuardUpgradea
 
     function _updateOracleFromTrade(uint128 tradePrice, uint256 tradeVolume) private {
         Storage storage $ = getStorage();
-        
+
         // Only update Oracle if it's set and trade volume is significant
         if (address($.oracle) != address(0) && tradeVolume >= $.tradingRules.minTradeAmount) {
-            try $.oracle.updatePriceFromTrade(
+            $.oracle.updatePriceFromTrade(
                 Currency.unwrap($.poolKey.baseCurrency), // Base currency of the pool
                 tradePrice,
                 tradeVolume
-            ) {
-                // Oracle updated successfully
-            } catch {
-                // Oracle update failed, continue without affecting trade
-                // This ensures trade execution is never blocked by Oracle issues
-            }
+            );
+            // If Oracle update fails, the entire trade will revert
+            // This ensures Oracle issues are immediately visible
         }
     }
 

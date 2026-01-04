@@ -170,6 +170,12 @@ interface IOrderBook is IOrderBookErrors {
         address router
     ) external;
 
+    function oracle() external view returns (address);
+
+    function setOracle(
+        address oracle
+    ) external;
+
     function placeOrder(
         uint128 price,
         uint128 quantity,

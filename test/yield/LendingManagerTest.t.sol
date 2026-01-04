@@ -254,7 +254,12 @@ contract LendingManagerTest is Test {
         address usdcSynthetic = tokenFactory.createSyntheticToken(address(usdc));
         address wethSynthetic = tokenFactory.createSyntheticToken(address(weth));
         address daiSynthetic = tokenFactory.createSyntheticToken(address(dai));
-        
+
+        // Set prices for synthetic tokens in Oracle (prices come from synthetic token trades)
+        mockOracle.setPrice(usdcSynthetic, 1e18);
+        mockOracle.setPrice(wethSynthetic, 2000 * 1e18); // $2000 per WETH
+        mockOracle.setPrice(daiSynthetic, 1e18);
+
         balanceManager.addSupportedAsset(address(usdc), usdcSynthetic);
         balanceManager.addSupportedAsset(address(weth), wethSynthetic);
         balanceManager.addSupportedAsset(address(dai), daiSynthetic);
@@ -818,8 +823,9 @@ contract LendingManagerTest is Test {
         // 20 WETH = $20,000 collateral value
         // With 75% LT: $20,000 * 0.75 = $15,000 max borrow
         // But user owes $29,000 -> liquidatable!
-        mockOracle.setPrice(address(weth), 1000 * 1e18); // Drop to $1000
-        
+        address wethSynthetic = balanceManager.getSyntheticToken(address(weth));
+        mockOracle.setPrice(wethSynthetic, 1000 * 1e18); // Drop to $1000
+
         // Check health factor
         uint256 healthFactor = lendingManager.getHealthFactor(borrower1);
         assertTrue(healthFactor < 1e18, "User should be undercollateralized (health factor < 1)");
@@ -873,7 +879,8 @@ contract LendingManagerTest is Test {
         vm.stopPrank();
 
         // Drop WETH price to make user liquidatable
-        mockOracle.setPrice(address(weth), 1000 * 1e18); // Drop to $1000
+        address wethSynthetic = balanceManager.getSyntheticToken(address(weth));
+        mockOracle.setPrice(wethSynthetic, 1000 * 1e18); // Drop to $1000
 
         vm.warp(block.timestamp + 15 days);
         
@@ -923,7 +930,8 @@ contract LendingManagerTest is Test {
         // 25 WETH * $400 = $10,000 collateral value
         // With 75% LT: $10,000 * 0.75 = $7,500 max borrow
         // User owes $8,000 -> liquidatable!
-        mockOracle.setPrice(address(weth), 400 * 1e18); // Drop to $400
+        address wethSynthetic = balanceManager.getSyntheticToken(address(weth));
+        mockOracle.setPrice(wethSynthetic, 400 * 1e18); // Drop to $400
 
         vm.warp(block.timestamp + 10 days);
 
@@ -1036,7 +1044,8 @@ contract LendingManagerTest is Test {
         // 15 WETH * $450 = $6,750 collateral value
         // With 75% LT: $6,750 * 0.75 = $5,062 max borrow
         // User owes $5,500 -> liquidatable!
-        mockOracle.setPrice(address(weth), 450 * 1e18); // Drop to $450
+        address wethSynthetic = balanceManager.getSyntheticToken(address(weth));
+        mockOracle.setPrice(wethSynthetic, 450 * 1e18); // Drop to $450
 
         vm.warp(block.timestamp + 7 days);
         
