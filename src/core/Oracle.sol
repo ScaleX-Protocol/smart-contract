@@ -40,13 +40,18 @@ contract Oracle is Initializable, OwnableUpgradeable, ReentrancyGuardUpgradeable
     // Constants
     uint256 public constant MAX_HISTORY_SIZE = 1000;
     uint256 public constant STALE_PRICE_DELAY = 1 hours;
-    uint256 public constant MIN_TRADE_VOLUME = 1000 * 1e6; // Minimum volume for reliable price
+
+    // Configurable minimum trade volume (can be updated by owner)
+    uint256 public minTradeVolume = 0; // Allow all trades to update price initially
     
     // Interfaces
     ITokenRegistry public tokenRegistry;
     
     // Multi-token OrderBook support
     mapping(address => IOrderBook) public tokenOrderBooks;
+
+    // NEW: Support multiple OrderBooks per token (token => orderbook => authorized)
+    mapping(address => mapping(address => bool)) public authorizedOrderBooks;
     
     // Events
     event PriceUpdate(address indexed token, uint256 price, uint256 timestamp);
@@ -54,6 +59,8 @@ contract Oracle is Initializable, OwnableUpgradeable, ReentrancyGuardUpgradeable
     event TokenRemoved(address indexed token);
     event TWAPCalculated(address indexed token, uint256 twapPrice, uint256 window);
     event OracleUpdated(address indexed tokenRegistry);
+    event MinTradeVolumeUpdated(uint256 newMinTradeVolume);
+    event OrderBookAuthorized(address indexed token, address indexed orderBook, bool authorized);
     
     // Errors
     error TokenNotSupported(address token);
@@ -62,6 +69,8 @@ contract Oracle is Initializable, OwnableUpgradeable, ReentrancyGuardUpgradeable
     error InvalidConfiguration();
     error NoTradingLiquidity(address token);
     error ZeroAddress();
+    error ZeroPrice();
+    error PriceAlreadyInitialized();
     error UnauthorizedOracleUpdate(address caller);
     error InsufficientTradeVolume(uint256 volume, uint256 minVolume);
 
@@ -92,15 +101,12 @@ contract Oracle is Initializable, OwnableUpgradeable, ReentrancyGuardUpgradeable
     
     function addToken(address token, uint256 priceId) external onlyOwner {
         if (token == address(0)) revert ZeroAddress();
-        if (!tokenRegistry.isTokenSupported(token)) {
-            revert TokenNotSupported(token);
-        }
-        
+
         TokenPriceData storage data = tokenPriceData[token];
         data.supported = true;
         data.maxHistorySize = MAX_HISTORY_SIZE;
         tokenPriceIds[token] = priceId;
-        
+
         emit TokenAdded(token, priceId);
     }
     
@@ -111,27 +117,78 @@ contract Oracle is Initializable, OwnableUpgradeable, ReentrancyGuardUpgradeable
         
         emit TokenRemoved(token);
     }
-    
-    function addAllSupportedTokens() external onlyOwner {
-        address[] memory tokens = tokenRegistry.getSupportedTokens();
-        
-        for (uint256 i = 0; i < tokens.length; i++) {
-            address token = tokens[i];
-            if (!tokenPriceData[token].supported) {
-                // Generate price ID based on token address (simple hash)
-                uint256 priceId = uint256(keccak256(abi.encodePacked(token))) % type(uint128).max;
-                this.addToken(token, priceId);
-            }
-        }
-    }
-    
+
     function setTokenOrderBook(address token, address orderBook) external onlyOwner {
         if (!tokenPriceData[token].supported) {
             revert TokenNotSupported(token);
         }
         if (orderBook == address(0)) revert ZeroAddress();
         tokenOrderBooks[token] = IOrderBook(orderBook);
+        // Also authorize this orderbook for price updates
+        authorizedOrderBooks[token][orderBook] = true;
+        emit OrderBookAuthorized(token, orderBook, true);
     }
+
+    /// @notice Authorize or revoke an OrderBook for price updates on a token
+    /// @dev Use this to allow multiple OrderBooks to update the same token's price
+    function setAuthorizedOrderBook(address token, address orderBook, bool authorized) external onlyOwner {
+        if (!tokenPriceData[token].supported) {
+            revert TokenNotSupported(token);
+        }
+        if (orderBook == address(0)) revert ZeroAddress();
+        authorizedOrderBooks[token][orderBook] = authorized;
+        emit OrderBookAuthorized(token, orderBook, authorized);
+    }
+
+    /// @notice Set minimum trade volume for Oracle price updates
+    /// @param _minTradeVolume New minimum trade volume (0 = all trades update price)
+    function setMinTradeVolume(uint256 _minTradeVolume) external onlyOwner {
+        minTradeVolume = _minTradeVolume;
+        emit MinTradeVolumeUpdated(_minTradeVolume);
+    }
+
+    /// @notice Initialize price for a token (for bootstrapping when no trades exist yet)
+    /// @dev Only callable by owner, should be removed once sufficient trading data exists
+    function initializePrice(address token, uint256 price) external onlyOwner {
+        if (!tokenPriceData[token].supported) {
+            revert TokenNotSupported(token);
+        }
+        if (price == 0) revert ZeroPrice();
+
+        TokenPriceData storage data = tokenPriceData[token];
+
+        // Only allow initialization if no trade data exists
+        if (data.lastUpdateTime > 0) {
+            revert PriceAlreadyInitialized();
+        }
+
+        // Set initial price
+        uint256 currentTime = block.timestamp;
+        data.priceHistory[currentTime] = PricePoint({
+            price: price,
+            timestamp: currentTime,
+            cumulativePrice: 0,
+            initialized: true
+        });
+        data.lastUpdateTime = currentTime;
+
+        emit PriceUpdate(token, price, currentTime);
+    }
+
+    /// @notice Set price for a token (admin function for manual price updates)
+    /// @dev Only callable by owner, allows updating price at any time
+    function setPrice(address token, uint256 price) external onlyOwner {
+        if (!tokenPriceData[token].supported) {
+            revert TokenNotSupported(token);
+        }
+        if (price == 0) revert ZeroPrice();
+
+        // Store the price point
+        _storePricePoint(token, price, block.timestamp);
+
+        emit PriceUpdate(token, price, block.timestamp);
+    }
+
 
     function updateOrderBook(address /* orderBook */) external pure {
         // Legacy function - not used in multi-token setup
@@ -154,16 +211,18 @@ contract Oracle is Initializable, OwnableUpgradeable, ReentrancyGuardUpgradeable
         if (!tokenPriceData[token].supported) {
             revert TokenNotSupported(token);
         }
-        if (address(tokenOrderBooks[token]) == address(0) || address(tokenOrderBooks[token]) != msg.sender) {
+        if (!authorizedOrderBooks[token][msg.sender]) {
             revert UnauthorizedOracleUpdate(msg.sender);
         }
-        if (volume < MIN_TRADE_VOLUME) {
-            revert InsufficientTradeVolume(volume, MIN_TRADE_VOLUME);
+
+        // Skip price update for low volume trades (don't revert - allow trade to continue)
+        if (volume < minTradeVolume) {
+            return;
         }
-        
+
         // Store price point immediately when trade occurs
         _storePricePoint(token, uint256(price), block.timestamp);
-        
+
         emit PriceUpdate(token, uint256(price), block.timestamp);
     }
     
@@ -261,14 +320,14 @@ contract Oracle is Initializable, OwnableUpgradeable, ReentrancyGuardUpgradeable
         // Take the more conservative (lower) price between 1h and 6h TWAP
         uint256 twap1h = this.getTWAP(token, 1 hours);
         uint256 twap6h = this.getTWAP(token, 6 hours);
-        
+
         if (twap1h == 0 && twap6h == 0) {
-            return _getCurrentPrice(token); // Fallback to spot price
+            return this.getSpotPrice(token); 
         }
-        
+
         if (twap1h == 0) return twap6h;
         if (twap6h == 0) return twap1h;
-        
+
         return twap1h < twap6h ? twap1h : twap6h;
     }
     
@@ -276,14 +335,14 @@ contract Oracle is Initializable, OwnableUpgradeable, ReentrancyGuardUpgradeable
         // Use medium-term TWAP for borrowing to balance responsiveness and stability
         uint256 twap15m = this.getTWAP(token, 15 minutes);
         uint256 twap1h = this.getTWAP(token, 1 hours);
-        
+
         if (twap15m == 0 && twap1h == 0) {
-            return _getCurrentPrice(token); // Fallback to spot price
+            return this.getSpotPrice(token); 
         }
-        
+
         if (twap15m == 0) return twap1h;
         if (twap1h == 0) return twap15m;
-        
+
         // Take the average for a balanced approach
         return (twap15m + twap1h) / 2;
     }
@@ -374,32 +433,12 @@ contract Oracle is Initializable, OwnableUpgradeable, ReentrancyGuardUpgradeable
             issue = "Medium price confidence";
         }
     }
-    
+
+    /// @notice Get all supported tokens from the token registry
     function getAllSupportedTokens() external view returns (address[] memory supportedTokens) {
-        address[] memory allTokens = tokenRegistry.getSupportedTokens();
-        uint256 supportedCount = 0;
-        
-        // First pass: count supported tokens
-        for (uint256 i = 0; i < allTokens.length; i++) {
-            if (tokenPriceData[allTokens[i]].supported) {
-                supportedCount++;
-            }
-        }
-        
-        // Second pass: collect supported tokens
-        supportedTokens = new address[](supportedCount);
-        uint256 index = 0;
-        
-        for (uint256 i = 0; i < allTokens.length; i++) {
-            if (tokenPriceData[allTokens[i]].supported) {
-                supportedTokens[index] = allTokens[i];
-                index++;
-            }
-        }
-        
-        return supportedTokens;
+        return tokenRegistry.getSupportedTokens();
     }
-    
+
     // =============================================================
     //                   TESTING FUNCTIONS
     // =============================================================

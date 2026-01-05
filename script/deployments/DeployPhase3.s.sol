@@ -5,8 +5,10 @@ import "forge-std/Script.sol";
 import {PoolManager} from "@scalexcore/PoolManager.sol";
 import {IPoolManager} from "@scalexcore/interfaces/IPoolManager.sol";
 import {ScaleXRouter} from "@scalexcore/ScaleXRouter.sol";
+import {BalanceManager} from "@scalexcore/BalanceManager.sol";
 import {Currency} from "@scalexcore/libraries/Currency.sol";
 import {IOrderBook} from "@scalexcore/interfaces/IOrderBook.sol";
+import {IOracle} from "@scalexcore/interfaces/IOracle.sol";
 import {PoolKey, PoolId} from "@scalexcore/libraries/Pool.sol";
 
 contract DeployPhase3 is Script {
@@ -38,19 +40,25 @@ contract DeployPhase3 is Script {
         string memory json = vm.readFile(deploymentPath);
         address poolManager = _extractAddress(json, "PoolManager");
         address scaleXRouter = _extractAddress(json, "ScaleXRouter");
+        address balanceManager = _extractAddress(json, "BalanceManager");
+        address oracle = _extractAddress(json, "Oracle");
         address gsUSDC = _extractAddress(json, "gsUSDC");
         address gsWETH = _extractAddress(json, "gsWETH");
         address gsWBTC = _extractAddress(json, "gsWBTC");
-        
+
         console.log("Loaded addresses:");
         console.log("  PoolManager:", poolManager);
         console.log("  ScaleXRouter:", scaleXRouter);
+        console.log("  BalanceManager:", balanceManager);
+        console.log("  Oracle:", oracle);
         console.log("  gsUSDC:", gsUSDC);
         console.log("  gsWETH:", gsWETH);
         console.log("  gsWBTC:", gsWBTC);
-        
+
         // Validate addresses
         require(poolManager != address(0), "PoolManager address is zero");
+        require(balanceManager != address(0), "BalanceManager address is zero");
+        require(oracle != address(0), "Oracle address is zero");
         require(gsUSDC != address(0), "gsUSDC address is zero");
         require(gsWETH != address(0), "gsWETH address is zero");
         require(gsWBTC != address(0), "gsWBTC address is zero");
@@ -85,25 +93,94 @@ contract DeployPhase3 is Script {
         } else {
             console.log("WBTC/USDC pool needs to be created");
         }
-        
+
+        // Configure Oracle and authorize existing pools if needed
+        if (wethUsdcExists || wbtcUsdcExists) {
+            console.log("Starting broadcast to configure existing pools...");
+            vm.startBroadcast(deployerPrivateKey);
+
+            BalanceManager bm = BalanceManager(balanceManager);
+
+            // Step 3.5: Ensure existing OrderBooks are authorized in BalanceManager
+            console.log("Step 3.5: Ensuring OrderBooks are authorized in BalanceManager...");
+
+            if (wethUsdcExists) {
+                // Note: BalanceManager doesn't have isAuthorizedOperator view, so we always try to set
+                // The function is idempotent so it's safe to call multiple times
+                bm.setAuthorizedOperator(wethUsdcOrderBook, true);
+                console.log("[OK] WETH/USDC OrderBook authorized in BalanceManager");
+            }
+
+            if (wbtcUsdcExists) {
+                bm.setAuthorizedOperator(wbtcUsdcOrderBook, true);
+                console.log("[OK] WBTC/USDC OrderBook authorized in BalanceManager");
+            }
+
+            // Step 4: Configure Oracle in all OrderBooks
+            console.log("Step 4: Configuring Oracle in OrderBooks...");
+
+            if (wethUsdcExists) {
+                address currentOracle = IOrderBook(wethUsdcOrderBook).oracle();
+                if (currentOracle == address(0)) {
+                    IOrderBook(wethUsdcOrderBook).setOracle(oracle);
+                    console.log("[OK] Oracle configured in WETH/USDC OrderBook");
+                } else {
+                    console.log("[SKIP] WETH/USDC OrderBook already has Oracle configured");
+                }
+            }
+
+            if (wbtcUsdcExists) {
+                address currentOracle = IOrderBook(wbtcUsdcOrderBook).oracle();
+                if (currentOracle == address(0)) {
+                    IOrderBook(wbtcUsdcOrderBook).setOracle(oracle);
+                    console.log("[OK] Oracle configured in WBTC/USDC OrderBook");
+                } else {
+                    console.log("[SKIP] WBTC/USDC OrderBook already has Oracle configured");
+                }
+            }
+
+            console.log("[OK] Oracle configuration completed");
+
+            // Step 5: Verify Oracle is set correctly
+            console.log("Step 5: Verifying Oracle configuration...");
+
+            if (wethUsdcExists) {
+                address wethUsdcOracle = IOrderBook(wethUsdcOrderBook).oracle();
+                console.log("WETH/USDC OrderBook Oracle:", vm.toString(wethUsdcOracle));
+                require(wethUsdcOracle == oracle, "WETH/USDC OrderBook Oracle not set correctly");
+                console.log("[OK] WETH/USDC OrderBook Oracle verified");
+            }
+
+            if (wbtcUsdcExists) {
+                address wbtcUsdcOracle = IOrderBook(wbtcUsdcOrderBook).oracle();
+                console.log("WBTC/USDC OrderBook Oracle:", vm.toString(wbtcUsdcOracle));
+                require(wbtcUsdcOracle == oracle, "WBTC/USDC OrderBook Oracle not set correctly");
+                console.log("[OK] WBTC/USDC OrderBook Oracle verified");
+            }
+
+            console.log("[OK] All Oracle configurations verified");
+
+            vm.stopBroadcast();
+        }
+
         // Only broadcast if we need to create pools
         if (!wethUsdcExists || !wbtcUsdcExists) {
             console.log("Starting broadcast to create missing pools...");
             vm.startBroadcast(deployerPrivateKey);
-            
+
             // Step 2: Set router in PoolManager first
             console.log("Step 2: Setting router in PoolManager...");
             pm.setRouter(scaleXRouter);
             console.log("[OK] Router set in PoolManager");
-            
+
             // Step 3: Create trading rules
             IOrderBook.TradingRules memory tradingRules = IOrderBook.TradingRules({
                 minTradeAmount: 1000000,    // 1 USDC minimum
                 minAmountMovement: 1000000,  // 1 USDC minimum price movement
-                minPriceMovement: 1000000,   // 1 USDC minimum price movement  
+                minPriceMovement: 1000000,   // 1 USDC minimum price movement
                 minOrderSize: 5000000        // 5 USDC minimum order size
             });
-            
+
             if (!wethUsdcExists) {
                 console.log("Creating new WETH/USDC pool...");
                 PoolId wethUsdcPoolId = pm.createPool(
@@ -111,16 +188,29 @@ contract DeployPhase3 is Script {
                     Currency.wrap(gsUSDC),      // quote currency (USDC)
                     tradingRules
                 );
-                
+
                 // Get the OrderBook address from the newly created pool
                 wethUsdcPool = pm.getPool(
                     pm.createPoolKey(Currency.wrap(gsWETH), Currency.wrap(gsUSDC))
                 );
                 wethUsdcOrderBook = address(wethUsdcPool.orderBook);
-                
+
                 console.log("[OK] WETH/USDC pool created with OrderBook:", wethUsdcOrderBook);
+
+                // Authorize OrderBook in BalanceManager (critical for lock/unlock/transfer)
+                BalanceManager(balanceManager).setAuthorizedOperator(wethUsdcOrderBook, true);
+                console.log("[OK] WETH/USDC OrderBook authorized in BalanceManager");
+
+                // Configure Oracle for newly created pool
+                IOrderBook(wethUsdcOrderBook).setOracle(oracle);
+                console.log("[OK] Oracle configured in WETH/USDC OrderBook");
+
+                // Verify Oracle
+                address wethUsdcOracle = IOrderBook(wethUsdcOrderBook).oracle();
+                require(wethUsdcOracle == oracle, "WETH/USDC OrderBook Oracle not set correctly");
+                console.log("[OK] WETH/USDC OrderBook Oracle verified");
             }
-            
+
             if (!wbtcUsdcExists) {
                 console.log("Creating new WBTC/USDC pool...");
                 PoolId wbtcUsdcPoolId = pm.createPool(
@@ -128,21 +218,37 @@ contract DeployPhase3 is Script {
                     Currency.wrap(gsUSDC),      // quote currency (USDC)
                     tradingRules
                 );
-                
+
                 // Get the OrderBook address from the newly created pool
                 wbtcUsdcPool = pm.getPool(
                     pm.createPoolKey(Currency.wrap(gsWBTC), Currency.wrap(gsUSDC))
                 );
                 wbtcUsdcOrderBook = address(wbtcUsdcPool.orderBook);
-                
+
                 console.log("[OK] WBTC/USDC pool created with OrderBook:", wbtcUsdcOrderBook);
+
+                // Authorize OrderBook in BalanceManager (critical for lock/unlock/transfer)
+                BalanceManager(balanceManager).setAuthorizedOperator(wbtcUsdcOrderBook, true);
+                console.log("[OK] WBTC/USDC OrderBook authorized in BalanceManager");
+
+                // Configure Oracle for newly created pool
+                IOrderBook(wbtcUsdcOrderBook).setOracle(oracle);
+                console.log("[OK] Oracle configured in WBTC/USDC OrderBook");
+
+                // Verify Oracle
+                address wbtcUsdcOracle = IOrderBook(wbtcUsdcOrderBook).oracle();
+                require(wbtcUsdcOracle == oracle, "WBTC/USDC OrderBook Oracle not set correctly");
+                console.log("[OK] WBTC/USDC OrderBook Oracle verified");
             }
-            
+
             console.log("[OK] OrderBook router configuration completed (automatic during pool creation)");
-            
+
             vm.stopBroadcast();
         }
-        
+
+        // Step 6: Configure Oracle tokens
+        _configureOracleTokens(deployerPrivateKey, oracle, gsUSDC, gsWETH, gsWBTC, wethUsdcOrderBook, wbtcUsdcOrderBook);
+
         // Update deployment file with pool addresses
         _updateDeploymentFile(
             deploymentPath,
@@ -165,6 +271,107 @@ contract DeployPhase3 is Script {
         return deployment;
     }
     
+    function _configureOracleTokens(
+        uint256 deployerPrivateKey,
+        address oracle,
+        address gsUSDC,
+        address gsWETH,
+        address gsWBTC,
+        address wethUsdcOrderBook,
+        address wbtcUsdcOrderBook
+    ) internal {
+        console.log("Step 6: Configuring Oracle tokens...");
+
+        IOracle oracleContract = IOracle(oracle);
+
+        // Check if tokens are already configured by trying to get their prices
+        // If price is 0, token needs to be configured
+        bool gsUSDCConfigured = false;
+        bool gsWETHConfigured = false;
+        bool gsWBTCConfigured = false;
+
+        try oracleContract.getSpotPrice(gsUSDC) returns (uint256 price) {
+            gsUSDCConfigured = price > 0;
+        } catch {}
+
+        try oracleContract.getSpotPrice(gsWETH) returns (uint256 price) {
+            gsWETHConfigured = price > 0;
+        } catch {}
+
+        try oracleContract.getSpotPrice(gsWBTC) returns (uint256 price) {
+            gsWBTCConfigured = price > 0;
+        } catch {}
+
+        if (gsUSDCConfigured && gsWETHConfigured && gsWBTCConfigured) {
+            console.log("[SKIP] All Oracle tokens already configured");
+            return;
+        }
+
+        vm.startBroadcast(deployerPrivateKey);
+
+        // Add tokens to Oracle
+        if (!gsUSDCConfigured) {
+            oracleContract.addToken(gsUSDC, 0);
+            console.log("[OK] gsUSDC added to Oracle");
+        }
+
+        if (!gsWETHConfigured) {
+            oracleContract.addToken(gsWETH, 0);
+            console.log("[OK] gsWETH added to Oracle");
+        }
+
+        if (!gsWBTCConfigured) {
+            oracleContract.addToken(gsWBTC, 0);
+            console.log("[OK] gsWBTC added to Oracle");
+        }
+
+        // Set OrderBooks for tokens (for price discovery)
+        if (!gsWETHConfigured) {
+            oracleContract.setTokenOrderBook(gsWETH, wethUsdcOrderBook);
+            console.log("[OK] gsWETH OrderBook set in Oracle");
+        }
+
+        if (!gsWBTCConfigured) {
+            oracleContract.setTokenOrderBook(gsWBTC, wbtcUsdcOrderBook);
+            console.log("[OK] gsWBTC OrderBook set in Oracle");
+        }
+
+        // Initialize prices (for bootstrapping before any trades)
+        if (!gsWETHConfigured) {
+            oracleContract.initializePrice(gsWETH, 3000e6); // $3000 per WETH
+            console.log("[OK] gsWETH price initialized: $3000");
+        }
+
+        if (!gsWBTCConfigured) {
+            oracleContract.initializePrice(gsWBTC, 95000e6); // $95000 per WBTC
+            console.log("[OK] gsWBTC price initialized: $95000");
+        }
+
+        if (!gsUSDCConfigured) {
+            oracleContract.initializePrice(gsUSDC, 1e6); // $1 per USDC
+            console.log("[OK] gsUSDC price initialized: $1");
+        }
+
+        vm.stopBroadcast();
+
+        // Verify configuration
+        console.log("Verifying Oracle token configuration...");
+
+        uint256 gsWETHPrice = oracleContract.getSpotPrice(gsWETH);
+        console.log("gsWETH spot price:", gsWETHPrice);
+        require(gsWETHPrice == 3000e6, "gsWETH price incorrect");
+
+        uint256 gsUSDCPrice = oracleContract.getSpotPrice(gsUSDC);
+        console.log("gsUSDC spot price:", gsUSDCPrice);
+        require(gsUSDCPrice == 1e6, "gsUSDC price incorrect");
+
+        uint256 gsWBTCPrice = oracleContract.getSpotPrice(gsWBTC);
+        console.log("gsWBTC spot price:", gsWBTCPrice);
+        require(gsWBTCPrice == 95000e6, "gsWBTC price incorrect");
+
+        console.log("[OK] Oracle token configuration completed");
+    }
+
     function _extractAddress(string memory json, string memory key) internal pure returns (address) {
         // Simple JSON parsing to extract address value
         bytes memory jsonBytes = bytes(json);

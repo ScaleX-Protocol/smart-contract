@@ -1081,18 +1081,15 @@ contract BalanceManager is
     /// @param amount The amount to borrow
     function borrowForUser(address user, address token, uint256 amount) external nonReentrant {
         Storage storage $ = getStorage();
-        
+
         if ($.lendingManager == address(0)) revert LendingManagerNotSet();
-        
+
         // Only authorized callers can borrow on behalf of users
         bool isAuthorized = msg.sender == user || $.authorizedOperators[msg.sender];
         require(isAuthorized, "Unauthorized");
-        
-        try ILendingManager($.lendingManager).borrowForUser(user, token, amount) {
-            // Success - borrow completed
-        } catch {
-            revert BorrowFailed();
-        }
+
+        // Let errors bubble up directly for better error visibility
+        ILendingManager($.lendingManager).borrowForUser(user, token, amount);
     }
 
     /// @notice Repay tokens on behalf of a user through LendingManager

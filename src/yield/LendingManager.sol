@@ -1039,10 +1039,21 @@ contract LendingManager is
 
     function _getTokenPrice(address token) internal view returns (uint256) {
         Storage storage $ = getStorage();
+
+        // Convert underlying token to synthetic token for Oracle pricing
+        address priceToken = token;
+        if ($.balanceManager != address(0)) {
+            IBalanceManagerForLending bm = IBalanceManagerForLending($.balanceManager);
+            address syntheticToken = bm.getSyntheticToken(token);
+            if (syntheticToken != address(0)) {
+                priceToken = syntheticToken;
+            }
+        }
+
         if ($.oracle != address(0)) {
-            return IOracle($.oracle).getPriceForCollateral(token);
+            return IOracle($.oracle).getPriceForCollateral(priceToken);
         } else if ($.priceOracle != address(0)) {
-            return IPriceOracle($.priceOracle).getAssetPrice(token);
+            return IPriceOracle($.priceOracle).getAssetPrice(priceToken);
         } else {
             return 1e18;
         }

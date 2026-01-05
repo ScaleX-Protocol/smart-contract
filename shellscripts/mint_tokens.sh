@@ -1,13 +1,16 @@
 #!/bin/bash
 
 # Mint USDC, WETH, and WBTC tokens to wallet addresses from seed phrase
-# Usage: ./shellscripts/mint_tokens.sh [indices] [--usdc AMOUNT] [--weth AMOUNT] [--wbtc AMOUNT]
+# Optionally deposit tokens to BalanceManager after minting
+# Usage: ./shellscripts/mint_tokens.sh [indices] [--usdc AMOUNT] [--weth AMOUNT] [--wbtc AMOUNT] [--deposit]
 # Examples:
 #   ./shellscripts/mint_tokens.sh                     # Mint default amounts to all wallets (0-9)
 #   ./shellscripts/mint_tokens.sh 2,3,4               # Mint to specific wallets
 #   ./shellscripts/mint_tokens.sh 0-4                 # Mint to range (0,1,2,3,4)
 #   ./shellscripts/mint_tokens.sh 0,2-5 --usdc 10000  # Mint 10000 USDC to selected wallets
 #   ./shellscripts/mint_tokens.sh --weth 100 --wbtc 5 # Mint specific amounts to all wallets
+#   ./shellscripts/mint_tokens.sh --deposit           # Mint and deposit to BalanceManager
+#   ./shellscripts/mint_tokens.sh 2,3 --deposit       # Mint and deposit for specific wallets
 
 # Add foundry to PATH
 export PATH="$HOME/.foundry/bin:$PATH"
@@ -40,6 +43,7 @@ if [ -f "$DEPLOYMENTS_FILE" ]; then
     WETH_ADDRESS=$(cat "$DEPLOYMENTS_FILE" | grep -o '"WETH": "[^"]*"' | cut -d'"' -f4)
     USDC_ADDRESS=$(cat "$DEPLOYMENTS_FILE" | grep -o '"USDC": "[^"]*"' | cut -d'"' -f4)
     WBTC_ADDRESS=$(cat "$DEPLOYMENTS_FILE" | grep -o '"WBTC": "[^"]*"' | cut -d'"' -f4)
+    BALANCE_MANAGER_ADDRESS=$(cat "$DEPLOYMENTS_FILE" | grep -o '"BalanceManager": "[^"]*"' | cut -d'"' -f4)
 else
     echo "Error: Deployments file not found at $DEPLOYMENTS_FILE"
     exit 1
@@ -62,8 +66,8 @@ fi
 
 # Default mint amounts (in human-readable units)
 DEFAULT_USDC_AMOUNT=100000    # 100,000 USDC
-DEFAULT_WETH_AMOUNT=100       # 100 WETH
-DEFAULT_WBTC_AMOUNT=10        # 10 WBTC
+DEFAULT_WETH_AMOUNT=100000       # 100 WETH
+DEFAULT_WBTC_AMOUNT=100000        # 10 WBTC
 
 # Token decimals
 USDC_DECIMALS=6
@@ -131,6 +135,7 @@ USDC_AMOUNT=$DEFAULT_USDC_AMOUNT
 WETH_AMOUNT=$DEFAULT_WETH_AMOUNT
 WBTC_AMOUNT=$DEFAULT_WBTC_AMOUNT
 INDICES_ARG=""
+DO_DEPOSIT=false
 
 while [[ $# -gt 0 ]]; do
     case $1 in
@@ -146,8 +151,12 @@ while [[ $# -gt 0 ]]; do
             WBTC_AMOUNT="$2"
             shift 2
             ;;
+        --deposit)
+            DO_DEPOSIT=true
+            shift
+            ;;
         --help|-h)
-            echo "Usage: ./shellscripts/mint_tokens.sh [indices] [--usdc AMOUNT] [--weth AMOUNT] [--wbtc AMOUNT]"
+            echo "Usage: ./shellscripts/mint_tokens.sh [indices] [--usdc AMOUNT] [--weth AMOUNT] [--wbtc AMOUNT] [--deposit]"
             echo ""
             echo "Options:"
             echo "  indices          Wallet indices (0-9). Can be comma-separated or ranges."
@@ -155,6 +164,7 @@ while [[ $# -gt 0 ]]; do
             echo "  --usdc AMOUNT    Amount of USDC to mint (default: $DEFAULT_USDC_AMOUNT)"
             echo "  --weth AMOUNT    Amount of WETH to mint (default: $DEFAULT_WETH_AMOUNT)"
             echo "  --wbtc AMOUNT    Amount of WBTC to mint (default: $DEFAULT_WBTC_AMOUNT)"
+            echo "  --deposit        Also deposit minted tokens to BalanceManager"
             echo "  --help, -h       Show this help message"
             echo ""
             echo "Wallet indices:"
@@ -201,11 +211,17 @@ echo "Configuration:"
 echo "  Chain ID:    $CORE_CHAIN_ID"
 echo "  RPC URL:     $RPC_URL"
 echo "  Sender:      $SENDER_ADDRESS"
+echo "  Deposit:     $DO_DEPOSIT"
 echo ""
 echo "Token Addresses:"
 echo "  USDC:        $USDC_ADDRESS"
 echo "  WETH:        $WETH_ADDRESS"
 echo "  WBTC:        $WBTC_ADDRESS"
+if [ "$DO_DEPOSIT" = true ]; then
+echo ""
+echo "Contract Addresses:"
+echo "  BalanceManager: $BALANCE_MANAGER_ADDRESS"
+fi
 echo ""
 echo "Mint Amounts:"
 echo "  USDC:        $USDC_AMOUNT ($USDC_AMOUNT_WEI smallest units)"
@@ -215,6 +231,13 @@ echo ""
 echo "Target Wallets: ${INDICES[*]}"
 echo "=============================================="
 echo ""
+
+# Verify BalanceManager address if deposit is enabled
+if [ "$DO_DEPOSIT" = true ] && [ -z "$BALANCE_MANAGER_ADDRESS" ]; then
+    echo "Error: BalanceManager address not found in deployments file"
+    echo "  Deposit feature requires BalanceManager to be deployed"
+    exit 1
+fi
 
 # Mint tokens to each wallet
 for i in "${INDICES[@]}"; do
@@ -271,3 +294,106 @@ done
 echo "=============================================="
 echo "  Minting Complete"
 echo "=============================================="
+
+# Deposit tokens to BalanceManager if --deposit flag is set
+if [ "$DO_DEPOSIT" = true ]; then
+    echo ""
+    echo "=============================================="
+    echo "  Depositing Tokens to BalanceManager"
+    echo "=============================================="
+    echo ""
+
+    for i in "${INDICES[@]}"; do
+        NAME="${WALLET_NAMES[$i]}"
+
+        # Derive private key and address for this wallet
+        PRIVATE_KEY=$(cast wallet derive-private-key "$SEED_PHRASE" $i 2>/dev/null)
+        ADDRESS=$(cast wallet address "$PRIVATE_KEY" 2>/dev/null)
+
+        echo "----------------------------------------------"
+        printf "Depositing for: %-15s (Index: %d)\n" "$NAME" "$i"
+        echo "Address: $ADDRESS"
+        echo "----------------------------------------------"
+
+        # Max approval value
+        MAX_UINT="115792089237316195423570985008687907853269984665640564039457584007913129639935"
+
+        # Approve and deposit USDC
+        echo -n "  Approving USDC... "
+        TX_APPROVE=$(cast send "$USDC_ADDRESS" "approve(address,uint256)" "$BALANCE_MANAGER_ADDRESS" "$MAX_UINT" \
+            --private-key "$PRIVATE_KEY" \
+            --rpc-url "$RPC_URL" 2>&1)
+        if [ $? -eq 0 ]; then
+            echo "OK"
+        else
+            echo "FAILED"
+            echo "    Error: $TX_APPROVE"
+        fi
+
+        echo -n "  Depositing $USDC_AMOUNT USDC... "
+        TX_DEPOSIT=$(cast send "$BALANCE_MANAGER_ADDRESS" "depositLocal(address,uint256,address)" \
+            "$USDC_ADDRESS" "$USDC_AMOUNT_WEI" "$ADDRESS" \
+            --private-key "$PRIVATE_KEY" \
+            --rpc-url "$RPC_URL" 2>&1)
+        if [ $? -eq 0 ]; then
+            echo "OK"
+        else
+            echo "FAILED"
+            echo "    Error: $TX_DEPOSIT"
+        fi
+
+        # Approve and deposit WETH
+        echo -n "  Approving WETH... "
+        TX_APPROVE=$(cast send "$WETH_ADDRESS" "approve(address,uint256)" "$BALANCE_MANAGER_ADDRESS" "$MAX_UINT" \
+            --private-key "$PRIVATE_KEY" \
+            --rpc-url "$RPC_URL" 2>&1)
+        if [ $? -eq 0 ]; then
+            echo "OK"
+        else
+            echo "FAILED"
+            echo "    Error: $TX_APPROVE"
+        fi
+
+        echo -n "  Depositing $WETH_AMOUNT WETH... "
+        TX_DEPOSIT=$(cast send "$BALANCE_MANAGER_ADDRESS" "depositLocal(address,uint256,address)" \
+            "$WETH_ADDRESS" "$WETH_AMOUNT_WEI" "$ADDRESS" \
+            --private-key "$PRIVATE_KEY" \
+            --rpc-url "$RPC_URL" 2>&1)
+        if [ $? -eq 0 ]; then
+            echo "OK"
+        else
+            echo "FAILED"
+            echo "    Error: $TX_DEPOSIT"
+        fi
+
+        # Approve and deposit WBTC
+        echo -n "  Approving WBTC... "
+        TX_APPROVE=$(cast send "$WBTC_ADDRESS" "approve(address,uint256)" "$BALANCE_MANAGER_ADDRESS" "$MAX_UINT" \
+            --private-key "$PRIVATE_KEY" \
+            --rpc-url "$RPC_URL" 2>&1)
+        if [ $? -eq 0 ]; then
+            echo "OK"
+        else
+            echo "FAILED"
+            echo "    Error: $TX_APPROVE"
+        fi
+
+        echo -n "  Depositing $WBTC_AMOUNT WBTC... "
+        TX_DEPOSIT=$(cast send "$BALANCE_MANAGER_ADDRESS" "depositLocal(address,uint256,address)" \
+            "$WBTC_ADDRESS" "$WBTC_AMOUNT_WEI" "$ADDRESS" \
+            --private-key "$PRIVATE_KEY" \
+            --rpc-url "$RPC_URL" 2>&1)
+        if [ $? -eq 0 ]; then
+            echo "OK"
+        else
+            echo "FAILED"
+            echo "    Error: $TX_DEPOSIT"
+        fi
+
+        echo ""
+    done
+
+    echo "=============================================="
+    echo "  Deposits Complete"
+    echo "=============================================="
+fi
