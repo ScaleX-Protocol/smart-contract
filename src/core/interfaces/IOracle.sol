@@ -23,6 +23,7 @@ interface IOracle {
     function addToken(address token, uint256 priceId) external;
     function removeToken(address token) external;
     function setTokenOrderBook(address token, address orderBook) external;
+    function setAuthorizedOrderBook(address token, address orderBook, bool authorized) external;
     function initializePrice(address token, uint256 price) external;
     function getAllSupportedTokens() external view returns (address[] memory supportedTokens);
 
@@ -32,7 +33,10 @@ interface IOracle {
     // Constants
     function MAX_HISTORY_SIZE() external view returns (uint256);
     function STALE_PRICE_DELAY() external view returns (uint256);
-    function MIN_TRADE_VOLUME() external view returns (uint256);
+
+    // Configurable settings
+    function minTradeVolume() external view returns (uint256);
+    function setMinTradeVolume(uint256 _minTradeVolume) external;
     
     // Trade-based price updates
     function updatePriceFromTrade(address token, uint128 price, uint256 volume) external;

@@ -924,15 +924,12 @@ contract ScaleXRouter is IScaleXRouter, ScaleXRouterStorage, Initializable, Owna
 
     function borrow(address token, uint256 amount) external {
         Storage storage $ = getStorage();
-        
+
         if ($.balanceManager == address(0)) revert BalanceManagerNotSet();
-        
+
         // Call BalanceManager which will delegate to LendingManager
-        try IBalanceManager($.balanceManager).borrowForUser(msg.sender, token, amount) {
-            // Success - borrow completed
-        } catch {
-            revert BorrowFailed();
-        }
+        // Let errors bubble up directly for better error visibility
+        IBalanceManager($.balanceManager).borrowForUser(msg.sender, token, amount);
     }
 
     function repay(address token, uint256 amount) external {

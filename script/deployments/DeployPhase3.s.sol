@@ -5,6 +5,7 @@ import "forge-std/Script.sol";
 import {PoolManager} from "@scalexcore/PoolManager.sol";
 import {IPoolManager} from "@scalexcore/interfaces/IPoolManager.sol";
 import {ScaleXRouter} from "@scalexcore/ScaleXRouter.sol";
+import {BalanceManager} from "@scalexcore/BalanceManager.sol";
 import {Currency} from "@scalexcore/libraries/Currency.sol";
 import {IOrderBook} from "@scalexcore/interfaces/IOrderBook.sol";
 import {IOracle} from "@scalexcore/interfaces/IOracle.sol";
@@ -39,6 +40,7 @@ contract DeployPhase3 is Script {
         string memory json = vm.readFile(deploymentPath);
         address poolManager = _extractAddress(json, "PoolManager");
         address scaleXRouter = _extractAddress(json, "ScaleXRouter");
+        address balanceManager = _extractAddress(json, "BalanceManager");
         address oracle = _extractAddress(json, "Oracle");
         address gsUSDC = _extractAddress(json, "gsUSDC");
         address gsWETH = _extractAddress(json, "gsWETH");
@@ -47,6 +49,7 @@ contract DeployPhase3 is Script {
         console.log("Loaded addresses:");
         console.log("  PoolManager:", poolManager);
         console.log("  ScaleXRouter:", scaleXRouter);
+        console.log("  BalanceManager:", balanceManager);
         console.log("  Oracle:", oracle);
         console.log("  gsUSDC:", gsUSDC);
         console.log("  gsWETH:", gsWETH);
@@ -54,6 +57,7 @@ contract DeployPhase3 is Script {
 
         // Validate addresses
         require(poolManager != address(0), "PoolManager address is zero");
+        require(balanceManager != address(0), "BalanceManager address is zero");
         require(oracle != address(0), "Oracle address is zero");
         require(gsUSDC != address(0), "gsUSDC address is zero");
         require(gsWETH != address(0), "gsWETH address is zero");
@@ -90,10 +94,27 @@ contract DeployPhase3 is Script {
             console.log("WBTC/USDC pool needs to be created");
         }
 
-        // Configure Oracle for existing pools if needed
+        // Configure Oracle and authorize existing pools if needed
         if (wethUsdcExists || wbtcUsdcExists) {
-            console.log("Starting broadcast to configure Oracle in existing pools...");
+            console.log("Starting broadcast to configure existing pools...");
             vm.startBroadcast(deployerPrivateKey);
+
+            BalanceManager bm = BalanceManager(balanceManager);
+
+            // Step 3.5: Ensure existing OrderBooks are authorized in BalanceManager
+            console.log("Step 3.5: Ensuring OrderBooks are authorized in BalanceManager...");
+
+            if (wethUsdcExists) {
+                // Note: BalanceManager doesn't have isAuthorizedOperator view, so we always try to set
+                // The function is idempotent so it's safe to call multiple times
+                bm.setAuthorizedOperator(wethUsdcOrderBook, true);
+                console.log("[OK] WETH/USDC OrderBook authorized in BalanceManager");
+            }
+
+            if (wbtcUsdcExists) {
+                bm.setAuthorizedOperator(wbtcUsdcOrderBook, true);
+                console.log("[OK] WBTC/USDC OrderBook authorized in BalanceManager");
+            }
 
             // Step 4: Configure Oracle in all OrderBooks
             console.log("Step 4: Configuring Oracle in OrderBooks...");
@@ -176,6 +197,10 @@ contract DeployPhase3 is Script {
 
                 console.log("[OK] WETH/USDC pool created with OrderBook:", wethUsdcOrderBook);
 
+                // Authorize OrderBook in BalanceManager (critical for lock/unlock/transfer)
+                BalanceManager(balanceManager).setAuthorizedOperator(wethUsdcOrderBook, true);
+                console.log("[OK] WETH/USDC OrderBook authorized in BalanceManager");
+
                 // Configure Oracle for newly created pool
                 IOrderBook(wethUsdcOrderBook).setOracle(oracle);
                 console.log("[OK] Oracle configured in WETH/USDC OrderBook");
@@ -201,6 +226,10 @@ contract DeployPhase3 is Script {
                 wbtcUsdcOrderBook = address(wbtcUsdcPool.orderBook);
 
                 console.log("[OK] WBTC/USDC pool created with OrderBook:", wbtcUsdcOrderBook);
+
+                // Authorize OrderBook in BalanceManager (critical for lock/unlock/transfer)
+                BalanceManager(balanceManager).setAuthorizedOperator(wbtcUsdcOrderBook, true);
+                console.log("[OK] WBTC/USDC OrderBook authorized in BalanceManager");
 
                 // Configure Oracle for newly created pool
                 IOrderBook(wbtcUsdcOrderBook).setOracle(oracle);

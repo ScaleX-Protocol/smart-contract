@@ -40,13 +40,18 @@ contract Oracle is Initializable, OwnableUpgradeable, ReentrancyGuardUpgradeable
     // Constants
     uint256 public constant MAX_HISTORY_SIZE = 1000;
     uint256 public constant STALE_PRICE_DELAY = 1 hours;
-    uint256 public constant MIN_TRADE_VOLUME = 1000 * 1e6; // Minimum volume for reliable price
+
+    // Configurable minimum trade volume (can be updated by owner)
+    uint256 public minTradeVolume = 0; // Allow all trades to update price initially
     
     // Interfaces
     ITokenRegistry public tokenRegistry;
     
     // Multi-token OrderBook support
     mapping(address => IOrderBook) public tokenOrderBooks;
+
+    // NEW: Support multiple OrderBooks per token (token => orderbook => authorized)
+    mapping(address => mapping(address => bool)) public authorizedOrderBooks;
     
     // Events
     event PriceUpdate(address indexed token, uint256 price, uint256 timestamp);
@@ -54,6 +59,8 @@ contract Oracle is Initializable, OwnableUpgradeable, ReentrancyGuardUpgradeable
     event TokenRemoved(address indexed token);
     event TWAPCalculated(address indexed token, uint256 twapPrice, uint256 window);
     event OracleUpdated(address indexed tokenRegistry);
+    event MinTradeVolumeUpdated(uint256 newMinTradeVolume);
+    event OrderBookAuthorized(address indexed token, address indexed orderBook, bool authorized);
     
     // Errors
     error TokenNotSupported(address token);
@@ -62,6 +69,8 @@ contract Oracle is Initializable, OwnableUpgradeable, ReentrancyGuardUpgradeable
     error InvalidConfiguration();
     error NoTradingLiquidity(address token);
     error ZeroAddress();
+    error ZeroPrice();
+    error PriceAlreadyInitialized();
     error UnauthorizedOracleUpdate(address caller);
     error InsufficientTradeVolume(uint256 volume, uint256 minVolume);
 
@@ -115,6 +124,27 @@ contract Oracle is Initializable, OwnableUpgradeable, ReentrancyGuardUpgradeable
         }
         if (orderBook == address(0)) revert ZeroAddress();
         tokenOrderBooks[token] = IOrderBook(orderBook);
+        // Also authorize this orderbook for price updates
+        authorizedOrderBooks[token][orderBook] = true;
+        emit OrderBookAuthorized(token, orderBook, true);
+    }
+
+    /// @notice Authorize or revoke an OrderBook for price updates on a token
+    /// @dev Use this to allow multiple OrderBooks to update the same token's price
+    function setAuthorizedOrderBook(address token, address orderBook, bool authorized) external onlyOwner {
+        if (!tokenPriceData[token].supported) {
+            revert TokenNotSupported(token);
+        }
+        if (orderBook == address(0)) revert ZeroAddress();
+        authorizedOrderBooks[token][orderBook] = authorized;
+        emit OrderBookAuthorized(token, orderBook, authorized);
+    }
+
+    /// @notice Set minimum trade volume for Oracle price updates
+    /// @param _minTradeVolume New minimum trade volume (0 = all trades update price)
+    function setMinTradeVolume(uint256 _minTradeVolume) external onlyOwner {
+        minTradeVolume = _minTradeVolume;
+        emit MinTradeVolumeUpdated(_minTradeVolume);
     }
 
     /// @notice Initialize price for a token (for bootstrapping when no trades exist yet)
@@ -181,16 +211,18 @@ contract Oracle is Initializable, OwnableUpgradeable, ReentrancyGuardUpgradeable
         if (!tokenPriceData[token].supported) {
             revert TokenNotSupported(token);
         }
-        if (address(tokenOrderBooks[token]) == address(0) || address(tokenOrderBooks[token]) != msg.sender) {
+        if (!authorizedOrderBooks[token][msg.sender]) {
             revert UnauthorizedOracleUpdate(msg.sender);
         }
-        if (volume < MIN_TRADE_VOLUME) {
-            revert InsufficientTradeVolume(volume, MIN_TRADE_VOLUME);
+
+        // Skip price update for low volume trades (don't revert - allow trade to continue)
+        if (volume < minTradeVolume) {
+            return;
         }
-        
+
         // Store price point immediately when trade occurs
         _storePricePoint(token, uint256(price), block.timestamp);
-        
+
         emit PriceUpdate(token, uint256(price), block.timestamp);
     }
     
@@ -401,7 +433,11 @@ contract Oracle is Initializable, OwnableUpgradeable, ReentrancyGuardUpgradeable
             issue = "Medium price confidence";
         }
     }
-    
+
+    /// @notice Get all supported tokens from the token registry
+    function getAllSupportedTokens() external view returns (address[] memory supportedTokens) {
+        return tokenRegistry.getSupportedTokens();
+    }
 
     // =============================================================
     //                   TESTING FUNCTIONS
