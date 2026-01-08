@@ -132,6 +132,48 @@ get_contract_addresses() {
 }
 
 #############################################################################
+# Get START_BLOCK from deployment JSON
+#############################################################################
+get_start_block() {
+    local chain_id="$1"
+    local deployment_json="$PROJECT_ROOT/deployments/${chain_id}.json"
+    
+    START_BLOCK=""
+    USDC_ADDRESS=""
+    
+    # Try to get block number from deployment JSON
+    if [[ -f "$deployment_json" ]]; then
+        print_info "Checking deployment JSON: $deployment_json"
+        
+        # Extract block number and USDC address
+        if command -v jq >/dev/null 2>&1; then
+            START_BLOCK=$(jq -r '.blockNumber // empty' "$deployment_json" 2>/dev/null || echo "")
+            USDC_ADDRESS=$(jq -r '.USDC // empty' "$deployment_json" 2>/dev/null || echo "")
+            
+            if [[ -n "$START_BLOCK" ]]; then
+                print_success "Found START_BLOCK from deployment: $START_BLOCK"
+            fi
+        else
+            print_warning "jq not installed - cannot parse deployment JSON"
+        fi
+    else
+        print_warning "Deployment JSON not found: $deployment_json"
+    fi
+    
+    # If no block found, prompt user
+    if [[ -z "$START_BLOCK" ]]; then
+        print_info "START_BLOCK not found in deployment file"
+        read -p "Enter START_BLOCK manually (or press Enter to skip): " START_BLOCK
+    fi
+    
+    if [[ -n "$START_BLOCK" ]]; then
+        echo "START_BLOCK:      $START_BLOCK"
+    else
+        print_warning "START_BLOCK not set - indexer env will not be updated with block number"
+    fi
+}
+
+#############################################################################
 # Update clob-indexer .env file
 #############################################################################
 update_indexer_env() {
@@ -180,6 +222,14 @@ update_indexer_env() {
     [[ -n "$LENDING_MANAGER" ]] && update_or_append "LENDINGMANAGER_CONTRACT_ADDRESS" "$LENDING_MANAGER" "$env_file"
     [[ -n "$ORACLE" ]] && update_or_append "ORACLE_CONTRACT_ADDRESS" "$ORACLE" "$env_file"
     [[ -n "$TOKEN_REGISTRY" ]] && update_or_append "TOKENREGISTRY_CONTRACT_ADDRESS" "$TOKEN_REGISTRY" "$env_file"
+    
+    # Update START_BLOCK if available
+    if [[ -n "$START_BLOCK" ]]; then
+        update_or_append "START_BLOCK" "$START_BLOCK" "$env_file"
+        update_or_append "SCALEX_CORE_DEVNET_START_BLOCK" "$START_BLOCK" "$env_file"
+        update_or_append "FAUCET_START_BLOCK" "$START_BLOCK" "$env_file"
+        print_success "Updated START_BLOCK variables to $START_BLOCK"
+    fi
     
     print_success "Indexer environment updated successfully"
 }
@@ -318,6 +368,9 @@ main() {
     if ! get_contract_addresses "$deployment_file"; then
         exit 1
     fi
+    
+    # Get START_BLOCK from deployment JSON or user input
+    get_start_block "$chain_id"
     
     # Confirm before proceeding
     echo ""

@@ -61,6 +61,13 @@ Automatically extract addresses from deployment output:
 - **Oracle** - Price oracle contract
 - **TokenRegistry** - Token registry contract
 
+### Automatic START_BLOCK Detection
+
+- **START_BLOCK** - Auto-detected from `deployments/<chain-id>.json`
+- Used by indexer to determine blockchain scanning start point
+- Falls back to manual input if not found in deployment file
+- Updates: `START_BLOCK`, `SCALEX_CORE_DEVNET_START_BLOCK`, `FAUCET_START_BLOCK`
+
 ## Files Updated
 
 ### 1. Indexer Environment (`../clob-indexer/ponder/.env.<chain-name>`)
@@ -73,6 +80,9 @@ Updates:
 - `LENDINGMANAGER_CONTRACT_ADDRESS` (optional)
 - `ORACLE_CONTRACT_ADDRESS` (optional)
 - `TOKENREGISTRY_CONTRACT_ADDRESS` (optional)
+- `START_BLOCK` (auto-detected from deployment JSON)
+- `SCALEX_CORE_DEVNET_START_BLOCK` (auto-detected)
+- `FAUCET_START_BLOCK` (auto-detected)
 
 ### 2. MM-Bot Environment (`../mm-bot/.env.<chain-name>`)
 
