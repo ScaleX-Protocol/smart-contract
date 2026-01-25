@@ -26,9 +26,9 @@ contract VerifySupplyAlignment is Script {
     address constant WBTC = 0x9976e7c455CCe03ADe3E6508FDa4b44227210B52;
 
     // Synthetic token addresses
-    address constant gsUSDC = 0xAFC4Fb45a1671e7587aAaE1BbD6b4794461b036b;
-    address constant gsWETH = 0x2adf289f748A56e92f6dfcf18cf7Ecc4e5dFaEd9;
-    address constant gsWBTC = 0xcf2b03b7A3a7CD015f6c59289137aB60d857E2CE;
+    address constant sxUSDC = 0xAFC4Fb45a1671e7587aAaE1BbD6b4794461b036b;
+    address constant sxWETH = 0x2adf289f748A56e92f6dfcf18cf7Ecc4e5dFaEd9;
+    address constant sxWBTC = 0xcf2b03b7A3a7CD015f6c59289137aB60d857E2CE;
 
     // OrderBook addresses
     address constant WETH_USDC_POOL = 0x0a6CC21C61ED7e73A779E463ca28b82BE30caB93;
@@ -42,9 +42,9 @@ contract VerifySupplyAlignment is Script {
     }
 
     struct UserBalances {
-        uint256 gsBalance;        // Balance in BalanceManager
+        uint256 sxBalance;        // Balance in BalanceManager
         uint256 lockedBalance;    // Locked in orders
-        uint256 availableBalance; // Available (gsBalance - locked)
+        uint256 availableBalance; // Available (sxBalance - locked)
         uint256 supply;           // Supply in LendingManager (underlying)
         uint256 debt;             // Debt in LendingManager (underlying)
     }
@@ -56,9 +56,9 @@ contract VerifySupplyAlignment is Script {
 
         // Define tokens to check
         TokenInfo[] memory tokens = new TokenInfo[](3);
-        tokens[0] = TokenInfo("USDC", USDC, gsUSDC, 6);
-        tokens[1] = TokenInfo("WETH", WETH, gsWETH, 18);
-        tokens[2] = TokenInfo("WBTC", WBTC, gsWBTC, 8);
+        tokens[0] = TokenInfo("USDC", USDC, sxUSDC, 6);
+        tokens[1] = TokenInfo("WETH", WETH, sxWETH, 18);
+        tokens[2] = TokenInfo("WBTC", WBTC, sxWBTC, 8);
 
         // Users to check - add more as needed
         address[] memory users = new address[](5);
@@ -89,39 +89,39 @@ contract VerifySupplyAlignment is Script {
 
                 // Format based on decimals
                 if (token.decimals == 6) {
-                    console.log("  gsToken Balance:    ", bal.gsBalance / 1e6, ".", bal.gsBalance % 1e6);
+                    console.log("  sxToken Balance:    ", bal.sxBalance / 1e6, ".", bal.sxBalance % 1e6);
                     console.log("  Locked in Orders:   ", bal.lockedBalance / 1e6, ".", bal.lockedBalance % 1e6);
                     console.log("  Available Balance:  ", bal.availableBalance / 1e6, ".", bal.availableBalance % 1e6);
                     console.log("  LM Supply:          ", bal.supply / 1e6, ".", bal.supply % 1e6);
                     console.log("  LM Debt:            ", bal.debt / 1e6, ".", bal.debt % 1e6);
                 } else if (token.decimals == 18) {
-                    console.log("  gsToken Balance:    ", bal.gsBalance / 1e18);
+                    console.log("  sxToken Balance:    ", bal.sxBalance / 1e18);
                     console.log("  Locked in Orders:   ", bal.lockedBalance / 1e18);
                     console.log("  Available Balance:  ", bal.availableBalance / 1e18);
                     console.log("  LM Supply:          ", bal.supply / 1e18);
                     console.log("  LM Debt:            ", bal.debt / 1e18);
                 } else {
-                    console.log("  gsToken Balance:    ", bal.gsBalance);
+                    console.log("  sxToken Balance:    ", bal.sxBalance);
                     console.log("  Locked in Orders:   ", bal.lockedBalance);
                     console.log("  Available Balance:  ", bal.availableBalance);
                     console.log("  LM Supply:          ", bal.supply);
                     console.log("  LM Debt:            ", bal.debt);
                 }
 
-                // Check alignment: gsBalance should equal supply (when no borrowing)
-                // Or: gsBalance = supply + borrowed - repaid
+                // Check alignment: sxBalance should equal supply (when no borrowing)
+                // Or: sxBalance = supply + borrowed - repaid
                 // Net position = supply - debt
                 int256 netSupply = int256(bal.supply) - int256(bal.debt);
-                int256 gsBalanceInt = int256(bal.gsBalance);
+                int256 sxBalanceInt = int256(bal.sxBalance);
 
-                // The gsBalance should roughly equal netSupply
+                // The sxBalance should roughly equal netSupply
                 // Allow small rounding differences
-                int256 diff = gsBalanceInt - netSupply;
+                int256 diff = sxBalanceInt - netSupply;
                 if (diff < 0) diff = -diff;
 
                 uint256 threshold = token.decimals == 6 ? 1e6 : (token.decimals == 18 ? 1e15 : 1e5);
 
-                if (uint256(diff) > threshold && (bal.gsBalance > 0 || bal.supply > 0 || bal.debt > 0)) {
+                if (uint256(diff) > threshold && (bal.sxBalance > 0 || bal.supply > 0 || bal.debt > 0)) {
                     console.log("  [WARNING] Potential misalignment!");
                     console.log("  Net Supply (supply-debt):", netSupply > 0 ? uint256(netSupply) : 0);
                     console.log("  Difference:", uint256(diff));
@@ -151,7 +151,7 @@ contract VerifySupplyAlignment is Script {
 
         // Get balance from BalanceManager
         try bm.getBalance(user, syntheticCurrency) returns (uint256 balance) {
-            bal.gsBalance = balance;
+            bal.sxBalance = balance;
         } catch {}
 
         // Get locked balance

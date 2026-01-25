@@ -12,7 +12,7 @@ interface ILendingManager {
     function withdraw(address token, uint256 amount) external;
     function withdrawGeneratedInterest(address token, uint256 amount) external;
     function updateInterestAccrual(address token) external;
-    // Note: updateCollateral and transferSupply removed - supply is tracked via gsToken balance
+    // Note: updateCollateral and transferSupply removed - supply is tracked via sxToken balance
     function borrow(address token, uint256 amount) external;
     function repay(address token, uint256 amount) external;
     function borrowForUser(address user, address token, uint256 amount) external;

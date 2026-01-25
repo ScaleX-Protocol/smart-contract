@@ -122,7 +122,7 @@ contract UpdateCoreChainMappings is DeployHelpers {
         
         // Initialize token info (synthetic addresses will be loaded separately)
         tokens.push(TokenInfo({
-            symbol: "gsUSDC",
+            symbol: "sxUSDC",
             name: "ScaleX Synthetic USDC",
             decimals: 6,
             sideChainAddress: sideUSDC,
@@ -130,7 +130,7 @@ contract UpdateCoreChainMappings is DeployHelpers {
         }));
         
         tokens.push(TokenInfo({
-            symbol: "gsWETH", 
+            symbol: "sxWETH", 
             name: "ScaleX Synthetic WETH",
             decimals: 18,
             sideChainAddress: sideWETH,
@@ -138,7 +138,7 @@ contract UpdateCoreChainMappings is DeployHelpers {
         }));
         
         tokens.push(TokenInfo({
-            symbol: "gsWBTC",
+            symbol: "sxWBTC",
             name: "ScaleX Synthetic WBTC", 
             decimals: 8,
             sideChainAddress: sideWBTC,
@@ -287,11 +287,11 @@ contract UpdateCoreChainMappings is DeployHelpers {
             address regularToken = address(0);
             
             // Match synthetic token to corresponding regular token
-            if (keccak256(bytes(token.symbol)) == keccak256(bytes("gsUSDC"))) {
+            if (keccak256(bytes(token.symbol)) == keccak256(bytes("sxUSDC"))) {
                 regularToken = regularUSDC;
-            } else if (keccak256(bytes(token.symbol)) == keccak256(bytes("gsWETH"))) {
+            } else if (keccak256(bytes(token.symbol)) == keccak256(bytes("sxWETH"))) {
                 regularToken = regularWETH;
-            } else if (keccak256(bytes(token.symbol)) == keccak256(bytes("gsWBTC"))) {
+            } else if (keccak256(bytes(token.symbol)) == keccak256(bytes("sxWBTC"))) {
                 regularToken = regularWBTC;
             }
             

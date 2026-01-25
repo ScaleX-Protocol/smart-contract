@@ -118,7 +118,7 @@ contract LocalDeposit is DeployHelpers {
         console.log("Local Token (%s):", tokenSymbol, address(localToken));
         
         // Try to load corresponding synthetic token
-        string memory syntheticSymbol = string.concat("gs", tokenSymbol);
+        string memory syntheticSymbol = string.concat("sx", tokenSymbol);
         if (deployed[syntheticSymbol].isSet) {
             syntheticTokenAddress = deployed[syntheticSymbol].addr;
             console.log("Target Synthetic Token (%s):", syntheticSymbol, syntheticTokenAddress);

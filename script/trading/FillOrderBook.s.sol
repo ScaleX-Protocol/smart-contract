@@ -9,16 +9,15 @@ import "../../src/core/libraries/Pool.sol";
 
 import "../../src/core/resolvers/PoolManagerResolver.sol";
 import "../../src/mocks/MockToken.sol";
-import "../../src/mocks/MockUSDC.sol";
-import "../../src/mocks/MockWETH.sol";
+
+
 
 contract FillMockOrderBook is Script, DeployHelpers {
     // Contract address keys
     string constant BALANCE_MANAGER_ADDRESS = "BalanceManager";
     string constant POOL_MANAGER_ADDRESS = "PoolManager";
     string constant ScaleX_ROUTER_ADDRESS = "ScaleXRouter";
-    string constant WETH_ADDRESS = "gsWETH";
-    string constant USDC_ADDRESS = "gsUSDC";
+    string constant WETH_ADDRESS = "sxWETH";
 
     // Core contracts
     BalanceManager balanceManager;
@@ -28,7 +27,12 @@ contract FillMockOrderBook is Script, DeployHelpers {
 
     // Tokens
     IERC20 tokenWETH;
-    IERC20 tokenUSDC;
+    IERC20 tokenQuote;
+
+    // Quote currency info
+    string quoteCurrency;
+    string sxQuoteKey;
+    uint8 quoteDecimals;
 
     // Track order IDs for verification
     uint48[] buyOrderIds;
@@ -50,10 +54,15 @@ contract FillMockOrderBook is Script, DeployHelpers {
         address bmAddr = deployed["PROXY_BALANCEMANAGER"].isSet ? deployed["PROXY_BALANCEMANAGER"].addr : deployed[BALANCE_MANAGER_ADDRESS].addr;
         address pmAddr = deployed["PROXY_POOLMANAGER"].isSet ? deployed["PROXY_POOLMANAGER"].addr : deployed[POOL_MANAGER_ADDRESS].addr;
         address routerAddr = deployed["PROXY_ROUTER"].isSet ? deployed["PROXY_ROUTER"].addr : deployed[ScaleX_ROUTER_ADDRESS].addr;
-        
+
         balanceManager = BalanceManager(bmAddr);
         poolManager = PoolManager(pmAddr);
         scalexRouter = ScaleXRouter(routerAddr);
+
+        // Get quote currency from environment
+        quoteCurrency = vm.envOr("QUOTE_CURRENCY", string("USDC"));
+        quoteDecimals = uint8(vm.envOr("QUOTE_DECIMALS", uint256(6)));
+        sxQuoteKey = string.concat("sx", quoteCurrency);
 
         // Load regular tokens for funding (will be converted to synthetic)
         if (deployed["WETH"].isSet) {
@@ -63,13 +72,11 @@ contract FillMockOrderBook is Script, DeployHelpers {
         } else {
             revert("WETH token not found in deployments");
         }
-        
-        if (deployed["USDC"].isSet) {
-            tokenUSDC = IERC20(deployed["USDC"].addr);
-        } else if (deployed[USDC_ADDRESS].isSet) {
-            tokenUSDC = IERC20(deployed[USDC_ADDRESS].addr);
+
+        if (deployed[quoteCurrency].isSet) {
+            tokenQuote = IERC20(deployed[quoteCurrency].addr);
         } else {
-            revert("USDC token not found in deployments");
+            revert(string.concat(quoteCurrency, " token not found in deployments"));
         }
     }
 
@@ -124,26 +131,26 @@ contract FillMockOrderBook is Script, DeployHelpers {
     }
 
     function fillETHUSDCOrderBook() private {
-        console.log("\n=== Filling ETH/USDC Order Book ===");
+        console.log(string.concat("\n=== Filling ETH/", quoteCurrency, " Order Book ==="));
 
-        // Get deployed synthetic tokens for trading 
-        address wethAddr = deployed["gsWETH"].addr;
-        address usdcAddr = deployed["gsUSDC"].addr;
-        
+        // Get deployed synthetic tokens for trading
+        address wethAddr = deployed["sxWETH"].addr;
+        address quoteAddr = deployed[sxQuoteKey].addr;
+
         Currency weth = Currency.wrap(wethAddr);
-        Currency usdc = Currency.wrap(usdcAddr);
+        Currency quote = Currency.wrap(quoteAddr);
 
-        console.log("Looking for existing WETH/USDC pool...");
+        console.log(string.concat("Looking for existing WETH/", quoteCurrency, " pool..."));
         
         // Try to get existing pool - don't try to create one
-        PoolKey memory poolKey = poolManager.createPoolKey(weth, usdc);
+        PoolKey memory poolKey = poolManager.createPoolKey(weth, quote);
         IPoolManager.Pool memory pool;
-        
+
         try poolManager.getPool(poolKey) returns (IPoolManager.Pool memory retrievedPool) {
             pool = retrievedPool;
-            console.log("[OK] Found existing WETH/USDC pool successfully");
+            console.log(string.concat("[OK] Found existing WETH/", quoteCurrency, " pool successfully"));
         } catch {
-            console.log("[WARNING] No WETH/USDC pool found");
+            console.log(string.concat("[WARNING] No WETH/", quoteCurrency, " pool found"));
             console.log("[INFO] Pool creation requires special permissions");
             console.log("[INFO] Try running 'make create-trading-pools' first");
             console.log("[INFO] Continuing with basic token setup for demonstration...");
@@ -162,25 +169,31 @@ contract FillMockOrderBook is Script, DeployHelpers {
         console.log("Pool quoteCurrency:", Currency.unwrap(pool.quoteCurrency));
         console.log("Pool orderBook:", address(pool.orderBook));
 
+        // Calculate amounts based on quote currency decimals
+        uint256 quoteFundAmount = 10_000 * (10 ** quoteDecimals); // 10,000 quote currency
+        uint128 buyStartPrice = uint128(1900 * (10 ** quoteDecimals));
+        uint128 buyEndPrice = uint128(1980 * (10 ** quoteDecimals));
+        uint128 sellStartPrice = uint128(2000 * (10 ** quoteDecimals));
+        uint128 sellEndPrice = uint128(2100 * (10 ** quoteDecimals));
+        uint128 priceStep = uint128(10 * (10 ** quoteDecimals));
+
         // Setup sender with regular tokens (will be converted to synthetic via deposits)
-        _setupFunds(5e18, 10_000e6); // 5 ETH, 10,000 USDC (reduced amounts)
+        _setupFunds(5e18, quoteFundAmount); // 5 ETH, 10,000 quote currency (reduced amounts)
         // Convert regular tokens to synthetic tokens via BalanceManager deposits
-        _makeLocalDeposits(5e18, 10_000e6); // Deposit to get synthetic tokens
-        // Note: _makeLocalDeposits temporarily disabled due to TokenRegistryNotSet issues
-        // _makeLocalDeposits(100e18, 500_000e6); // Deposit 100 ETH, 500,000 USDC to BalanceManager
+        _makeLocalDeposits(5e18, quoteFundAmount); // Deposit to get synthetic tokens
 
         // Place BUY orders (bids) - ascending price from 1900 to 1980
         // Use smaller order size (0.005 ETH) so trading bots can consume with larger orders
-        _placeBuyOrders(pool, 1900e6, 1980e6, 10e6, 10, 5e15);
+        _placeBuyOrders(pool, buyStartPrice, buyEndPrice, priceStep, 10, 5e15);
 
         // Place SELL orders (asks) - ascending price from 2000 to 2100
         // Use smaller order size (0.005 ETH) so trading bots can consume with larger orders
-        // _placeSellOrders(pool, 2000e6, 2100e6, 10e6, 10, 5e15);
+        _placeSellOrders(pool, sellStartPrice, sellEndPrice, priceStep, 10, 5e15);
 
         // Print summary
-        console.log("ETH/USDC order book filled with:");
-        console.log("- BUY orders from 1900 USDC to 1980 USDC");
-        console.log("- SELL orders from 2000 USDC to 2100 USDC");
+        console.log(string.concat("ETH/", quoteCurrency, " order book filled with:"));
+        console.log(string.concat("- BUY orders from 1900 ", quoteCurrency, " to 1980 ", quoteCurrency));
+        console.log(string.concat("- SELL orders from 2000 ", quoteCurrency, " to 2100 ", quoteCurrency));
     }
 
     function fillETHUSDCOrderBookConfigurable(
@@ -199,10 +212,10 @@ contract FillMockOrderBook is Script, DeployHelpers {
 
         // Get currency objects
         Currency weth = Currency.wrap(address(tokenWETH));
-        Currency usdc = Currency.wrap(address(tokenUSDC));
+        Currency quote = Currency.wrap(address(tokenQuote));
 
         // Create PoolKey and get the pool (matching deployment order)
-        PoolKey memory poolKey = poolManager.createPoolKey(weth, usdc);
+        PoolKey memory poolKey = poolManager.createPoolKey(weth, quote);
         IPoolManager.Pool memory pool = poolManager.getPool(poolKey);
 
         // Setup sender with configurable funds
@@ -240,110 +253,113 @@ contract FillMockOrderBook is Script, DeployHelpers {
         scalexRouter = ScaleXRouter(deployed[ScaleX_ROUTER_ADDRESS].addr);
 
         // Use the provided tokens instead of hardcoded ones
-        tokenWETH = MockWETH(payable(token0Address));
-        tokenUSDC = MockUSDC(token1Address);
+        tokenWETH = IERC20(token0Address);
+        tokenQuote = IERC20(token1Address);
 
         // Deploy the resolver
         poolManagerResolver = new PoolManagerResolver();
 
         // Get currency objects
         Currency weth = Currency.wrap(address(tokenWETH));
-        Currency usdc = Currency.wrap(address(tokenUSDC));
+        Currency quote = Currency.wrap(address(tokenQuote));
 
         // Create PoolKey and get the pool (matching deployment order)
-        PoolKey memory poolKey = poolManager.createPoolKey(weth, usdc);
+        PoolKey memory poolKey = poolManager.createPoolKey(weth, quote);
         IPoolManager.Pool memory pool = poolManager.getPool(poolKey);
 
-        // Setup sender with funds and make local deposits for BalanceManager
-        // _setupFunds(200e18, 400_000e6); // 200 ETH, 400,000 USDC
-        // _makeLocalDeposits(100e18, 500_000e6); // Deposit 100 ETH, 500,000 USDC to BalanceManager
+        // Calculate amounts based on quote currency decimals
+        uint128 buyStartPrice = uint128(1900 * (10 ** quoteDecimals));
+        uint128 buyEndPrice = uint128(1980 * (10 ** quoteDecimals));
+        uint128 sellStartPrice = uint128(2000 * (10 ** quoteDecimals));
+        uint128 sellEndPrice = uint128(2100 * (10 ** quoteDecimals));
+        uint128 priceStep = uint128(10 * (10 ** quoteDecimals));
 
         // Place BUY orders (bids) - ascending price from 1900 to 1980
         // Use smaller order size (0.005 ETH) so trading bots can consume with larger orders
-        _placeBuyOrders(pool, 1900e6, 1980e6, 10e6, 10, 5e15);
+        _placeBuyOrders(pool, buyStartPrice, buyEndPrice, priceStep, 10, 5e15);
 
         // Place SELL orders (asks) - ascending price from 2000 to 2100
         // Use smaller order size (0.005 ETH) so trading bots can consume with larger orders
-        _placeSellOrders(pool, 2000e6, 2100e6, 10e6, 10, 5e15);
+        _placeSellOrders(pool, sellStartPrice, sellEndPrice, priceStep, 10, 5e15);
 
         console.log("Order book filled with custom tokens:");
         console.log("Token0 (%s):", token0Key, token0Address);
         console.log("Token1 (%s):", token1Key, token1Address);
     }
 
-    function _setupFunds(uint256 ethAmount, uint256 usdcAmount) private {
+    function _setupFunds(uint256 ethAmount, uint256 quoteAmount) private {
         console.log("\n=== Setting up funds ===");
         console.log("Minting ETH amount:", ethAmount, "(raw)");
         console.log("Minting ETH amount:", ethAmount / 1e18, "ETH");
-        console.log("Minting USDC amount:", usdcAmount, "(raw)");
-        console.log("Minting USDC amount:", usdcAmount / 1e6, "USDC");
+        console.log(string.concat("Minting ", quoteCurrency, " amount:"), quoteAmount, "(raw)");
+        console.log(string.concat("Minting ", quoteCurrency, " amount:"), quoteAmount / 1e6, quoteCurrency);
 
         // Check if tokens support minting (have mint function)
-        try MockWETH(payable(address(tokenWETH))).mint(msg.sender, ethAmount) {
+        try MockToken(address(tokenWETH)).mint(msg.sender, ethAmount) {
             console.log("Minted WETH successfully");
         } catch {
             console.log("WETH minting failed - using existing supply");
         }
-        
-        try MockUSDC(address(tokenUSDC)).mint(msg.sender, usdcAmount) {
-            console.log("Minted USDC successfully");  
+
+        try MockToken(address(tokenQuote)).mint(msg.sender, quoteAmount) {
+            console.log(string.concat("Minted ", quoteCurrency, " successfully"));
         } catch {
-            console.log("USDC minting failed - using existing supply");
+            console.log(string.concat(quoteCurrency, " minting failed - using existing supply"));
         }
 
         // Approve tokens for both ScaleX router and BalanceManager (higher amounts for multiple orders)
         bool wethApprovalRouter = IERC20(address(tokenWETH)).approve(address(scalexRouter), ethAmount * 2);
-        bool usdcApprovalRouter = IERC20(address(tokenUSDC)).approve(address(scalexRouter), usdcAmount * 2);
+        bool quoteApprovalRouter = IERC20(address(tokenQuote)).approve(address(scalexRouter), quoteAmount * 2);
         bool wethApprovalBM = IERC20(address(tokenWETH)).approve(address(balanceManager), ethAmount * 2);
-        bool usdcApprovalBM = IERC20(address(tokenUSDC)).approve(address(balanceManager), usdcAmount * 2);
+        bool quoteApprovalBM = IERC20(address(tokenQuote)).approve(address(balanceManager), quoteAmount * 2);
 
         console.log("WETH approval (router):", wethApprovalRouter);
-        console.log("USDC approval (router):", usdcApprovalRouter);
+        console.log(string.concat(quoteCurrency, " approval (router):"), quoteApprovalRouter);
         console.log("WETH approval (BalanceManager):", wethApprovalBM);
-        console.log("USDC approval (BalanceManager):", usdcApprovalBM);
+        console.log(string.concat(quoteCurrency, " approval (BalanceManager):"), quoteApprovalBM);
 
         // Verify final balances and allowances
         console.log("Final WETH balance:", tokenWETH.balanceOf(msg.sender) / 1e18, "ETH");
-        console.log("Final USDC balance:", tokenUSDC.balanceOf(msg.sender) / 1e6, "USDC");
+        console.log(string.concat("Final ", quoteCurrency, " balance:"), tokenQuote.balanceOf(msg.sender) / 1e6, quoteCurrency);
         console.log(
             "Final WETH allowance:",
             IERC20(address(tokenWETH)).allowance(msg.sender, address(scalexRouter)) / 1e18,
             "ETH"
         );
         console.log(
-            "Final USDC allowance:",
-            IERC20(address(tokenUSDC)).allowance(msg.sender, address(scalexRouter)) / 1e6,
-            "USDC"
+            string.concat("Final ", quoteCurrency, " allowance:"),
+            IERC20(address(tokenQuote)).allowance(msg.sender, address(scalexRouter)) / 1e6,
+            quoteCurrency
         );
         console.log("Funds setup complete\n");
     }
 
-    function _makeLocalDeposits(uint256 ethAmount, uint256 usdcAmount) private {
+    function _makeLocalDeposits(uint256 ethAmount, uint256 quoteAmount) private {
         console.log("\n=== Making Local Deposits to BalanceManager ===");
         console.log("Depositing ETH amount:", ethAmount / 1e18, "ETH");
-        console.log("Depositing USDC amount:", usdcAmount / 1e6, "USDC");
-        
+        console.log(string.concat("Depositing ", quoteCurrency, " amount:"), quoteAmount / 1e6, quoteCurrency);
+
         // Deposit real WETH to BalanceManager (will receive synthetic balance)
         balanceManager.depositLocal(address(tokenWETH), ethAmount, msg.sender);
         console.log("[SUCCESS] WETH deposited to BalanceManager");
-        
-        // Deposit real USDC to BalanceManager (will receive synthetic balance)
-        balanceManager.depositLocal(address(tokenUSDC), usdcAmount, msg.sender);
-        console.log("[SUCCESS] USDC deposited to BalanceManager");
-        
+
+        // Deposit real quote currency to BalanceManager (will receive synthetic balance)
+        balanceManager.depositLocal(address(tokenQuote), quoteAmount, msg.sender);
+        console.log(string.concat("[SUCCESS] ", quoteCurrency, " deposited to BalanceManager"));
+
         // Verify BalanceManager balances for the deposited tokens
         uint256 wethBalance = balanceManager.getBalance(msg.sender, Currency.wrap(address(tokenWETH)));
-        uint256 usdcBalance = balanceManager.getBalance(msg.sender, Currency.wrap(address(tokenUSDC)));
-        
+        uint256 quoteBalance = balanceManager.getBalance(msg.sender, Currency.wrap(address(tokenQuote)));
+
         console.log("BalanceManager WETH balance:", wethBalance / 1e18, "ETH");
-        console.log("BalanceManager USDC balance:", usdcBalance / 1e6, "USDC");
-        
+        console.log(string.concat("BalanceManager ", quoteCurrency, " balance:"), quoteBalance / 1e6, quoteCurrency);
+
         // Check token balances in BalanceManager
         uint256 bmWethBalance = balanceManager.getBalance(msg.sender, Currency.wrap(address(tokenWETH)));
-        uint256 bmUsdcBalance = balanceManager.getBalance(msg.sender, Currency.wrap(address(tokenUSDC)));
-        
+        uint256 bmQuoteBalance = balanceManager.getBalance(msg.sender, Currency.wrap(address(tokenQuote)));
+
         console.log("BalanceManager WETH balance:", bmWethBalance / 1e18, "ETH");
-        console.log("BalanceManager USDC balance:", bmUsdcBalance / 1e6, "USDC");
+        console.log(string.concat("BalanceManager ", quoteCurrency, " balance:"), bmQuoteBalance / 1e6, quoteCurrency);
         console.log("Local deposits complete\n");
     }
 
@@ -361,25 +377,25 @@ contract FillMockOrderBook is Script, DeployHelpers {
         while (currentPrice <= endPrice && ordersPlaced < numOrders) {
             console.log("\n--- Placing BUY Order #", ordersPlaced + 1, "---");
             console.log("Price:", currentPrice, "(raw)");
-            console.log("Price (USDC):", currentPrice / 1e6);
+            console.log(string.concat("Price (", quoteCurrency, "):"), currentPrice / 1e6);
             console.log("Quantity:", quantity, "(raw)");
             console.log("Quantity (ETH):", quantity / 1e18);
 
-            // Calculate required deposit for buy order: price * quantity (in USDC)
-            // This should give us the USDC amount needed (in USDC's 6 decimals)
+            // Calculate required deposit for buy order: price * quantity (in quote currency)
+            // This should give us the quote currency amount needed (in quote currency's 6 decimals)
             uint128 requiredDeposit = (currentPrice * quantity) / 1e18;
 
             console.log("Calculated deposit:", requiredDeposit, "(raw)");
-            console.log("Calculated deposit (USDC):", requiredDeposit / 1e6);
+            console.log(string.concat("Calculated deposit (", quoteCurrency, "):"), requiredDeposit / 1e6);
 
             // Check user balances before placing order
-            uint256 usdcBalance = tokenUSDC.balanceOf(msg.sender);
-            uint256 usdcAllowance = IERC20(address(tokenUSDC)).allowance(msg.sender, address(scalexRouter));
+            uint256 quoteBalance = tokenQuote.balanceOf(msg.sender);
+            uint256 quoteAllowance = IERC20(address(tokenQuote)).allowance(msg.sender, address(scalexRouter));
 
-            console.log("User USDC balance:", usdcBalance, "(raw)");
-            console.log("User USDC balance:", usdcBalance / 1e6, "USDC");
-            console.log("USDC allowance:", usdcAllowance, "(raw)");
-            console.log("USDC allowance:", usdcAllowance / 1e6, "USDC");
+            console.log(string.concat("User ", quoteCurrency, " balance:"), quoteBalance, "(raw)");
+            console.log(string.concat("User ", quoteCurrency, " balance:"), quoteBalance / 1e6, quoteCurrency);
+            console.log(string.concat(quoteCurrency, " allowance:"), quoteAllowance, "(raw)");
+            console.log(string.concat(quoteCurrency, " allowance:"), quoteAllowance / 1e6, quoteCurrency);
 
             console.log("Placing limit order...");
             uint48 orderId = scalexRouter.placeLimitOrder(
@@ -408,7 +424,7 @@ contract FillMockOrderBook is Script, DeployHelpers {
         while (currentPrice <= endPrice && ordersPlaced < numOrders) {
             console.log("\n--- Placing SELL Order #", ordersPlaced + 1, "---");
             console.log("Price:", currentPrice, "(raw)");
-            console.log("Price (USDC):", currentPrice / 1e6);
+            console.log(string.concat("Price (", quoteCurrency, "):"), currentPrice / 1e6);
             console.log("Quantity:", quantity, "(raw)");
             console.log("Quantity (ETH):", quantity / 1e18);
 
@@ -444,37 +460,37 @@ contract FillMockOrderBook is Script, DeployHelpers {
         console.log("\n=== Verifying Order Book ===");
 
         // Get synthetic currency objects for verification (pools use synthetic tokens)
-        address gsWETHAddr = deployed["gsWETH"].addr;
-        address gsUSDCAddr = deployed["gsUSDC"].addr;
-        Currency weth = Currency.wrap(gsWETHAddr);
-        Currency usdc = Currency.wrap(gsUSDCAddr);
+        address sxWETHAddr = deployed["sxWETH"].addr;
+        address sxQuoteAddr = deployed[sxQuoteKey].addr;
+        Currency weth = Currency.wrap(sxWETHAddr);
+        Currency quote = Currency.wrap(sxQuoteAddr);
 
         // Get pool
-        IPoolManager.Pool memory pool = poolManagerResolver.getPool(weth, usdc, address(poolManager));
+        IPoolManager.Pool memory pool = poolManagerResolver.getPool(weth, quote, address(poolManager));
 
         // Check best prices
-        IOrderBook.PriceVolume memory bestBuy = scalexRouter.getBestPrice(weth, usdc, IOrderBook.Side.BUY);
-        IOrderBook.PriceVolume memory bestSell = scalexRouter.getBestPrice(weth, usdc, IOrderBook.Side.SELL);
+        IOrderBook.PriceVolume memory bestBuy = scalexRouter.getBestPrice(weth, quote, IOrderBook.Side.BUY);
+        IOrderBook.PriceVolume memory bestSell = scalexRouter.getBestPrice(weth, quote, IOrderBook.Side.SELL);
 
         console.log("Best BUY price:", bestBuy.price);
-        console.log("USDC with volume:", bestBuy.volume, "ETH\n");
+        console.log(string.concat(quoteCurrency, " with volume:"), bestBuy.volume, "ETH\n");
 
         console.log("Best SELL price:", bestSell.price);
-        console.log("USDC with volume:", bestSell.volume, "ETH\n");
+        console.log(string.concat(quoteCurrency, " with volume:"), bestSell.volume, "ETH\n");
 
         // Check a few specific price levels
-        _checkPriceLevel(weth, usdc, IOrderBook.Side.BUY, 1950e6);
-        _checkPriceLevel(weth, usdc, IOrderBook.Side.SELL, 2050e6);
+        _checkPriceLevel(weth, quote, IOrderBook.Side.BUY, 1950e6);
+        _checkPriceLevel(weth, quote, IOrderBook.Side.SELL, 2050e6);
 
         // Check sample orders from both sides
         if (buyOrderIds.length > 0) {
-            _checkOrderDetails(weth, usdc, buyOrderIds[0], "First BUY");
-            _checkOrderDetails(weth, usdc, buyOrderIds[buyOrderIds.length - 1], "Last BUY");
+            _checkOrderDetails(weth, quote, buyOrderIds[0], "First BUY");
+            _checkOrderDetails(weth, quote, buyOrderIds[buyOrderIds.length - 1], "Last BUY");
         }
 
         if (sellOrderIds.length > 0) {
-            _checkOrderDetails(weth, usdc, sellOrderIds[0], "First SELL");
-            _checkOrderDetails(weth, usdc, sellOrderIds[sellOrderIds.length - 1], "Last SELL");
+            _checkOrderDetails(weth, quote, sellOrderIds[0], "First SELL");
+            _checkOrderDetails(weth, quote, sellOrderIds[sellOrderIds.length - 1], "Last SELL");
         }
     }
 
@@ -482,7 +498,7 @@ contract FillMockOrderBook is Script, DeployHelpers {
         (uint48 orderCount, uint256 totalVolume) = scalexRouter.getOrderQueue(base, quote, side, price);
         string memory sideStr = side == IOrderBook.Side.BUY ? "BUY" : "SELL";
 
-        console.log("Price level", price, "USDC -", sideStr);
+        console.log(string.concat("Price level ", vm.toString(price), " ", quoteCurrency, " - ", sideStr));
         console.log("orders:", orderCount);
         console.log("with volume:", totalVolume, "ETH");
         console.log("");
@@ -497,7 +513,7 @@ contract FillMockOrderBook is Script, DeployHelpers {
         console.log("Order ID:", order.id);
         console.log("Side:", order.side == IOrderBook.Side.BUY ? "BUY" : "SELL");
         console.log("Type:", order.orderType == IOrderBook.OrderType.LIMIT ? "LIMIT" : "MARKET");
-        console.log("Price:", order.price, "USDC");
+        console.log("Price:", order.price, quoteCurrency);
         console.log("Quantity:", order.quantity, "ETH");
         console.log("Filled:", order.filled, "ETH");
         console.log("Next in queue:", order.next);
@@ -510,19 +526,19 @@ contract FillMockOrderBook is Script, DeployHelpers {
         console.log("\n=== Verifying OrderBook State ===");
 
         // Get synthetic currency objects for verification (pools use synthetic tokens)
-        address gsWETHAddr = deployed["gsWETH"].addr;
-        address gsUSDCAddr = deployed["gsUSDC"].addr;
-        Currency weth = Currency.wrap(gsWETHAddr);
-        Currency usdc = Currency.wrap(gsUSDCAddr);
+        address sxWETHAddr = deployed["sxWETH"].addr;
+        address sxQuoteAddr = deployed[sxQuoteKey].addr;
+        Currency weth = Currency.wrap(sxWETHAddr);
+        Currency quote = Currency.wrap(sxQuoteAddr);
 
         // Verify BUY orders are correctly placed
-        _verifyBuyOrdersPlaced(weth, usdc);
+        _verifyBuyOrdersPlaced(weth, quote);
 
         // Verify SELL orders are correctly placed (if any)
-        _verifySellOrdersPlaced(weth, usdc);
+        _verifySellOrdersPlaced(weth, quote);
 
         // Verify orderbook structure is correct
-        _verifyOrderBookStructure(weth, usdc);
+        _verifyOrderBookStructure(weth, quote);
 
         console.log("All orderbook verifications passed!");
     }

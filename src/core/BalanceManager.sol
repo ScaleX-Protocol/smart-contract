@@ -116,6 +116,12 @@ contract BalanceManager is
         emit OperatorSet(operator, true);
     }
 
+    /// @notice Check if an operator is authorized
+    function isAuthorizedOperator(address operator) external view returns (bool) {
+        Storage storage $ = getStorage();
+        return $.authorizedOperators[operator];
+    }
+
     function setFees(uint256 _feeMaker, uint256 _feeTaker) external onlyOwner {
         Storage storage $ = getStorage();
         $.feeMaker = _feeMaker;
@@ -424,22 +430,16 @@ contract BalanceManager is
             );
         }
 
-        // Step 1: ALWAYS claim accumulated yield for the user's synthetic tokens
         // This applies to both order cancellation and order matching
         _claimUserYield(user);
 
-        // Step 2: Return funds to user's balance (same currency)
         $.balanceOf[user][currencyId] += amount;
 
-        // Step 3: Reduce locked balance
         $.lockedBalanceOf[user][msg.sender][currencyId] -= amount;
 
         emit Unlock(user, currencyId, amount);
         emit YieldAutoClaimed(user, currencyId, block.timestamp);
     }
-
-    // unlockWithYield function removed - unlock() now always claims yield
-
     
     function transferOut(address sender, address receiver, Currency currency, uint256 amount) external {
         Storage storage $ = getStorage();
@@ -485,7 +485,7 @@ contract BalanceManager is
         $.balanceOf[$.feeReceiver][currencyId] += feeAmount;
 
         // Note: LendingManager supply tracking is no longer needed here.
-        // Supply ownership is determined by gsToken balance directly.
+        // Supply ownership is determined by sxToken balance directly.
 
         emit TransferLockedFrom(msg.sender, sender, receiver, currencyId, amount, feeAmount);
     }
@@ -516,7 +516,7 @@ contract BalanceManager is
         $.balanceOf[$.feeReceiver][currencyId] += feeAmount;
 
         // Note: LendingManager supply tracking is no longer needed here.
-        // Supply ownership is determined by gsToken balance directly.
+        // Supply ownership is determined by sxToken balance directly.
 
         emit TransferFrom(msg.sender, sender, receiver, currencyId, amount, feeAmount);
     }
@@ -1155,7 +1155,7 @@ contract BalanceManager is
         }
     }
 
-    /// @notice Seize collateral from a user during liquidation (reduces gsToken balance)
+    /// @notice Seize collateral from a user during liquidation (reduces sxToken balance)
     /// @param user The user whose collateral is being seized
     /// @param underlyingToken The underlying token address
     /// @param amount The amount of collateral to seize

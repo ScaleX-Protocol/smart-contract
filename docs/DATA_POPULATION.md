@@ -48,7 +48,7 @@ PRIVATE_KEY=$PRIVATE_KEY_2 make market-order network=scalex_core_devnet
 - Use `TEST_RECIPIENT` parameter to deposit to correct address
 - Run: `make diagnose-market-order network=scalex_core_devnet` to debug issues
 
-**Market Order "Insufficient gsWETH balance" Error**:
+**Market Order "Insufficient sxWETH balance" Error**:
 - **Cause**: Secondary trader deposits went to wrong address in BalanceManager
 - **Solution**: Use `TEST_RECIPIENT=0x70997970C51812dc3A010C7d01b50e0d17dc79C8` in deposit commands
 - **Check**: Verify balance with `cast call $BALANCE_MANAGER "getBalance(address,address)" $SECONDARY_TRADER $TOKEN --rpc-url https://core-devnet.scalex.money`

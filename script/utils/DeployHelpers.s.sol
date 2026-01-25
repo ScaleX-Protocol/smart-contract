@@ -37,7 +37,7 @@ contract DeployHelpers is Script {
         // }
     }
     
-    function getDeployerKey() internal returns (uint256 deployerPrivateKey) {
+    function getDeployerKey() internal virtual returns (uint256 deployerPrivateKey) {
         deployerPrivateKey = setupLocalhostEnv();
         if (deployerPrivateKey == 0) {
             revert InvalidPrivateKey(

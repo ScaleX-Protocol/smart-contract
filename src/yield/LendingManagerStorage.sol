@@ -50,11 +50,16 @@ abstract contract LendingManagerStorage {
         address oracle; // New TWAP oracle
         address balanceManager; // Only contract that can call supply/withdraw
         address[] supportedAssets;
-        
+
         // Constants
         uint256 SECONDS_PER_YEAR;
         uint256 BASIS_POINTS;
         uint256 PRECISION;
+
+        // User markets tracking (similar to Compound's enterMarkets pattern)
+        // IMPORTANT: Added at the end to preserve storage layout for upgrades
+        mapping(address => address[]) userAssets;       // user -> list of assets they have positions in
+        mapping(address => mapping(address => bool)) userAssetExists; // user -> token -> whether in userAssets array
     }
 
     // Events

@@ -12,8 +12,8 @@ contract TestBestPrice is Script {
     IScaleXRouter constant router = IScaleXRouter(0xd81F05627eC398719B58F034a0E806D2971958f1);
     
     // From your log parameters
-    Currency constant baseCurrency = Currency.wrap(address(0x835c8aa033972E372865FcC933c9de0A48B6Ae23)); // gsWETH
-    Currency constant quoteCurrency = Currency.wrap(address(0x22F9a3898C3DB2a0008fe9a7524a4A41D8A789Df)); // gsUSDC
+    Currency constant baseCurrency = Currency.wrap(address(0x835c8aa033972E372865FcC933c9de0A48B6Ae23)); // sxWETH
+    Currency constant quoteCurrency = Currency.wrap(address(0x22F9a3898C3DB2a0008fe9a7524a4A41D8A789Df)); // sxUSDC
     
     // Market maker account and private key (using trader bot key 1)
     uint256 constant MM_PRIVATE_KEY = 0x1baeb251ed376027e40d3f5c2315307b9a3ba3c13c5f6e80070618a7ad6781f8;

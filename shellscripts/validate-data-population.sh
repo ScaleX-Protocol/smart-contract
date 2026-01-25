@@ -113,20 +113,20 @@ check_trader_balance() {
 # Check primary trader balances (should have deposited and used some for trading)
 BALANCES_OK=true
 
-if ! check_trader_balance $PRIMARY_TRADER "Primary trader" $GSUSDC "gsUSDC" 1000000; then
+if ! check_trader_balance $PRIMARY_TRADER "Primary trader" $GSUSDC "sxUSDC" 1000000; then
     BALANCES_OK=false
 fi
 
-if ! check_trader_balance $PRIMARY_TRADER "Primary trader" $GSWETH "gsWETH" 1000000000000000; then
+if ! check_trader_balance $PRIMARY_TRADER "Primary trader" $GSWETH "sxWETH" 1000000000000000; then
     BALANCES_OK=false
 fi
 
 # Check secondary trader balances (should have deposited and used some for trading)
-if ! check_trader_balance $SECONDARY_TRADER "Secondary trader" $GSUSDC "gsUSDC" 1000000; then
+if ! check_trader_balance $SECONDARY_TRADER "Secondary trader" $GSUSDC "sxUSDC" 1000000; then
     BALANCES_OK=false
 fi
 
-if ! check_trader_balance $SECONDARY_TRADER "Secondary trader" $GSWETH "gsWETH" 1000000000000000; then
+if ! check_trader_balance $SECONDARY_TRADER "Secondary trader" $GSWETH "sxWETH" 1000000000000000; then
     BALANCES_OK=false
 fi
 
@@ -189,13 +189,13 @@ check_pool_liquidity() {
 
 LIQUIDITY_OK=true
 
-if ! check_pool_liquidity $GSWETH $GSUSDC "gsWETH/gsUSDC"; then
+if ! check_pool_liquidity $GSWETH $GSUSDC "sxWETH/gsUSDC"; then
     LIQUIDITY_OK=false
 fi
 
-if ! check_pool_liquidity $GSWBTC $GSUSDC "gsWBTC/gsUSDC"; then
+if ! check_pool_liquidity $GSWBTC $GSUSDC "sxWBTC/gsUSDC"; then
     # WBTC liquidity is optional, just warn
-    echo " WARNING: gsWBTC/gsUSDC pool has no liquidity (this is optional)"
+    echo " WARNING: sxWBTC/gsUSDC pool has no liquidity (this is optional)"
 fi
 
 if [ "$LIQUIDITY_OK" = false ]; then
@@ -231,12 +231,12 @@ fi
 
 echo "Searching for trading events from block $FROM_BLOCK to $LATEST_BLOCK..."
 
-# Get OrderBook addresses for gsWETH/gsUSDC pool
-echo "Getting OrderBook address for gsWETH/gsUSDC pool..."
+# Get OrderBook addresses for sxWETH/gsUSDC pool
+echo "Getting OrderBook address for sxWETH/gsUSDC pool..."
 POOL_DATA=$(cast call $POOL_MANAGER "getPool((address,address))" "($GSWETH,$GSUSDC)" --rpc-url https://core-devnet.scalex.money 2>/dev/null || echo "")
 
 if [ -z "$POOL_DATA" ] || [ "$POOL_DATA" = "0x" ]; then
-    echo "CRITICAL: Cannot get pool data for gsWETH/gsUSDC!"
+    echo "CRITICAL: Cannot get pool data for sxWETH/gsUSDC!"
     echo "   Pool may not exist or PoolManager call failed"
     exit 1
 fi
@@ -358,7 +358,7 @@ echo ""
 echo "   # Check pool liquidity"
 echo "   cast call $POOL_MANAGER \"getPoolLiquidityScore(address,address)\" $GSWETH $GSUSDC --rpc-url https://core-devnet.scalex.money"
 echo ""
-echo "   # Get OrderBook address for gsWETH/gsUSDC"
+echo "   # Get OrderBook address for sxWETH/gsUSDC"
 echo "   cast call $POOL_MANAGER \"getPool((address,address))\" \"($GSWETH,$GSUSDC)\" --rpc-url https://core-devnet.scalex.money"
 echo ""
 echo "Validation completed at: $(date)"

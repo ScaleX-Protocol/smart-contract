@@ -81,26 +81,26 @@ contract EspressoDefaultsTest is Test {
     
     function test_DefaultTokenMappings() public {
         // Check if default token mappings exist
-        address gsUSDC = tokenRegistry.getSyntheticToken(
+        address sxUSDC = tokenRegistry.getSyntheticToken(
             APPCHAIN_CHAIN_ID,
             APPCHAIN_USDC,
             RARI_CHAIN_ID
         );
         
-        address gsWETH = tokenRegistry.getSyntheticToken(
+        address sxWETH = tokenRegistry.getSyntheticToken(
             APPCHAIN_CHAIN_ID,
             APPCHAIN_WETH,
             RARI_CHAIN_ID
         );
         
-        address gsWBTC = tokenRegistry.getSyntheticToken(
+        address sxWBTC = tokenRegistry.getSyntheticToken(
             APPCHAIN_CHAIN_ID,
             APPCHAIN_WBTC,
             RARI_CHAIN_ID
         );
         
         // If mappings exist, verify they're active
-        if (gsUSDC != address(0)) {
+        if (sxUSDC != address(0)) {
             assertTrue(tokenRegistry.isTokenMappingActive(
                 APPCHAIN_CHAIN_ID,
                 APPCHAIN_USDC,
@@ -110,13 +110,13 @@ contract EspressoDefaultsTest is Test {
             // Test reverse lookup
             (uint32 sourceChain, address sourceToken) = tokenRegistry.getSourceToken(
                 RARI_CHAIN_ID,
-                gsUSDC
+                sxUSDC
             );
             assertEq(sourceChain, APPCHAIN_CHAIN_ID);
             assertEq(sourceToken, APPCHAIN_USDC);
         }
         
-        if (gsWETH != address(0)) {
+        if (sxWETH != address(0)) {
             assertTrue(tokenRegistry.isTokenMappingActive(
                 APPCHAIN_CHAIN_ID,
                 APPCHAIN_WETH,
@@ -124,7 +124,7 @@ contract EspressoDefaultsTest is Test {
             ));
         }
         
-        if (gsWBTC != address(0)) {
+        if (sxWBTC != address(0)) {
             assertTrue(tokenRegistry.isTokenMappingActive(
                 APPCHAIN_CHAIN_ID,
                 APPCHAIN_WBTC,

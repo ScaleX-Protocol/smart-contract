@@ -28,11 +28,11 @@ contract SetupTokenMappings is Script {
         
         // Read Rari synthetic token addresses
         string memory rariJson = vm.readFile("deployments/rari.json");
-        address gsUSDC = vm.parseJsonAddress(rariJson, ".contracts.gsUSDC");
-        address gsWETH = vm.parseJsonAddress(rariJson, ".contracts.gsWETH");
-        address gsWBTC = vm.parseJsonAddress(rariJson, ".contracts.gsWBTC");
+        address sxUSDC = vm.parseJsonAddress(rariJson, ".contracts.gsUSDC");
+        address sxWETH = vm.parseJsonAddress(rariJson, ".contracts.gsWETH");
+        address sxWBTC = vm.parseJsonAddress(rariJson, ".contracts.gsWBTC");
         
-        setupChain(cbmAddress, usdt, weth, wbtc, gsUSDC, gsWETH, gsWBTC, network);
+        setupChain(cbmAddress, usdt, weth, wbtc, sxUSDC, sxWETH, sxWBTC, network);
         
         vm.stopBroadcast();
     }
@@ -42,9 +42,9 @@ contract SetupTokenMappings is Script {
         address usdt,
         address weth,
         address wbtc,
-        address gsUSDC, 
-        address gsWETH, 
-        address gsWBTC,
+        address sxUSDC, 
+        address sxWETH, 
+        address sxWBTC,
         string memory chainName
     ) internal {
         ChainBalanceManager cbm = ChainBalanceManager(cbmAddress);
@@ -54,9 +54,9 @@ contract SetupTokenMappings is Script {
         console.log("Source USDC:", usdt);
         console.log("Source WETH:", weth);
         console.log("Source WBTC:", wbtc);
-        console.log("Target gsUSDC:", gsUSDC);
-        console.log("Target gsWETH:", gsWETH);
-        console.log("Target gsWBTC:", gsWBTC);
+        console.log("Target sxUSDC:", sxUSDC);
+        console.log("Target sxWETH:", sxWETH);
+        console.log("Target sxWBTC:", sxWBTC);
         
         // Whitelist tokens with error handling
         console.log("Whitelisting USDC...");
@@ -81,22 +81,22 @@ contract SetupTokenMappings is Script {
         }
         
         // Set token mappings
-        console.log("Setting USDC -> gsUSDC mapping...");
-        cbm.setTokenMapping(usdt, gsUSDC);
+        console.log("Setting USDC -> sxUSDC mapping...");
+        cbm.setTokenMapping(usdt, sxUSDC);
         
-        console.log("Setting WETH -> gsWETH mapping...");
-        cbm.setTokenMapping(weth, gsWETH);
+        console.log("Setting WETH -> sxWETH mapping...");
+        cbm.setTokenMapping(weth, sxWETH);
         
-        console.log("Setting WBTC -> gsWBTC mapping...");
-        cbm.setTokenMapping(wbtc, gsWBTC);
+        console.log("Setting WBTC -> sxWBTC mapping...");
+        cbm.setTokenMapping(wbtc, sxWBTC);
         
         console.log("Token setup completed for", chainName);
         
         // Verify mappings
         console.log("=== Verification ===");
-        console.log("USDC -> gsUSDC:", cbm.getTokenMapping(usdt));
-        console.log("WETH -> gsWETH:", cbm.getTokenMapping(weth));
-        console.log("WBTC -> gsWBTC:", cbm.getTokenMapping(wbtc));
+        console.log("USDC -> sxUSDC:", cbm.getTokenMapping(usdt));
+        console.log("WETH -> sxWETH:", cbm.getTokenMapping(weth));
+        console.log("WBTC -> sxWBTC:", cbm.getTokenMapping(wbtc));
         console.log("USDC whitelisted:", cbm.isTokenWhitelisted(usdt));
         console.log("WETH whitelisted:", cbm.isTokenWhitelisted(weth));
         console.log("WBTC whitelisted:", cbm.isTokenWhitelisted(wbtc));
