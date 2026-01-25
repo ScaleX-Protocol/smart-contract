@@ -103,18 +103,18 @@ contract UpdateSideChainMappings is DeployHelpers {
         require(fileExists(coreDeployPath), "Core chain deployment file not found");
         
         string memory coreJson = vm.readFile(coreDeployPath);
-        address gsUSDC = vm.parseJsonAddress(coreJson, ".gsUSDC");
-        address gsWETH = vm.parseJsonAddress(coreJson, ".gsWETH");
-        address gsWBTC = vm.parseJsonAddress(coreJson, ".gsWBTC");
+        address sxUSDC = vm.parseJsonAddress(coreJson, ".gsUSDC");
+        address sxWETH = vm.parseJsonAddress(coreJson, ".gsWETH");
+        address sxWBTC = vm.parseJsonAddress(coreJson, ".gsWBTC");
         
         console.log("# Loaded deployments");
-        console.log("SideUSDC=%s -> CoregsUSDC=%s", sideUSDC, gsUSDC);
-        console.log("SideWETH=%s -> CoregsWETH=%s", sideWETH, gsWETH);
-        console.log("SideWBTC=%s -> CoregsWBTC=%s", sideWBTC, gsWBTC);
+        console.log("SideUSDC=%s -> CoregsUSDC=%s", sideUSDC, sxUSDC);
+        console.log("SideWETH=%s -> CoregsWETH=%s", sideWETH, sxWETH);
+        console.log("SideWBTC=%s -> CoregsWBTC=%s", sideWBTC, sxWBTC);
         
         // Create token mappings
-        mappings.push(TokenMapping(sideUSDC, gsUSDC, "gsUSDC"));
-        mappings.push(TokenMapping(sideWETH, gsWETH, "gsWETH"));
-        mappings.push(TokenMapping(sideWBTC, gsWBTC, "gsWBTC"));
+        mappings.push(TokenMapping(sideUSDC, sxUSDC, "sxUSDC"));
+        mappings.push(TokenMapping(sideWETH, sxWETH, "sxWETH"));
+        mappings.push(TokenMapping(sideWBTC, sxWBTC, "sxWBTC"));
     }
 }

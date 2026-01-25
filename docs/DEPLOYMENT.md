@@ -207,7 +207,7 @@ The deployment includes comprehensive validation scripts:
 ### Core Deployment Success
 `make validate-deployment` passes (including TokenRegistry local mappings)
 Both deployment files exist (31337.json, 31337.json)  
-Required trading pools exist (gsWETH/gsUSDC, gsWBTC/gsUSDC)
+Required trading pools exist (gsWETH/gsUSDC, sxWBTC/gsUSDC)
 All contracts have non-zero addresses
 
 ### Cross-Chain System Success  
@@ -226,3 +226,56 @@ Optional: `make validate-data-population` passes for full trading demo
 
 **Total deployment time**: ~5-10 minutes  
 **Result**: Fully functional two-chain trading system ready for use.
+## Phase 2 Deployment Fix (RPC Rate Limiting)
+
+### Issue
+Phase 2 deployment attempts to broadcast 46 transactions rapidly, which can trigger RPC rate limiting from providers like Alchemy or Infura. This causes the last ~18 transactions (addSupportedAsset and configureAsset calls) to fail with null hashes, leaving the syntheticTokens mapping empty and breaking lending functionality.
+
+### Solution Applied
+The `--slow` flag has been added to Phase 2 deployment commands in `shellscripts/deploy.sh` (lines 587, 589) to add delays between transactions and prevent rate limiting.
+
+```bash
+# Before:
+forge script ... --broadcast --silent
+
+# After:
+forge script ... --broadcast --slow --silent
+```
+
+### Configuration
+
+The deploy.sh script now includes a `FORGE_SLOW_MODE` environment variable (default: `true`) that controls whether the `--slow` flag is used during deployment. This flag adds delays between transactions to prevent RPC rate limiting.
+
+To disable slow mode (not recommended for public RPCs):
+```bash
+FORGE_SLOW_MODE="false" bash shellscripts/deploy.sh
+```
+
+To explicitly enable it (default behavior):
+```bash
+FORGE_SLOW_MODE="true" bash shellscripts/deploy.sh
+```
+
+### Verification
+After deployment, verify Phase 2 completeness:
+
+```bash
+# Run verification script
+forge script script/debug/VerifyPhase2Deployment.s.sol:VerifyPhase2Deployment \
+  --rpc-url $RPC_URL
+
+# Check for failed transactions
+jq '.transactions[] | select(.hash == null)' broadcast/DeployPhase2.s.sol/*/run-latest.json
+```
+
+Expected result: All checks should pass with no null transaction hashes.
+
+### Manual Fix (If Needed)
+If Phase 2 was deployed without `--slow` flag:
+
+```bash
+PRIVATE_KEY=$PRIVATE_KEY forge script script/debug/FixSupportedAssets.s.sol:FixSupportedAssets \
+  --rpc-url $RPC_URL --broadcast
+```
+
+This script calls `addSupportedAsset()` for all 9 tokens to populate the syntheticTokens mapping.

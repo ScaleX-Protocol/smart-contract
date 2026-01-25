@@ -110,31 +110,46 @@ contract DeployPhase1C is Script {
         string memory root = vm.projectRoot();
         uint256 chainId = block.chainid;
         string memory chainIdStr = vm.toString(chainId);
-        
+
+        // Get dynamic quote symbol from environment
+        string memory quoteSymbol = vm.envString("QUOTE_SYMBOL");
+
         // Read previous phase data
         string memory phase1aPath = string.concat(root, "/deployments/", chainIdStr, "-phase1a.json");
         string memory phase1bPath = string.concat(root, "/deployments/", chainIdStr, "-phase1b.json");
-        
+
         string memory phase1aJson = vm.readFile(phase1aPath);
         string memory phase1bJson = vm.readFile(phase1bPath);
-        
-        // Extract addresses from previous phases
-        address usdc = _extractAddress(phase1aJson, "USDC");
+
+        // Extract addresses from previous phases (use dynamic quote symbol)
+        address quoteToken = _extractAddress(phase1aJson, quoteSymbol);
         address weth = _extractAddress(phase1aJson, "WETH");
         address wbtc = _extractAddress(phase1aJson, "WBTC");
+        address gold = _extractAddress(phase1aJson, "GOLD");
+        address silver = _extractAddress(phase1aJson, "SILVER");
+        address google = _extractAddress(phase1aJson, "GOOGLE");
+        address nvidia = _extractAddress(phase1aJson, "NVIDIA");
+        address mnt = _extractAddress(phase1aJson, "MNT");
+        address apple = _extractAddress(phase1aJson, "APPLE");
         address tokenRegistryFrom1B = _extractAddress(phase1bJson, "TokenRegistry");
         address oracle = _extractAddress(phase1bJson, "Oracle");
         address lendingManager = _extractAddress(phase1bJson, "LendingManager");
         address balanceManager = _extractAddress(phase1bJson, "BalanceManager");
-        
-        // Create final merged deployment file
+
+        // Create final merged deployment file (use dynamic quote symbol key)
         string memory finalPath = string.concat(root, "/deployments/", chainIdStr, ".json");
         string memory json = string.concat(
             "{\n",
             "  \"networkName\": \"localhost\",\n",
-            "  \"USDC\": \"", vm.toString(usdc), "\",\n",
+            "  \"", quoteSymbol, "\": \"", vm.toString(quoteToken), "\",\n",
             "  \"WETH\": \"", vm.toString(weth), "\",\n",
             "  \"WBTC\": \"", vm.toString(wbtc), "\",\n",
+            "  \"GOLD\": \"", vm.toString(gold), "\",\n",
+            "  \"SILVER\": \"", vm.toString(silver), "\",\n",
+            "  \"GOOGLE\": \"", vm.toString(google), "\",\n",
+            "  \"NVIDIA\": \"", vm.toString(nvidia), "\",\n",
+            "  \"MNT\": \"", vm.toString(mnt), "\",\n",
+            "  \"APPLE\": \"", vm.toString(apple), "\",\n",
             "  \"TokenRegistry\": \"", vm.toString(tokenRegistryFrom1B), "\",\n",
             "  \"Oracle\": \"", vm.toString(oracle), "\",\n",
             "  \"LendingManager\": \"", vm.toString(lendingManager), "\",\n",

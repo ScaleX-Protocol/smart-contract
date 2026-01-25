@@ -14,7 +14,7 @@ import "../utils/DeployHelpers.s.sol";
 /**
  * @title Test Cross-Chain
  * @dev Universal script to test cross-chain deposits between any two chains
- *      Includes validation of trading pools (gsWETH/gsUSDC, gsWBTC/gsUSDC)
+ *      Includes validation of trading pools (sxWETH/sxUSDC, sxWBTC/sxUSDC)
  * 
  * Environment Variables:
  *   SIDE_CHAIN      - Name of side chain deployment file (e.g., "31338", "4661")
@@ -52,9 +52,9 @@ contract TestCrossChainDeposit is DeployHelpers {
     IPoolManager poolManager;
     
     // Pool validation addresses
-    address gsUSDCAddress;
-    address gsWETHAddress;
-    address gsWBTCAddress;
+    address sxUSDCAddress;
+    address sxWETHAddress;
+    address sxWBTCAddress;
 
     function run() external {
         uint256 deployerPrivateKey = vm.envUint("PRIVATE_KEY");
@@ -191,7 +191,7 @@ contract TestCrossChainDeposit is DeployHelpers {
             try vm.parseJsonAddress(coreJson, syntheticKey) returns (address synthAddr) {
                 syntheticTokenAddress = synthAddr;
             } catch {
-                console.log("# Synthetic token gs%s not yet deployed on core chain", tokenSymbol);
+                console.log("# Synthetic token sx%s not yet deployed on core chain", tokenSymbol);
                 syntheticTokenAddress = address(0);
             }
             
@@ -208,22 +208,22 @@ contract TestCrossChainDeposit is DeployHelpers {
             }
             
             // Load all synthetic token addresses for pool validation
-            try vm.parseJsonAddress(coreJson, ".gsUSDC") returns (address addr) {
-                gsUSDCAddress = addr;
+            try vm.parseJsonAddress(coreJson, ".sxUSDC") returns (address addr) {
+                sxUSDCAddress = addr;
             } catch {
-                console.log("# gsUSDC not found in core chain deployment");
+                console.log("# sxUSDC not found in core chain deployment");
             }
             
-            try vm.parseJsonAddress(coreJson, ".gsWETH") returns (address addr) {
-                gsWETHAddress = addr;
+            try vm.parseJsonAddress(coreJson, ".sxWETH") returns (address addr) {
+                sxWETHAddress = addr;
             } catch {
-                console.log("# gsWETH not found in core chain deployment");
+                console.log("# sxWETH not found in core chain deployment");
             }
             
-            try vm.parseJsonAddress(coreJson, ".gsWBTC") returns (address addr) {
-                gsWBTCAddress = addr;
+            try vm.parseJsonAddress(coreJson, ".sxWBTC") returns (address addr) {
+                sxWBTCAddress = addr;
             } catch {
-                console.log("# gsWBTC not found in core chain deployment");
+                console.log("# sxWBTC not found in core chain deployment");
             }
         } else {
             console.log("# WARNING: Core chain deployment not found: %s", coreDeploymentPath);
@@ -336,7 +336,7 @@ contract TestCrossChainDeposit is DeployHelpers {
             return;
         }
         
-        if (gsUSDCAddress == address(0) || gsWETHAddress == address(0) || gsWBTCAddress == address(0)) {
+        if (sxUSDCAddress == address(0) || sxWETHAddress == address(0) || sxWBTCAddress == address(0)) {
             console.log("# INFO: Synthetic tokens not available on side chain, skipping pool validation");
             console.log("# NOTE: Pool validation should be done on the core chain (31337)");
             return;
@@ -431,36 +431,36 @@ contract TestCrossChainDeposit is DeployHelpers {
         }
         
         // Load synthetic tokens
-        try vm.parseJsonAddress(coreJson, ".gsUSDC") returns (address addr) {
-            gsUSDCAddress = addr;
+        try vm.parseJsonAddress(coreJson, ".sxUSDC") returns (address addr) {
+            sxUSDCAddress = addr;
         } catch {
-            console.log("# ERROR: gsUSDC not found in deployment");
+            console.log("# ERROR: sxUSDC not found in deployment");
             return;
         }
         
-        try vm.parseJsonAddress(coreJson, ".gsWETH") returns (address addr) {
-            gsWETHAddress = addr;
+        try vm.parseJsonAddress(coreJson, ".sxWETH") returns (address addr) {
+            sxWETHAddress = addr;
         } catch {
-            console.log("# ERROR: gsWETH not found in deployment");
+            console.log("# ERROR: sxWETH not found in deployment");
             return;
         }
         
-        try vm.parseJsonAddress(coreJson, ".gsWBTC") returns (address addr) {
-            gsWBTCAddress = addr;
+        try vm.parseJsonAddress(coreJson, ".sxWBTC") returns (address addr) {
+            sxWBTCAddress = addr;
         } catch {
-            console.log("# ERROR: gsWBTC not found in deployment");
+            console.log("# ERROR: sxWBTC not found in deployment");
             return;
         }
         
         // Validate all pools
         console.log("========== CHECKING ALL TRADING POOLS ==========");
         console.log("PoolManager=%s", address(poolManager));
-        console.log("gsUSDC=%s", gsUSDCAddress);
-        console.log("gsWETH=%s", gsWETHAddress);
-        console.log("gsWBTC=%s", gsWBTCAddress);
+        console.log("sxUSDC=%s", sxUSDCAddress);
+        console.log("sxWETH=%s", sxWETHAddress);
+        console.log("sxWBTC=%s", sxWBTCAddress);
         
-        _checkPoolExists(gsWETHAddress, gsUSDCAddress, "gsWETH/gsUSDC");
-        _checkPoolExists(gsWBTCAddress, gsUSDCAddress, "gsWBTC/gsUSDC");
+        _checkPoolExists(sxWETHAddress, sxUSDCAddress, "sxWETH/sxUSDC");
+        _checkPoolExists(sxWBTCAddress, sxUSDCAddress, "sxWBTC/sxUSDC");
         
         console.log("# Pool validation complete");
     }

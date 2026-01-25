@@ -16,8 +16,7 @@ contract MarketOrderBook is Script, DeployHelpers {
    string constant BALANCE_MANAGER_ADDRESS = "BalanceManager";
    string constant POOL_MANAGER_ADDRESS = "PoolManager";
    string constant ScaleX_ROUTER_ADDRESS = "ScaleXRouter";
-   string constant WETH_ADDRESS = "gsWETH";
-   string constant USDC_ADDRESS = "gsUSDC";
+   string constant WETH_ADDRESS = "sxWETH";
 
    // Core contracts
    BalanceManager balanceManager;
@@ -27,11 +26,15 @@ contract MarketOrderBook is Script, DeployHelpers {
 
    // Synthetic tokens
    IERC20 synthWETH;
-   IERC20 synthUSDC;
-   
+   IERC20 synthQuote;
+
    // Regular tokens for deposits
    IERC20 tokenWETH;
-   IERC20 tokenUSDC;
+   IERC20 tokenQuote;
+
+   // Quote currency info
+   string quoteCurrency;
+   string sxQuoteKey;
 
    // Track order IDs for verification
    uint48[] marketBuyOrderIds;
@@ -54,13 +57,17 @@ contract MarketOrderBook is Script, DeployHelpers {
        poolManager = PoolManager(deployed[POOL_MANAGER_ADDRESS].addr);
        scalexRouter = ScaleXRouter(deployed[ScaleX_ROUTER_ADDRESS].addr);
 
+       // Get quote currency from environment
+       quoteCurrency = vm.envOr("QUOTE_CURRENCY", string("USDC"));
+       sxQuoteKey = string.concat("sx", quoteCurrency);
+
        // Load synthetic tokens
        synthWETH = IERC20(deployed[WETH_ADDRESS].addr);
-       synthUSDC = IERC20(deployed[USDC_ADDRESS].addr);
-       
+       synthQuote = IERC20(deployed[sxQuoteKey].addr);
+
        // Also load regular tokens for deposits
        tokenWETH = IERC20(deployed["WETH"].addr);
-       tokenUSDC = IERC20(deployed["USDC"].addr);
+       tokenQuote = IERC20(deployed[quoteCurrency].addr);
    }
 
    function run() public {
@@ -88,70 +95,71 @@ contract MarketOrderBook is Script, DeployHelpers {
    }
 
    function placeMarketOrdersETHUSDC() private {
-       console.log("\n=== Placing Market Orders on ETH/USDC ===");
+       console.log(string.concat("\n=== Placing Market Orders on ETH/", quoteCurrency, " ==="));
 
        // Get currency objects
        Currency weth = Currency.wrap(address(synthWETH));
-       Currency usdc = Currency.wrap(address(synthUSDC));
+       Currency quote = Currency.wrap(address(synthQuote));
 
        // Get the pool using the resolver
-       IPoolManager.Pool memory pool = poolManagerResolver.getPool(weth, usdc, address(poolManager));
+       IPoolManager.Pool memory pool = poolManagerResolver.getPool(weth, quote, address(poolManager));
 
        // Make local deposits to get synthetic tokens if needed
-       _makeLocalDeposits(1e17, 100e6); // 0.1 ETH, 100 USDC
-       
+       _makeLocalDeposits(1e17, 100e6); // 0.1 ETH, 100 quote currency
+
        // Setup sender with funds for market orders (use smaller amounts matching our actual balances)
-       _setupFunds(1e17, 100e6); // 0.1 ETH, 100 USDC
+       _setupFunds(1e17, 100e6); // 0.1 ETH, 100 quote currency
 
 
        // Check current approvals (not needed for synthetic tokens in BalanceManager)
        uint256 wethAllowance = balanceManager.getBalance(deployerAddress, Currency.wrap(address(synthWETH)));
-       uint256 usdcAllowance = balanceManager.getBalance(deployerAddress, Currency.wrap(address(synthUSDC)));
+       uint256 quoteAllowance = balanceManager.getBalance(deployerAddress, Currency.wrap(address(synthQuote)));
 
        console.log("\nCurrent BalanceManager balances:");
-       console.log("gsWETH balance:", wethAllowance);
-       console.log("gsUSDC balance:", usdcAllowance);
+       console.log("sxWETH balance:", wethAllowance);
+       console.log(string.concat("sx", quoteCurrency, " balance:"), quoteAllowance);
 
        if (wethAllowance < 1e16) { // Only need 0.01 ETH for tiny market orders
-           console.log("Insufficient gsWETH balance in BalanceManager");
+           console.log("Insufficient sxWETH balance in BalanceManager");
            return;
        }
 
-       if (usdcAllowance < 50e6) { // Only need 50 USDC for tiny market orders
-           console.log("Insufficient gsUSDC balance in BalanceManager");
+       if (quoteAllowance < 50e6) { // Only need 50 quote currency for tiny market orders
+           console.log(string.concat("Insufficient sx", quoteCurrency, " balance in BalanceManager"));
            return;
        }
 
-       // Place market SELL orders (sells ETH for USDC)
+       // Place market SELL orders (sells ETH for quote currency)
        // These will execute against the BUY limit orders
        _placeMarketSellOrders(pool, 1); // 1 sell order to avoid balance exhaustion
-       
-       // Skip market BUY orders since we don't have SELL limit orders yet
-       console.log("Skipping market BUY orders - no SELL limit orders available");
+
+       // Place market BUY orders (buys ETH with quote currency)
+       // These will execute against the SELL limit orders
+       _placeMarketBuyOrders(pool, 1); // 1 buy order to avoid balance exhaustion
 
        // Print summary
        console.log("\nMarket orders placed:");
-       console.log("- 1 market SELL order (selling ETH for USDC)");
-       console.log("- 0 market BUY orders (skipped - no SELL limit orders)");
+       console.log(string.concat("- 1 market SELL order (selling ETH for ", quoteCurrency, ")"));
+       console.log(string.concat("- 1 market BUY order (buying ETH with ", quoteCurrency, ")"));
    }
 
-   function _setupFunds(uint256 ethAmount, uint256 usdcAmount) private {
+   function _setupFunds(uint256 ethAmount, uint256 quoteAmount) private {
        // Note: Using existing synthetic token balances in BalanceManager
        // These tokens are already available from previous local deposits
        console.log("Using existing synthetic token balances in BalanceManager");
-       console.log("Expected gsWETH amount:", ethAmount);
-       console.log("Expected gsUSDC amount:", usdcAmount);
-       
+       console.log("Expected sxWETH amount:", ethAmount);
+       console.log(string.concat("Expected sx", quoteCurrency, " amount:"), quoteAmount);
+
        // Check current balances in BalanceManager
        uint256 currentWETHBalance = balanceManager.getBalance(deployerAddress, Currency.wrap(address(synthWETH)));
-       uint256 currentUSDCBalance = balanceManager.getBalance(deployerAddress, Currency.wrap(address(synthUSDC)));
-       
-       console.log("Current gsWETH balance in BalanceManager:", currentWETHBalance);
-       console.log("Current gsUSDC balance in BalanceManager:", currentUSDCBalance);
-       
+       uint256 currentQuoteBalance = balanceManager.getBalance(deployerAddress, Currency.wrap(address(synthQuote)));
+
+       console.log("Current sxWETH balance in BalanceManager:", currentWETHBalance);
+       console.log(string.concat("Current sx", quoteCurrency, " balance in BalanceManager:"), currentQuoteBalance);
+
        // Verify we have sufficient balances
-       require(currentWETHBalance >= ethAmount, "Insufficient gsWETH balance in BalanceManager");
-       require(currentUSDCBalance >= usdcAmount, "Insufficient gsUSDC balance in BalanceManager");
+       require(currentWETHBalance >= ethAmount, "Insufficient sxWETH balance in BalanceManager");
+       require(currentQuoteBalance >= quoteAmount, string.concat("Insufficient sx", quoteCurrency, " balance in BalanceManager"));
    }
 
    function _placeMarketBuyOrders(
@@ -171,8 +179,8 @@ contract MarketOrderBook is Script, DeployHelpers {
        for (uint8 i = 0; i < numOrders; i++) {
            uint128 quantity = quantities[i % 5];
            
-           // Calculate proper deposit amount for buy orders (need USDC)
-           // Estimate price at ~2000 USDC per ETH for deposit calculation
+           // Calculate proper deposit amount for buy orders (need quote currency)
+           // Estimate price at ~2000 quote currency per ETH for deposit calculation
            uint128 estimatedPrice = 2000e6;
            uint128 depositAmount = (estimatedPrice * quantity) / 1e18;
            
@@ -241,31 +249,31 @@ contract MarketOrderBook is Script, DeployHelpers {
 
        // Get currency objects
        Currency weth = Currency.wrap(address(synthWETH));
-       Currency usdc = Currency.wrap(address(synthUSDC));
+       Currency quote = Currency.wrap(address(synthQuote));
 
        // Check market buy orders
        console.log("\n--- Market BUY Orders ---");
        for (uint256 i = 0; i < marketBuyOrderIds.length; i++) {
-           _checkOrderDetails(weth, usdc, marketBuyOrderIds[i], string(abi.encodePacked("Market BUY #", uint2str(i + 1))));
+           _checkOrderDetails(weth, quote, marketBuyOrderIds[i], string(abi.encodePacked("Market BUY #", uint2str(i + 1))));
        }
 
        // Check market sell orders
        console.log("\n--- Market SELL Orders ---");
        for (uint256 i = 0; i < marketSellOrderIds.length; i++) {
-           _checkOrderDetails(weth, usdc, marketSellOrderIds[i], string(abi.encodePacked("Market SELL #", uint2str(i + 1))));
+           _checkOrderDetails(weth, quote, marketSellOrderIds[i], string(abi.encodePacked("Market SELL #", uint2str(i + 1))));
        }
 
        // Check orderbook state after market orders
        console.log("\n--- Order Book State After Market Orders ---");
 
        // Check best prices
-       IOrderBook.PriceVolume memory bestBuy = scalexRouter.getBestPrice(weth, usdc, IOrderBook.Side.BUY);
-       IOrderBook.PriceVolume memory bestSell = scalexRouter.getBestPrice(weth, usdc, IOrderBook.Side.SELL);
+       IOrderBook.PriceVolume memory bestBuy = scalexRouter.getBestPrice(weth, quote, IOrderBook.Side.BUY);
+       IOrderBook.PriceVolume memory bestSell = scalexRouter.getBestPrice(weth, quote, IOrderBook.Side.SELL);
 
-       console.log("Best BUY price:", bestBuy.price, "USDC");
+       console.log("Best BUY price:", bestBuy.price, quoteCurrency);
        console.log("Volume at best BUY:", bestBuy.volume, "ETH\n");
 
-       console.log("Best SELL price:", bestSell.price, "USDC");
+       console.log("Best SELL price:", bestSell.price, quoteCurrency);
        console.log("Volume at best SELL:", bestSell.volume, "ETH\n");
 
        // Check balance changes
@@ -280,7 +288,7 @@ contract MarketOrderBook is Script, DeployHelpers {
        console.log("User:", order.user);
        console.log("Side:", order.side == IOrderBook.Side.BUY ? "BUY" : "SELL");
        console.log("Type:", order.orderType == IOrderBook.OrderType.LIMIT ? "LIMIT" : "MARKET");
-       console.log("Price:", order.price, "USDC");
+       console.log("Price:", order.price, quoteCurrency);
        console.log("Quantity:", order.quantity, "ETH");
        console.log("Filled:", order.filled, "ETH");
        console.log("---");
@@ -291,17 +299,17 @@ contract MarketOrderBook is Script, DeployHelpers {
 
        // Check BalanceManager balances
        uint256 bmEthBalance = balanceManager.getBalance(deployerAddress, Currency.wrap(address(synthWETH)));
-       uint256 bmUsdcBalance = balanceManager.getBalance(deployerAddress, Currency.wrap(address(synthUSDC)));
+       uint256 bmQuoteBalance = balanceManager.getBalance(deployerAddress, Currency.wrap(address(synthQuote)));
 
-       console.log("BalanceManager gsWETH balance:", bmEthBalance, "wei");
-       console.log("BalanceManager gsUSDC balance:", bmUsdcBalance, "units");
-       
+       console.log("BalanceManager sxWETH balance:", bmEthBalance, "wei");
+       console.log(string.concat("BalanceManager sx", quoteCurrency, " balance:"), bmQuoteBalance, "units");
+
        // Check token balances directly
        uint256 ethTokenBalance = synthWETH.balanceOf(deployerAddress);
-       uint256 usdcTokenBalance = synthUSDC.balanceOf(deployerAddress);
+       uint256 quoteTokenBalance = synthQuote.balanceOf(deployerAddress);
 
-       console.log("Direct gsWETH token balance:", ethTokenBalance, "wei");
-       console.log("Direct gsUSDC token balance:", usdcTokenBalance, "units");
+       console.log("Direct sxWETH token balance:", ethTokenBalance, "wei");
+       console.log(string.concat("Direct sx", quoteCurrency, " token balance:"), quoteTokenBalance, "units");
    }
 
    // Utility function to convert uint to string
@@ -327,20 +335,20 @@ contract MarketOrderBook is Script, DeployHelpers {
 
    function verifyMarketOrderExecution() private {
        console.log("\n=== Verifying Market Order Execution ===");
-       
+
        // Get currency objects
        Currency weth = Currency.wrap(address(synthWETH));
-       Currency usdc = Currency.wrap(address(synthUSDC));
-       
+       Currency quote = Currency.wrap(address(synthQuote));
+
        // Verify market orders were executed
        _verifyMarketOrdersExecuted();
-       
+
        // Verify balance changes from market order execution
-       _verifyBalanceChanges(weth, usdc);
-       
+       _verifyBalanceChanges(weth, quote);
+
        // Verify orderbook state after market orders
-       _verifyOrderBookAfterMarketOrders(weth, usdc);
-       
+       _verifyOrderBookAfterMarketOrders(weth, quote);
+
        console.log("All market order execution verifications passed!");
    }
    
@@ -367,7 +375,7 @@ contract MarketOrderBook is Script, DeployHelpers {
        
        // Get current balances from BalanceManager
        uint256 userWethBalance = balanceManager.getBalance(deployerAddress, Currency.wrap(address(synthWETH)));
-       uint256 userUsdcBalance = balanceManager.getBalance(deployerAddress, Currency.wrap(address(synthUSDC)));
+       uint256 userUsdcBalance = balanceManager.getBalance(deployerAddress, Currency.wrap(address(synthQuote)));
        uint256 bmWethBalance = userWethBalance; // Same as user balance in BalanceManager
        uint256 bmUsdcBalance = userUsdcBalance; // Same as user balance in BalanceManager
        
@@ -429,51 +437,51 @@ contract MarketOrderBook is Script, DeployHelpers {
        console.log("Orderbook state verification passed");
    }
 
-   function _makeLocalDeposits(uint256 ethAmount, uint256 usdcAmount) private {
+   function _makeLocalDeposits(uint256 ethAmount, uint256 quoteAmount) private {
        console.log("\n=== Making Local Deposits to BalanceManager ===");
        console.log("Depositing ETH amount:", ethAmount / 1e18, "ETH");
-       console.log("Depositing USDC amount:", usdcAmount / 1e6, "USDC");
-       
+       console.log(string.concat("Depositing ", quoteCurrency, " amount:"), quoteAmount / 1e6, quoteCurrency);
+
        // Mint tokens if we don't have enough balance
        if (tokenWETH.balanceOf(deployerAddress) < ethAmount) {
            MockWETH(address(tokenWETH)).mint(deployerAddress, ethAmount);
            console.log("[SUCCESS] WETH minted to deployer account");
        }
-       
-       if (tokenUSDC.balanceOf(deployerAddress) < usdcAmount) {
-           MockUSDC(address(tokenUSDC)).mint(deployerAddress, usdcAmount);
-           console.log("[SUCCESS] USDC minted to deployer account");
+
+       if (tokenQuote.balanceOf(deployerAddress) < quoteAmount) {
+           MockToken(address(tokenQuote)).mint(deployerAddress, quoteAmount);
+           console.log(string.concat("[SUCCESS] ", quoteCurrency, " minted to deployer account"));
        }
-       
+
        // Approve BalanceManager to spend WETH
        tokenWETH.approve(address(balanceManager), ethAmount);
        console.log("[SUCCESS] WETH approved for BalanceManager");
-       
-       // Approve BalanceManager to spend USDC  
-       tokenUSDC.approve(address(balanceManager), usdcAmount);
-       console.log("[SUCCESS] USDC approved for BalanceManager");
-       
+
+       // Approve BalanceManager to spend quote currency
+       tokenQuote.approve(address(balanceManager), quoteAmount);
+       console.log(string.concat("[SUCCESS] ", quoteCurrency, " approved for BalanceManager"));
+
        // Deposit real WETH to BalanceManager (will receive synthetic balance)
        balanceManager.depositLocal(address(tokenWETH), ethAmount, deployerAddress);
        console.log("[SUCCESS] WETH deposited to BalanceManager");
-       
-       // Deposit real USDC to BalanceManager (will receive synthetic balance)
-       balanceManager.depositLocal(address(tokenUSDC), usdcAmount, deployerAddress);
-       console.log("[SUCCESS] USDC deposited to BalanceManager");
+
+       // Deposit real quote currency to BalanceManager (will receive synthetic balance)
+       balanceManager.depositLocal(address(tokenQuote), quoteAmount, deployerAddress);
+       console.log(string.concat("[SUCCESS] ", quoteCurrency, " deposited to BalanceManager"));
        
        // Verify BalanceManager balances for the deposited tokens
        uint256 wethBalance = balanceManager.getBalance(deployerAddress, Currency.wrap(address(tokenWETH)));
-       uint256 usdcBalance = balanceManager.getBalance(deployerAddress, Currency.wrap(address(tokenUSDC)));
-       
+       uint256 quoteBalance = balanceManager.getBalance(deployerAddress, Currency.wrap(address(tokenQuote)));
+
        console.log("BalanceManager WETH balance:", wethBalance / 1e18, "ETH");
-       console.log("BalanceManager USDC balance:", usdcBalance / 1e6, "USDC");
-       
+       console.log(string.concat("BalanceManager ", quoteCurrency, " balance:"), quoteBalance / 1e6, quoteCurrency);
+
        // Check token balances in BalanceManager
        uint256 bmWethBalance = balanceManager.getBalance(deployerAddress, Currency.wrap(address(tokenWETH)));
-       uint256 bmUsdcBalance = balanceManager.getBalance(deployerAddress, Currency.wrap(address(tokenUSDC)));
-       
+       uint256 bmQuoteBalance = balanceManager.getBalance(deployerAddress, Currency.wrap(address(tokenQuote)));
+
        console.log("BalanceManager WETH balance:", bmWethBalance / 1e18, "ETH");
-       console.log("BalanceManager USDC balance:", bmUsdcBalance / 1e6, "USDC");
+       console.log(string.concat("BalanceManager ", quoteCurrency, " balance:"), bmQuoteBalance / 1e6, quoteCurrency);
        console.log("Local deposits complete\n");
    }
 }

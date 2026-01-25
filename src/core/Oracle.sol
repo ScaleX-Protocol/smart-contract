@@ -26,6 +26,7 @@ contract Oracle is Initializable, OwnableUpgradeable, ReentrancyGuardUpgradeable
     
     struct TokenPriceData {
         mapping(uint256 => PricePoint) priceHistory; // block.timestamp -> price
+        uint256[] checkpointTimestamps; // Array of timestamps for efficient binary search
         uint256 lastUpdateTime;
         uint256 lastCumulativePrice;
         uint256 oldestTimestamp;
@@ -523,7 +524,7 @@ contract Oracle is Initializable, OwnableUpgradeable, ReentrancyGuardUpgradeable
     
     function _storePricePoint(address token, uint256 price, uint256 timestamp) internal {
         TokenPriceData storage data = tokenPriceData[token];
-        
+
         // Update cumulative price
         if (data.lastUpdateTime > 0) {
             uint256 timeDelta = timestamp - data.lastUpdateTime;
@@ -533,67 +534,143 @@ contract Oracle is Initializable, OwnableUpgradeable, ReentrancyGuardUpgradeable
             data.lastCumulativePrice = price;
             data.oldestTimestamp = timestamp;
         }
-        
+
         // Store new price point
         PricePoint storage point = data.priceHistory[timestamp];
         point.price = price;
         point.timestamp = timestamp;
         point.cumulativePrice = data.lastCumulativePrice;
         point.initialized = true;
-        
+
+        // Add timestamp to checkpoint array for efficient binary search
+        data.checkpointTimestamps.push(timestamp);
+
         data.lastUpdateTime = timestamp;
-        
+
         // Clean old data points if exceeding max size
         _cleanOldData(token);
     }
     
     function _calculateTWAP(address token, uint256 startTime, uint256 endTime) internal view returns (uint256) {
         TokenPriceData storage data = tokenPriceData[token];
-        
+
         if (startTime < data.oldestTimestamp) {
             startTime = data.oldestTimestamp;
         }
-        
+
         if (endTime <= startTime || data.lastUpdateTime <= startTime) {
             return 0;
         }
-        
+
         // Find cumulative price at start time
         uint256 startCumulative = _findCumulativePriceAtTime(token, startTime);
         uint256 timeDelta = endTime - startTime;
-        
+
         if (timeDelta == 0) return 0;
-        
+
         return (data.lastCumulativePrice - startCumulative) / timeDelta;
     }
-    
+
+    /// @notice Binary search to find the latest checkpoint <= targetTime
+    /// @dev Uses O(log n) binary search instead of O(n) linear search for gas efficiency
+    /// @param checkpoints Array of timestamps when price updates occurred
+    /// @param targetTime The target timestamp to search for
+    /// @return Index of the checkpoint, or checkpoints.length if targetTime is before all checkpoints
+    function _binarySearchCheckpoint(
+        uint256[] storage checkpoints,
+        uint256 targetTime
+    ) internal view returns (uint256) {
+        uint256 length = checkpoints.length;
+
+        if (length == 0 || targetTime < checkpoints[0]) {
+            return length;  // No valid checkpoint found
+        }
+
+        if (targetTime >= checkpoints[length - 1]) {
+            return length - 1;  // Return last checkpoint
+        }
+
+        // Binary search to find the latest timestamp <= targetTime
+        uint256 low = 0;
+        uint256 high = length - 1;
+
+        while (low < high) {
+            uint256 mid = (low + high + 1) / 2;  // Round up to avoid infinite loop
+
+            if (checkpoints[mid] <= targetTime) {
+                low = mid;
+            } else {
+                high = mid - 1;
+            }
+        }
+
+        return low;
+    }
+
     function _findCumulativePriceAtTime(address token, uint256 targetTime) internal view returns (uint256) {
         TokenPriceData storage data = tokenPriceData[token];
-        
-        // Simple linear search - in production, use binary search for efficiency
-        for (uint256 t = targetTime; t <= data.lastUpdateTime; t++) {
-            if (data.priceHistory[t].initialized) {
-                return data.priceHistory[t].cumulativePrice;
-            }
+        uint256[] storage checkpoints = data.checkpointTimestamps;
+
+        if (checkpoints.length == 0) {
+            return data.lastCumulativePrice;
         }
-        
-        // If exact time not found, return the previous cumulative price
-        for (uint256 t = targetTime; t > data.oldestTimestamp && t > 0; t--) {
-            if (data.priceHistory[t].initialized) {
-                return data.priceHistory[t].cumulativePrice;
-            }
+
+        // Binary search for the checkpoint <= targetTime
+        uint256 index = _binarySearchCheckpoint(checkpoints, targetTime);
+
+        if (index >= checkpoints.length) {
+            // Target time is before all checkpoints, return 0
+            return 0;
         }
-        
-        return data.lastCumulativePrice;
+
+        uint256 timestamp = checkpoints[index];
+        return data.priceHistory[timestamp].cumulativePrice;
     }
     
     function _cleanOldData(address token) internal {
         TokenPriceData storage data = tokenPriceData[token];
-        
+
         // Simple cleanup logic - remove oldest entries if exceeding max size
         uint256 historyDuration = data.lastUpdateTime - data.oldestTimestamp;
         if (historyDuration > data.maxHistorySize) {
-            data.oldestTimestamp = data.lastUpdateTime - data.maxHistorySize;
+            uint256 newOldestTimestamp = data.lastUpdateTime - data.maxHistorySize;
+            data.oldestTimestamp = newOldestTimestamp;
+
+            // Clean checkpoint array to remove timestamps older than cutoff
+            _cleanCheckpoints(token, newOldestTimestamp);
+        }
+    }
+
+    /// @notice Clean checkpoint array by removing timestamps older than cutoff
+    /// @dev Maintains checkpoints only within the valid history window
+    /// @param token The token address
+    /// @param cutoffTimestamp The oldest timestamp to keep
+    function _cleanCheckpoints(address token, uint256 cutoffTimestamp) internal {
+        TokenPriceData storage data = tokenPriceData[token];
+        uint256[] storage checkpoints = data.checkpointTimestamps;
+
+        if (checkpoints.length == 0) {
+            return;
+        }
+
+        // Find first checkpoint >= cutoffTimestamp using binary search for efficiency
+        uint256 cutoffIndex = 0;
+        for (uint256 i = 0; i < checkpoints.length; i++) {
+            if (checkpoints[i] >= cutoffTimestamp) {
+                cutoffIndex = i;
+                break;
+            }
+        }
+
+        // Remove old checkpoints by shifting and popping
+        if (cutoffIndex > 0) {
+            uint256 remaining = checkpoints.length - cutoffIndex;
+            for (uint256 i = 0; i < remaining; i++) {
+                checkpoints[i] = checkpoints[cutoffIndex + i];
+            }
+            for (uint256 i = 0; i < cutoffIndex; i++) {
+                checkpoints.pop();
+            }
         }
     }
 }

@@ -5,7 +5,9 @@ interface IOracle {
     // Price querying functions
     function getSpotPrice(address token) external view returns (uint256);
     function getTWAP(address token, uint256 window) external view returns (uint256);
-    
+    function getPriceForCollateral(address token) external view returns (uint256);
+    function getPriceForBorrowing(address token) external view returns (uint256);
+
     // Status functions
     function isPriceStale(address token) external view returns (bool);
     function hasSufficientHistory(address token, uint256 window) external view returns (bool);

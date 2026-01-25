@@ -19,16 +19,20 @@ import "../utils/DeployHelpers.s.sol";
  *   PRIVATE_KEY=0x... forge script script/lending/PopulateLendingData.sol:PopulateLendingData --rpc-url http://127.0.0.1:8545 --broadcast
  */
 contract PopulateLendingData is Script, DeployHelpers {
-    
+
     // Loaded contracts
     LendingManager public lendingManager;
     BalanceManager public balanceManager;
     TokenRegistry public tokenRegistry;
     Oracle public oracle;
-    
+
     // User accounts
     address public primaryTrader;
     address public secondaryTrader;
+
+    // Quote currency configuration
+    string public quoteCurrency;
+    uint8 public quoteDecimals;
     
     function run() external {
         loadDeployments();
@@ -56,25 +60,30 @@ contract PopulateLendingData is Script, DeployHelpers {
     
     function _loadContracts() internal {
         console.log("=== Loading Lending Contracts ===");
-        
+
+        // Load quote currency from environment (defaults to USDC)
+        quoteCurrency = vm.envOr("QUOTE_CURRENCY", string("USDC"));
+        quoteDecimals = uint8(vm.envOr("QUOTE_DECIMALS", uint256(6)));
+        console.log("Using quote currency:", quoteCurrency);
+
         require(deployed["LendingManager"].isSet, "LendingManager not found");
         require(deployed["BalanceManager"].isSet, "BalanceManager not found");
         require(deployed["TokenRegistry"].isSet, "TokenRegistry not found");
         require(deployed["Oracle"].isSet, "Oracle not found");
-        require(deployed["USDC"].isSet, "USDC not found");
+        require(deployed[quoteCurrency].isSet, string.concat(quoteCurrency, " not found"));
         require(deployed["WETH"].isSet, "WETH not found");
         require(deployed["WBTC"].isSet, "WBTC not found");
-        
+
         lendingManager = LendingManager(deployed["LendingManager"].addr);
         balanceManager = BalanceManager(deployed["BalanceManager"].addr);
         tokenRegistry = TokenRegistry(deployed["TokenRegistry"].addr);
         oracle = Oracle(deployed["Oracle"].addr);
-        
+
         console.log("LendingManager:", address(lendingManager));
         console.log("BalanceManager:", address(balanceManager));
         console.log("TokenRegistry:", address(tokenRegistry));
         console.log("Oracle:", address(oracle));
-        console.log("USDC:", deployed["USDC"].addr);
+        console.log(string.concat(quoteCurrency, ":"), deployed[quoteCurrency].addr);
         console.log("WETH:", deployed["WETH"].addr);
         console.log("WBTC:", deployed["WBTC"].addr);
         console.log("");
@@ -97,30 +106,31 @@ contract PopulateLendingData is Script, DeployHelpers {
         console.log("     BalanceManager:", address(balanceManager));
         
         // Verify asset support (try to call supported functions)
-        address usdc = deployed["USDC"].addr;
+        address quoteToken = deployed[quoteCurrency].addr;
         address weth = deployed["WETH"].addr;
-        
-        try lendingManager.calculateInterestRate(usdc) returns (uint256 rate) {
-            console.log("[OK] USDC Interest Rate Configured:", rate / 100, "%");
+
+        try lendingManager.calculateInterestRate(quoteToken) returns (uint256 rate) {
+            console.log(string.concat("[OK] ", quoteCurrency, " Interest Rate Configured:"), rate / 100, "%");
         } catch {
-            console.log("[INFO] USDC interest rates not configured yet");
+            console.log(string.concat("[INFO] ", quoteCurrency, " interest rates not configured yet"));
         }
-        
+
         try lendingManager.calculateInterestRate(weth) returns (uint256 rate) {
             console.log("[OK] WETH Interest Rate Configured:", rate / 100, "%");
         } catch {
             console.log("[INFO] WETH interest rates not configured yet");
         }
-        
+
         console.log("");
     }
     
     function _demonstrateLendingCapabilities() internal {
         console.log("=== Demonstrating Lending Capabilities ===");
-        
-        address usdc = deployed["USDC"].addr;
+
+        address quoteToken = deployed[quoteCurrency].addr;
         address weth = deployed["WETH"].addr;
-        
+        uint256 quoteDivisor = 10**quoteDecimals;
+
         // Show what functions are available
         console.log("Available LendingManager Functions:");
         console.log("[OK] borrow(address token, uint256 amount) - Direct borrowing");
@@ -129,34 +139,34 @@ contract PopulateLendingData is Script, DeployHelpers {
         console.log("[OK] configureAsset() - Asset configuration (owner only)");
         console.log("[OK] setInterestRateParams() - Interest rate configuration (owner only)");
         console.log("");
-        
+
         // Check current user positions
         console.log("Current User Positions:");
-        
-        try lendingManager.getUserSupply(primaryTrader, usdc) returns (uint256 supply) {
-            console.log("Primary USDC Supply:", supply / 10**6, "USDC");
+
+        try lendingManager.getUserSupply(primaryTrader, quoteToken) returns (uint256 supply) {
+            console.log(string.concat("Primary ", quoteCurrency, " Supply:"), supply / quoteDivisor, quoteCurrency);
         } catch {
-            console.log("Primary USDC Supply: 0 USDC (not deposited yet)");
+            console.log(string.concat("Primary ", quoteCurrency, " Supply: 0 ", quoteCurrency, " (not deposited yet)"));
         }
-        
-        try lendingManager.getUserDebt(primaryTrader, usdc) returns (uint256 debt) {
-            console.log("Primary USDC Debt:", debt / 10**6, "USDC");
+
+        try lendingManager.getUserDebt(primaryTrader, quoteToken) returns (uint256 debt) {
+            console.log(string.concat("Primary ", quoteCurrency, " Debt:"), debt / quoteDivisor, quoteCurrency);
         } catch {
-            console.log("Primary USDC Debt: 0 USDC (no borrowing yet)");
+            console.log(string.concat("Primary ", quoteCurrency, " Debt: 0 ", quoteCurrency, " (no borrowing yet)"));
         }
-        
+
         try lendingManager.getUserSupply(secondaryTrader, weth) returns (uint256 supply) {
             console.log("Secondary WETH Supply:", supply / 10**18, "WETH");
         } catch {
             console.log("Secondary WETH Supply: 0 WETH (not deposited yet)");
         }
-        
+
         try lendingManager.getUserDebt(secondaryTrader, weth) returns (uint256 debt) {
             console.log("Secondary WETH Debt:", debt / 10**18, "WETH");
         } catch {
             console.log("Secondary WETH Debt: 0 WETH (no borrowing yet)");
         }
-        
+
         console.log("");
     }
     

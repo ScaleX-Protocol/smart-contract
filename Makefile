@@ -365,7 +365,7 @@ test-local-deposit: check-env
 fill-orderbook: check-env
 	@echo "📈 Filling orderbook with limit orders..."
 	@echo "📡 Network: $(network)"
-	@echo "🪙 Trading pair: gsWETH/gsUSDC (default)"
+	@echo "🪙 Trading pair: sxWETH/gsUSDC (default)"
 	$(if $(PRIVATE_KEY),@echo "🔑 Using custom private key",@echo "🔑 Using default private key")
 	forge script script/trading/FillOrderBook.s.sol:FillMockOrderBook --rpc-url $(call get_rpc_url,$(network)) $(if $(PRIVATE_KEY),--private-key $(PRIVATE_KEY),) --broadcast $(flag)
 
@@ -619,3 +619,23 @@ deploy-development:
 deploy-production:
 	@echo "🚀 Deploying production environment (requires environment variables)..."
 	bash shellscripts/deploy.sh
+
+# ============================================================
+#                   ORDER MATCHING TESTS
+# ============================================================
+
+.PHONY: test-order-matching verify-order-matching test-all-pools
+
+test-order-matching:
+	@echo "Testing order matching across all pools..."
+	./shellscripts/test-order-matching.sh
+
+verify-order-matching:
+	@echo "Verifying order books and recent trades..."
+	./shellscripts/verify-order-matching.sh
+
+test-all-pools:
+	@echo "Running comprehensive pool matching test..."
+	forge script script/trading/TestAllPoolsMatching.s.sol:TestAllPoolsMatching \
+		--rpc-url $(call get_rpc_url,$(network)) \
+		--broadcast --legacy $(flag)

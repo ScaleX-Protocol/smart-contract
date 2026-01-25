@@ -1,0 +1,52 @@
+// SPDX-License-Identifier: UNLICENSED
+pragma solidity ^0.8.26;
+
+import "../utils/DeployHelpers.s.sol";
+import "../../src/core/ScaleXRouter.sol";
+import "../../src/core/PoolManager.sol";
+import "../../src/core/interfaces/IOrderBook.sol";
+
+contract CancelAllMyOrders is Script, DeployHelpers {
+    function run() public {
+        uint256 deployerPrivateKey = getDeployerKey();
+        address deployer = vm.addr(deployerPrivateKey);
+
+        loadDeployments();
+
+        ScaleXRouter router = ScaleXRouter(deployed["ScaleXRouter"].addr);
+        PoolManager poolManager = PoolManager(deployed["PoolManager"].addr);
+
+        // Get WETH/IDRX pool
+        address wethAddr = deployed["sxWETH"].addr;
+        address idrxAddr = deployed["sxIDRX"].addr;
+
+        Currency weth = Currency.wrap(wethAddr);
+        Currency idrx = Currency.wrap(idrxAddr);
+
+        PoolKey memory poolKey = poolManager.createPoolKey(weth, idrx);
+
+        vm.startBroadcast(deployerPrivateKey);
+
+        console.log("Cancelling all orders for:", deployer);
+        console.log("Pool:", wethAddr, "/", idrxAddr);
+
+        // Try to cancel orders 1-100 (bruteforce since we don't know which ones exist)
+        uint256 cancelledCount = 0;
+        for (uint48 i = 1; i <= 100; i++) {
+            try router.cancelLimitOrder(poolKey, i) {
+                console.log("Cancelled order:", i);
+                cancelledCount++;
+            } catch {
+                // Order doesn't exist or not owned by us, skip
+            }
+        }
+
+        console.log("Total orders cancelled:", cancelledCount);
+
+        vm.stopBroadcast();
+    }
+
+    function getDeployerKey() internal view override returns (uint256) {
+        return vm.envUint("PRIVATE_KEY");
+    }
+}

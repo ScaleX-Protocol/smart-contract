@@ -19,15 +19,15 @@ contract FindMinimumGas is Script {
         string memory json = vm.readFile("./deployments/84532.json");
         
         address scaleXRouter = vm.parseJsonAddress(json, ".ScaleXRouter");
-        address gsUSDC = vm.parseJsonAddress(json, ".gsUSDC");
-        address gsWETH = vm.parseJsonAddress(json, ".gsWETH");
+        address sxUSDC = vm.parseJsonAddress(json, ".sxUSDC");
+        address sxWETH = vm.parseJsonAddress(json, ".sxWETH");
         address pool = vm.parseJsonAddress(json, ".WETH_USDC_Pool");
         
         console.log("=== FINDING MINIMUM GAS FOR DIFFERENT ORDER SIZES ===");
         
         IPoolManager.Pool memory poolForOrder = IPoolManager.Pool({
-            baseCurrency: Currency.wrap(gsWETH),
-            quoteCurrency: Currency.wrap(gsUSDC),
+            baseCurrency: Currency.wrap(sxWETH),
+            quoteCurrency: Currency.wrap(sxUSDC),
             orderBook: IOrderBook(pool)
         });
         

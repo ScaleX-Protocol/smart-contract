@@ -8,6 +8,10 @@
 # - mm-bot/.env.<chain-name>
 # - frontend/apps/web/src/configs/contracts.ts
 #
+# This script also reads and propagates the QUOTE_CURRENCY from .env file
+# (defaults to USDC). The quote currency address is extracted from the
+# deployment JSON and written to indexer/mm-bot configs.
+#
 # Usage:
 #   ./update-env.sh <chain-id> [deployment-output-file]
 #   ./update-env.sh 84532                    # Interactive mode
@@ -17,6 +21,10 @@
 #   ./update-env.sh 84532                    # Update base-sepolia configs
 #   ./update-env.sh 1116                     # Update core-chain configs
 #   ./update-env.sh 5003                     # Update mantle-sepolia configs
+#
+# Environment Variables:
+#   QUOTE_CURRENCY - The quote token symbol (default: USDC)
+#                    Automatically loaded from .env file if present
 #############################################################################
 
 set -euo pipefail
@@ -93,17 +101,18 @@ get_contract_addresses() {
     if [[ -n "$deployment_file" && -f "$deployment_file" ]]; then
         print_info "Parsing deployment file: $deployment_file"
         
-        # Extract addresses from deployment output
-        BALANCE_MANAGER=$(grep -E "BalanceManager:|BALANCE_MANAGER" "$deployment_file" | grep -oE "0x[a-fA-F0-9]{40}" | head -1 || echo "")
-        SCALEX_ROUTER=$(grep -E "ScaleXRouter:|SCALEX_ROUTER" "$deployment_file" | grep -oE "0x[a-fA-F0-9]{40}" | head -1 || echo "")
-        POOL_MANAGER=$(grep -E "PoolManager:|POOL_MANAGER" "$deployment_file" | grep -oE "0x[a-fA-F0-9]{40}" | head -1 || echo "")
-        FAUCET=$(grep -E "Faucet:|FAUCET_ADDRESS" "$deployment_file" | grep -oE "0x[a-fA-F0-9]{40}" | head -1 || echo "")
-        LENDING_MANAGER=$(grep -E "LendingManager:|LENDING_MANAGER" "$deployment_file" | grep -oE "0x[a-fA-F0-9]{40}" | head -1 || echo "")
-        ORACLE=$(grep -E "Oracle:|ORACLE_ADDRESS" "$deployment_file" | grep -oE "0x[a-fA-F0-9]{40}" | head -1 || echo "")
-        TOKEN_REGISTRY=$(grep -E "TokenRegistry:|TOKEN_REGISTRY" "$deployment_file" | grep -oE "0x[a-fA-F0-9]{40}" | head -1 || echo "")
+        # Extract addresses from deployment output (handles both JSON and log format)
+        BALANCE_MANAGER=$(grep -E '"BalanceManager"|BalanceManager:|BALANCE_MANAGER' "$deployment_file" | grep -oE "0x[a-fA-F0-9]{40}" | head -1 || echo "")
+        SCALEX_ROUTER=$(grep -E '"ScaleXRouter"|ScaleXRouter:|SCALEX_ROUTER' "$deployment_file" | grep -oE "0x[a-fA-F0-9]{40}" | head -1 || echo "")
+        POOL_MANAGER=$(grep -E '"PoolManager"|PoolManager:|POOL_MANAGER' "$deployment_file" | grep -oE "0x[a-fA-F0-9]{40}" | head -1 || echo "")
+        FAUCET=$(grep -E '"Faucet"|Faucet:|FAUCET_ADDRESS' "$deployment_file" | grep -oE "0x[a-fA-F0-9]{40}" | head -1 || echo "")
+        LENDING_MANAGER=$(grep -E '"LendingManager"|LendingManager:|LENDING_MANAGER' "$deployment_file" | grep -oE "0x[a-fA-F0-9]{40}" | head -1 || echo "")
+        ORACLE=$(grep -E '"Oracle"|Oracle:|ORACLE_ADDRESS' "$deployment_file" | grep -oE "0x[a-fA-F0-9]{40}" | head -1 || echo "")
+        TOKEN_REGISTRY=$(grep -E '"TokenRegistry"|TokenRegistry:|TOKEN_REGISTRY' "$deployment_file" | grep -oE "0x[a-fA-F0-9]{40}" | head -1 || echo "")
+        SYNTHETIC_TOKEN_FACTORY=$(grep -E '"SyntheticTokenFactory"|SyntheticTokenFactory:|SYNTHETIC_TOKEN_FACTORY' "$deployment_file" | grep -oE "0x[a-fA-F0-9]{40}" | head -1 || echo "")
     else
         print_info "Enter contract addresses (press Enter to skip):"
-        
+
         read -p "BalanceManager address: " BALANCE_MANAGER
         read -p "ScaleXRouter address: " SCALEX_ROUTER
         read -p "PoolManager address: " POOL_MANAGER
@@ -111,6 +120,7 @@ get_contract_addresses() {
         read -p "LendingManager address (optional): " LENDING_MANAGER
         read -p "Oracle address (optional): " ORACLE
         read -p "TokenRegistry address (optional): " TOKEN_REGISTRY
+        read -p "SyntheticTokenFactory address (optional): " SYNTHETIC_TOKEN_FACTORY
     fi
     
     # Validate required addresses
@@ -120,38 +130,44 @@ get_contract_addresses() {
     fi
     
     print_section "Contract Addresses"
-    echo "BalanceManager:   $BALANCE_MANAGER"
-    echo "ScaleXRouter:     $SCALEX_ROUTER"
-    echo "PoolManager:      $POOL_MANAGER"
-    [[ -n "$FAUCET" ]] && echo "Faucet:           $FAUCET"
-    [[ -n "$LENDING_MANAGER" ]] && echo "LendingManager:   $LENDING_MANAGER"
-    [[ -n "$ORACLE" ]] && echo "Oracle:           $ORACLE"
-    [[ -n "$TOKEN_REGISTRY" ]] && echo "TokenRegistry:    $TOKEN_REGISTRY"
+    echo "BalanceManager:         $BALANCE_MANAGER"
+    echo "ScaleXRouter:           $SCALEX_ROUTER"
+    echo "PoolManager:            $POOL_MANAGER"
+    [[ -n "$FAUCET" ]] && echo "Faucet:                 $FAUCET"
+    [[ -n "$LENDING_MANAGER" ]] && echo "LendingManager:         $LENDING_MANAGER"
+    [[ -n "$ORACLE" ]] && echo "Oracle:                 $ORACLE"
+    [[ -n "$TOKEN_REGISTRY" ]] && echo "TokenRegistry:          $TOKEN_REGISTRY"
+    [[ -n "$SYNTHETIC_TOKEN_FACTORY" ]] && echo "SyntheticTokenFactory:  $SYNTHETIC_TOKEN_FACTORY"
     
     return 0
 }
 
 #############################################################################
-# Get START_BLOCK from deployment JSON
+# Get START_BLOCK and Quote Currency from deployment JSON
 #############################################################################
 get_start_block() {
     local chain_id="$1"
     local deployment_json="$PROJECT_ROOT/deployments/${chain_id}.json"
-    
+
     START_BLOCK=""
-    USDC_ADDRESS=""
-    
+    QUOTE_CURRENCY="${QUOTE_CURRENCY:-USDC}"
+    QUOTE_ADDRESS=""
+
     # Try to get block number from deployment JSON
     if [[ -f "$deployment_json" ]]; then
         print_info "Checking deployment JSON: $deployment_json"
-        
-        # Extract block number and USDC address
+
+        # Extract block number and quote currency address
         if command -v jq >/dev/null 2>&1; then
             START_BLOCK=$(jq -r '.blockNumber // empty' "$deployment_json" 2>/dev/null || echo "")
-            USDC_ADDRESS=$(jq -r '.USDC // empty' "$deployment_json" 2>/dev/null || echo "")
-            
+            QUOTE_ADDRESS=$(jq -r ".${QUOTE_CURRENCY} // empty" "$deployment_json" 2>/dev/null || echo "")
+
             if [[ -n "$START_BLOCK" ]]; then
                 print_success "Found START_BLOCK from deployment: $START_BLOCK"
+            fi
+
+            if [[ -n "$QUOTE_ADDRESS" ]]; then
+                print_success "Found ${QUOTE_CURRENCY} address: $QUOTE_ADDRESS"
             fi
         else
             print_warning "jq not installed - cannot parse deployment JSON"
@@ -159,17 +175,24 @@ get_start_block() {
     else
         print_warning "Deployment JSON not found: $deployment_json"
     fi
-    
+
     # If no block found, prompt user
     if [[ -z "$START_BLOCK" ]]; then
         print_info "START_BLOCK not found in deployment file"
         read -p "Enter START_BLOCK manually (or press Enter to skip): " START_BLOCK
     fi
-    
+
     if [[ -n "$START_BLOCK" ]]; then
         echo "START_BLOCK:      $START_BLOCK"
     else
         print_warning "START_BLOCK not set - indexer env will not be updated with block number"
+    fi
+
+    if [[ -n "$QUOTE_ADDRESS" ]]; then
+        echo "QUOTE_CURRENCY:   $QUOTE_CURRENCY"
+        echo "QUOTE_ADDRESS:    $QUOTE_ADDRESS"
+    else
+        print_warning "${QUOTE_CURRENCY} address not found in deployment"
     fi
 }
 
@@ -215,10 +238,20 @@ update_indexer_env() {
         fi
     }
     
+    # Update primary contract addresses (used by indexer config)
+    update_or_append "BALANCEMANAGER_CONTRACT_SCALEX_CORE_DEVNET_ADDRESS" "$BALANCE_MANAGER" "$env_file"
+    update_or_append "SCALEXROUTER_CONTRACT_SCALEX_CORE_DEVNET_ADDRESS" "$SCALEX_ROUTER" "$env_file"
+    update_or_append "POOLMANAGER_CONTRACT_SCALEX_CORE_DEVNET_ADDRESS" "$POOL_MANAGER" "$env_file"
+
+    [[ -n "$TOKEN_REGISTRY" ]] && update_or_append "TOKENREGISTRY_CONTRACT_SCALEX_CORE_DEVNET_ADDRESS" "$TOKEN_REGISTRY" "$env_file"
+    [[ -n "$SYNTHETIC_TOKEN_FACTORY" ]] && update_or_append "SYNTHETICTOKENFACTORY_CONTRACT_SCALEX_CORE_DEVNET_ADDRESS" "$SYNTHETIC_TOKEN_FACTORY" "$env_file"
+    [[ -n "$ORACLE" ]] && update_or_append "ORACLE_CONTRACT_SCALEX_CORE_DEVNET_ADDRESS" "$ORACLE" "$env_file"
+    [[ -n "$LENDING_MANAGER" ]] && update_or_append "LENDINGMANAGER_CONTRACT_SCALEX_CORE_DEVNET_ADDRESS" "$LENDING_MANAGER" "$env_file"
+
+    # Update legacy/alternative variable names for backward compatibility
     update_or_append "POOLMANAGER_CONTRACT_RARI_ADDRESS" "$POOL_MANAGER" "$env_file"
     update_or_append "BALANCEMANAGER_CONTRACT_RARI_ADDRESS" "$BALANCE_MANAGER" "$env_file"
     update_or_append "ScaleXROUTER_CONTRACT_RARI_ADDRESS" "$SCALEX_ROUTER" "$env_file"
-    
     [[ -n "$LENDING_MANAGER" ]] && update_or_append "LENDINGMANAGER_CONTRACT_ADDRESS" "$LENDING_MANAGER" "$env_file"
     [[ -n "$ORACLE" ]] && update_or_append "ORACLE_CONTRACT_ADDRESS" "$ORACLE" "$env_file"
     [[ -n "$TOKEN_REGISTRY" ]] && update_or_append "TOKENREGISTRY_CONTRACT_ADDRESS" "$TOKEN_REGISTRY" "$env_file"
@@ -230,7 +263,19 @@ update_indexer_env() {
         update_or_append "FAUCET_START_BLOCK" "$START_BLOCK" "$env_file"
         print_success "Updated START_BLOCK variables to $START_BLOCK"
     fi
-    
+
+    # Update QUOTE_CURRENCY and QUOTE_ADDRESS if available
+    if [[ -n "$QUOTE_CURRENCY" ]]; then
+        update_or_append "QUOTE_CURRENCY" "$QUOTE_CURRENCY" "$env_file"
+        print_success "Updated QUOTE_CURRENCY to $QUOTE_CURRENCY"
+    fi
+
+    if [[ -n "$QUOTE_ADDRESS" ]]; then
+        update_or_append "QUOTE_ADDRESS" "$QUOTE_ADDRESS" "$env_file"
+        update_or_append "${QUOTE_CURRENCY}_ADDRESS" "$QUOTE_ADDRESS" "$env_file"
+        print_success "Updated ${QUOTE_CURRENCY}_ADDRESS to $QUOTE_ADDRESS"
+    fi
+
     print_success "Indexer environment updated successfully"
 }
 
@@ -277,7 +322,19 @@ update_mmbot_env() {
     update_or_append "PROXY_POOL_MANAGER" "$POOL_MANAGER" "$env_file"
     update_or_append "PROXY_GTX_ROUTER" "$SCALEX_ROUTER" "$env_file"
     update_or_append "PROXY_BALANCE_MANAGER" "$BALANCE_MANAGER" "$env_file"
-    
+
+    # Update QUOTE_CURRENCY and QUOTE_ADDRESS if available
+    if [[ -n "$QUOTE_CURRENCY" ]]; then
+        update_or_append "QUOTE_CURRENCY" "$QUOTE_CURRENCY" "$env_file"
+        print_success "Updated QUOTE_CURRENCY to $QUOTE_CURRENCY"
+    fi
+
+    if [[ -n "$QUOTE_ADDRESS" ]]; then
+        update_or_append "QUOTE_ADDRESS" "$QUOTE_ADDRESS" "$env_file"
+        update_or_append "${QUOTE_CURRENCY}_ADDRESS" "$QUOTE_ADDRESS" "$env_file"
+        print_success "Updated ${QUOTE_CURRENCY}_ADDRESS to $QUOTE_ADDRESS"
+    fi
+
     print_success "MM-Bot environment updated successfully"
 }
 
@@ -333,11 +390,30 @@ update_frontend_config() {
 }
 
 #############################################################################
+# Load environment variables from .env file
+#############################################################################
+load_env_file() {
+    local env_file="$PROJECT_ROOT/.env"
+
+    if [[ -f "$env_file" ]]; then
+        print_info "Loading environment variables from $env_file"
+        # Export QUOTE_CURRENCY if found
+        if grep -q "^QUOTE_CURRENCY=" "$env_file"; then
+            export QUOTE_CURRENCY=$(grep "^QUOTE_CURRENCY=" "$env_file" | cut -d'=' -f2 | tr -d ' "'"'"'')
+            print_success "Loaded QUOTE_CURRENCY: $QUOTE_CURRENCY"
+        fi
+    fi
+}
+
+#############################################################################
 # Main execution
 #############################################################################
 main() {
     print_section "Contract Address Update Script"
-    
+
+    # Load environment variables
+    load_env_file
+
     # Check arguments
     if [[ $# -lt 1 ]]; then
         print_error "Usage: $0 <chain-id> [deployment-output-file]"
@@ -348,10 +424,10 @@ main() {
         done
         exit 1
     fi
-    
+
     local chain_id="$1"
     local deployment_file="${2:-}"
-    
+
     # Get chain name from ID
     local chain_name=$(get_chain_name "$chain_id")
     if [[ -z "$chain_name" ]]; then
@@ -360,7 +436,7 @@ main() {
         get_all_chain_ids
         exit 1
     fi
-    
+
     print_info "Chain ID: $chain_id"
     print_info "Chain Name: $chain_name"
     

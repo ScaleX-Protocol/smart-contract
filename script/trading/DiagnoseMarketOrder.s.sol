@@ -25,8 +25,8 @@ contract DiagnoseMarketOrder is DeployHelpers {
         PoolManager poolManager = PoolManager(deployed["PROXY_POOLMANAGER"].addr);
         
         // Load synthetic tokens
-        address synthWETH = deployed["gsWETH"].addr;
-        address synthUSDC = deployed["gsUSDC"].addr;
+        address synthWETH = deployed["sxWETH"].addr;
+        address synthUSDC = deployed["sxUSDC"].addr;
         
         Currency weth = Currency.wrap(synthWETH);
         Currency usdc = Currency.wrap(synthUSDC);
@@ -35,15 +35,15 @@ contract DiagnoseMarketOrder is DeployHelpers {
         
         console.log("=== DIAGNOSTIC: Market Order Debug ===");
         console.log("Deployer:", deployer);
-        console.log("gsWETH:", synthWETH);
-        console.log("gsUSDC:", synthUSDC);
+        console.log("sxWETH:", synthWETH);
+        console.log("sxUSDC:", synthUSDC);
         
         // Check balances
         uint256 wethBalance = balanceManager.getBalance(deployer, weth);
         uint256 usdcBalance = balanceManager.getBalance(deployer, usdc);
         
-        console.log("gsWETH balance:", wethBalance);
-        console.log("gsUSDC balance:", usdcBalance);
+        console.log("sxWETH balance:", wethBalance);
+        console.log("sxUSDC balance:", usdcBalance);
         
         // Check orderbook state
         IOrderBook.PriceVolume memory bestBuy = scalexRouter.getBestPrice(weth, usdc, IOrderBook.Side.BUY);

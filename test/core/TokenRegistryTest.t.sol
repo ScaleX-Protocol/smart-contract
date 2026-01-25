@@ -24,37 +24,37 @@ contract TokenRegistryTest is Test {
         tokenRegistry = TokenRegistry(address(proxy));
 
         // Register default token mappings that the tests expect
-        // Appchain USDC -> Rari gsUSDC
+        // Appchain USDC -> Rari sxUSDC
         tokenRegistry.registerTokenMapping(
             4661, // Appchain
             0x1362Dd75d8F1579a0Ebd62DF92d8F3852C3a7516, // USDC
             1918988905, // Rari
-            0x8bA339dDCC0c7140dC6C2E268ee37bB308cd4C68, // gsUSDC
-            "gsUSDC",
+            0x8bA339dDCC0c7140dC6C2E268ee37bB308cd4C68, // sxUSDC
+            "sxUSDC",
             6, // USDC decimals
-            6  // gsUSDC decimals
+            6  // sxUSDC decimals
         );
 
-        // Appchain WETH -> Rari gsWETH
+        // Appchain WETH -> Rari sxWETH
         tokenRegistry.registerTokenMapping(
             4661, // Appchain
             0x02950119C4CCD1993f7938A55B8Ab8384C3CcE4F, // WETH
             1918988905, // Rari
-            0x835c8aa033972E372865FcC933c9de0A48B6Ae23, // gsWETH (example address)
-            "gsWETH",
+            0x835c8aa033972E372865FcC933c9de0A48B6Ae23, // sxWETH (example address)
+            "sxWETH",
             18, // WETH decimals
-            18  // gsWETH decimals
+            18  // sxWETH decimals
         );
 
-        // Appchain WBTC -> Rari gsWBTC
+        // Appchain WBTC -> Rari sxWBTC
         tokenRegistry.registerTokenMapping(
             4661, // Appchain
             0xb2e9Eabb827b78e2aC66bE17327603778D117d18, // WBTC
             1918988905, // Rari
-            0x22F9a3898C3DB2a0008fe9a7524a4A41D8A789Df, // gsWBTC (example address)
-            "gsWBTC",
+            0x22F9a3898C3DB2a0008fe9a7524a4A41D8A789Df, // sxWBTC (example address)
+            "sxWBTC",
             8, // WBTC decimals
-            8  // gsWBTC decimals
+            8  // sxWBTC decimals
         );
 
         // Activate all mappings
@@ -66,19 +66,19 @@ contract TokenRegistryTest is Test {
     }
     
     function test_DefaultMappingsRegistered() public {
-        // Test Appchain USDC -> Rari gsUSDC mapping
+        // Test Appchain USDC -> Rari sxUSDC mapping
         address syntheticToken = tokenRegistry.getSyntheticToken(
             4661, // Appchain
             0x1362Dd75d8F1579a0Ebd62DF92d8F3852C3a7516, // USDC
             1918988905 // Rari
         );
         
-        assertEq(syntheticToken, 0x8bA339dDCC0c7140dC6C2E268ee37bB308cd4C68); // gsUSDC
+        assertEq(syntheticToken, 0x8bA339dDCC0c7140dC6C2E268ee37bB308cd4C68); // sxUSDC
         
         // Test reverse lookup
         (uint32 sourceChainId, address sourceToken) = tokenRegistry.getSourceToken(
             1918988905, // Rari
-            0x8bA339dDCC0c7140dC6C2E268ee37bB308cd4C68 // gsUSDC
+            0x8bA339dDCC0c7140dC6C2E268ee37bB308cd4C68 // sxUSDC
         );
         
         assertEq(sourceChainId, 4661);

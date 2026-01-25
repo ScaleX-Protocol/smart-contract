@@ -36,8 +36,8 @@ contract LocalDepositTest is Test {
     BalanceManager private balanceManager;
     TokenRegistry private tokenRegistry;
     SyntheticTokenFactory private syntheticTokenFactory;
-    SyntheticToken private gsUSDC;
-    SyntheticToken private gsWETH;
+    SyntheticToken private sxUSDC;
+    SyntheticToken private sxWETH;
     MockUSDC private localUSDC;
     MockWETH private localWETH;
 
@@ -91,8 +91,8 @@ contract LocalDepositTest is Test {
         localWETH = new MockWETH();
 
         // Deploy synthetic tokens 
-        gsUSDC = new SyntheticToken("Synthetic USDC", "gsUSDC", 6, address(balanceManager), address(balanceManager), address(0));
-        gsWETH = new SyntheticToken("Synthetic WETH", "gsWETH", 18, address(balanceManager), address(balanceManager), address(0));
+        sxUSDC = new SyntheticToken("Synthetic USDC", "sxUSDC", 6, address(balanceManager), address(balanceManager), address(0));
+        sxWETH = new SyntheticToken("Synthetic WETH", "sxWETH", 18, address(balanceManager), address(balanceManager), address(0));
 
         // Set up BalanceManager with TokenRegistry
         vm.startPrank(owner);
@@ -121,15 +121,15 @@ contract LocalDepositTest is Test {
     function testRegisterLocalTokenMapping() public {
         vm.startPrank(owner);
         
-        // Register local USDC → gsUSDC mapping (same chain)
+        // Register local USDC → sxUSDC mapping (same chain)
         tokenRegistry.registerTokenMapping(
             LOCAL_CHAIN_ID,          // sourceChainId: Local chain
             address(localUSDC),      // sourceToken: Local USDC
             LOCAL_CHAIN_ID,          // targetChainId: Same local chain
-            address(gsUSDC),         // syntheticToken: gsUSDC
-            "gsUSDC",
+            address(sxUSDC),         // syntheticToken: sxUSDC
+            "sxUSDC",
             6,                       // sourceDecimals (USDC)
-            6                        // syntheticDecimals (gsUSDC)
+            6                        // syntheticDecimals (sxUSDC)
         );
 
         vm.stopPrank();
@@ -138,7 +138,7 @@ contract LocalDepositTest is Test {
         assertTrue(tokenRegistry.isTokenMappingActive(LOCAL_CHAIN_ID, address(localUSDC), LOCAL_CHAIN_ID));
         assertEq(
             tokenRegistry.getSyntheticToken(LOCAL_CHAIN_ID, address(localUSDC), LOCAL_CHAIN_ID),
-            address(gsUSDC)
+            address(sxUSDC)
         );
     }
 
@@ -208,17 +208,17 @@ contract LocalDepositTest is Test {
 
         // Record balances before
         uint256 userUSDCBefore = localUSDC.balanceOf(user1);
-        uint256 userGsUSDCBefore = gsUSDC.balanceOf(user1);
+        uint256 userGsUSDCBefore = sxUSDC.balanceOf(user1);
         uint256 balanceManagerUSDCBefore = localUSDC.balanceOf(address(balanceManager));
-        uint256 userInternalBalanceBefore = balanceManager.getBalance(user1, Currency.wrap(address(gsUSDC)));
+        uint256 userInternalBalanceBefore = balanceManager.getBalance(user1, Currency.wrap(address(sxUSDC)));
 
         // Expect LocalDeposit event (defined in BalanceManager)
         vm.expectEmit(true, true, true, true);
-        emit LocalDeposit(user1, address(localUSDC), address(gsUSDC), DEPOSIT_AMOUNT_USDC, DEPOSIT_AMOUNT_USDC);
+        emit LocalDeposit(user1, address(localUSDC), address(sxUSDC), DEPOSIT_AMOUNT_USDC, DEPOSIT_AMOUNT_USDC);
         
         // Expect Deposit event (from IBalanceManager interface)
         vm.expectEmit(true, true, false, true);
-        emit Deposit(user1, Currency.wrap(address(gsUSDC)).toId(), DEPOSIT_AMOUNT_USDC);
+        emit Deposit(user1, Currency.wrap(address(sxUSDC)).toId(), DEPOSIT_AMOUNT_USDC);
 
         // Perform local deposit
         balanceManager.depositLocal(address(localUSDC), DEPOSIT_AMOUNT_USDC, user1);
@@ -230,12 +230,12 @@ contract LocalDepositTest is Test {
         assertEq(localUSDC.balanceOf(address(balanceManager)), balanceManagerUSDCBefore + DEPOSIT_AMOUNT_USDC, "BalanceManager should receive USDC");
         
         // Verify synthetic tokens are held by BalanceManager (vault)
-        assertEq(gsUSDC.balanceOf(address(balanceManager)), userGsUSDCBefore + DEPOSIT_AMOUNT_USDC, "BalanceManager should hold gsUSDC");
-        assertEq(gsUSDC.balanceOf(user1), 0, "User should not directly hold ERC20 gsUSDC");
+        assertEq(sxUSDC.balanceOf(address(balanceManager)), userGsUSDCBefore + DEPOSIT_AMOUNT_USDC, "BalanceManager should hold sxUSDC");
+        assertEq(sxUSDC.balanceOf(user1), 0, "User should not directly hold ERC20 sxUSDC");
         
         // Verify internal balance tracking
         assertEq(
-            balanceManager.getBalance(user1, Currency.wrap(address(gsUSDC))), 
+            balanceManager.getBalance(user1, Currency.wrap(address(sxUSDC))), 
             userInternalBalanceBefore + DEPOSIT_AMOUNT_USDC,
             "Internal balance should be updated"
         );
@@ -257,13 +257,13 @@ contract LocalDepositTest is Test {
         vm.stopPrank();
 
         // Verify BalanceManager holds synthetic tokens (vault model)
-        assertEq(gsUSDC.balanceOf(address(balanceManager)), DEPOSIT_AMOUNT_USDC * 3);
-        assertEq(gsUSDC.balanceOf(user1), 0, "User1 should not directly hold ERC20 tokens");
-        assertEq(gsUSDC.balanceOf(user2), 0, "User2 should not directly hold ERC20 tokens");
+        assertEq(sxUSDC.balanceOf(address(balanceManager)), DEPOSIT_AMOUNT_USDC * 3);
+        assertEq(sxUSDC.balanceOf(user1), 0, "User1 should not directly hold ERC20 tokens");
+        assertEq(sxUSDC.balanceOf(user2), 0, "User2 should not directly hold ERC20 tokens");
         
         // Verify internal balances
-        assertEq(balanceManager.getBalance(user1, Currency.wrap(address(gsUSDC))), DEPOSIT_AMOUNT_USDC);
-        assertEq(balanceManager.getBalance(user2, Currency.wrap(address(gsUSDC))), DEPOSIT_AMOUNT_USDC * 2);
+        assertEq(balanceManager.getBalance(user1, Currency.wrap(address(sxUSDC))), DEPOSIT_AMOUNT_USDC);
+        assertEq(balanceManager.getBalance(user2, Currency.wrap(address(sxUSDC))), DEPOSIT_AMOUNT_USDC * 2);
 
         // Verify total backing
         assertEq(localUSDC.balanceOf(address(balanceManager)), DEPOSIT_AMOUNT_USDC * 3);
@@ -282,22 +282,22 @@ contract LocalDepositTest is Test {
 
         // Verify user1 paid, user2 received internal balance
         assertEq(localUSDC.balanceOf(user1), initialUSDCBalance - DEPOSIT_AMOUNT_USDC);
-        assertEq(gsUSDC.balanceOf(address(balanceManager)), DEPOSIT_AMOUNT_USDC, "BalanceManager should hold ERC20 tokens");
-        assertEq(gsUSDC.balanceOf(user2), 0, "User2 should not directly hold ERC20 tokens");
-        assertEq(balanceManager.getBalance(user2, Currency.wrap(address(gsUSDC))), DEPOSIT_AMOUNT_USDC);
+        assertEq(sxUSDC.balanceOf(address(balanceManager)), DEPOSIT_AMOUNT_USDC, "BalanceManager should hold ERC20 tokens");
+        assertEq(sxUSDC.balanceOf(user2), 0, "User2 should not directly hold ERC20 tokens");
+        assertEq(balanceManager.getBalance(user2, Currency.wrap(address(sxUSDC))), DEPOSIT_AMOUNT_USDC);
     }
 
     function testDepositLocal_WithDecimalConversion() public {
-        // Register local WETH → gsWETH mapping (both 18 decimals, no conversion needed)
+        // Register local WETH → sxWETH mapping (both 18 decimals, no conversion needed)
         vm.startPrank(owner);
         tokenRegistry.registerTokenMapping(
             LOCAL_CHAIN_ID,
             address(localWETH),
             LOCAL_CHAIN_ID,
-            address(gsWETH),
-            "gsWETH",
+            address(sxWETH),
+            "sxWETH",
             18,  // WETH decimals
-            18   // gsWETH decimals
+            18   // sxWETH decimals
         );
         vm.stopPrank();
 
@@ -309,9 +309,9 @@ contract LocalDepositTest is Test {
         vm.stopPrank();
 
         // Should be 1:1 conversion since both are 18 decimals
-        assertEq(gsWETH.balanceOf(address(balanceManager)), DEPOSIT_AMOUNT_WETH, "BalanceManager should hold ERC20 tokens");
-        assertEq(gsWETH.balanceOf(user1), 0, "User should not directly hold ERC20 tokens");
-        assertEq(balanceManager.getBalance(user1, Currency.wrap(address(gsWETH))), DEPOSIT_AMOUNT_WETH);
+        assertEq(sxWETH.balanceOf(address(balanceManager)), DEPOSIT_AMOUNT_WETH, "BalanceManager should hold ERC20 tokens");
+        assertEq(sxWETH.balanceOf(user1), 0, "User should not directly hold ERC20 tokens");
+        assertEq(balanceManager.getBalance(user1, Currency.wrap(address(sxWETH))), DEPOSIT_AMOUNT_WETH);
     }
 
     function testDepositLocal_MatchesCrossChainBehavior() public {
@@ -321,7 +321,7 @@ contract LocalDepositTest is Test {
         // Cross-chain deposits also mint to BalanceManager now
         uint256 crossChainAmount = DEPOSIT_AMOUNT_USDC;
         vm.startPrank(address(balanceManager));
-        gsUSDC.mint(address(balanceManager), crossChainAmount);
+        sxUSDC.mint(address(balanceManager), crossChainAmount);
         vm.stopPrank();
         
         // Simulate internal balance update (as BalanceManager._handleDepositMessage would do)
@@ -339,16 +339,16 @@ contract LocalDepositTest is Test {
         vm.stopPrank();
 
         // BalanceManager should hold all synthetic tokens
-        assertEq(gsUSDC.balanceOf(address(balanceManager)), DEPOSIT_AMOUNT_USDC + crossChainAmount, "BalanceManager should hold all gsUSDC");
-        assertEq(gsUSDC.balanceOf(user1), 0, "Local user should not directly hold ERC20 tokens");
-        assertEq(gsUSDC.balanceOf(user2), 0, "Cross-chain user should not directly hold ERC20 tokens");
+        assertEq(sxUSDC.balanceOf(address(balanceManager)), DEPOSIT_AMOUNT_USDC + crossChainAmount, "BalanceManager should hold all sxUSDC");
+        assertEq(sxUSDC.balanceOf(user1), 0, "Local user should not directly hold ERC20 tokens");
+        assertEq(sxUSDC.balanceOf(user2), 0, "Cross-chain user should not directly hold ERC20 tokens");
         
         // Both users should have internal balances for trading
-        assertEq(balanceManager.getBalance(user1, Currency.wrap(address(gsUSDC))), DEPOSIT_AMOUNT_USDC, "Local deposit user internal balance");
+        assertEq(balanceManager.getBalance(user1, Currency.wrap(address(sxUSDC))), DEPOSIT_AMOUNT_USDC, "Local deposit user internal balance");
         // Note: Cross-chain user balance would be set by _handleDepositMessage in real scenario
         
         // Same token contract, same trading capabilities
-        assertEq(address(gsUSDC), address(gsUSDC), "Same synthetic token for both deposit methods");
+        assertEq(address(sxUSDC), address(sxUSDC), "Same synthetic token for both deposit methods");
     }
 
     // Helper function to set up local USDC mapping
@@ -358,10 +358,10 @@ contract LocalDepositTest is Test {
             LOCAL_CHAIN_ID,
             address(localUSDC),
             LOCAL_CHAIN_ID,
-            address(gsUSDC),
-            "gsUSDC",
+            address(sxUSDC),
+            "sxUSDC",
             6,   // USDC decimals
-            6    // gsUSDC decimals  
+            6    // sxUSDC decimals  
         );
         vm.stopPrank();
     }

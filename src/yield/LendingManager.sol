@@ -11,7 +11,7 @@ import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Ini
 import {LendingManagerStorage} from "./LendingManagerStorage.sol";
 import {Currency} from "../core/libraries/Currency.sol";
 
-// BalanceManager interface for querying gsToken balances and seizing collateral
+// BalanceManager interface for querying sxToken balances and seizing collateral
 interface IBalanceManagerForLending {
     function getBalance(address user, Currency currency) external view returns (uint256);
     function getSyntheticToken(address realToken) external view returns (address);
@@ -181,8 +181,11 @@ contract LendingManager is
 
         IERC20(token).safeTransferFrom(msg.sender, address(this), amount);
 
-        // Only track total pool liquidity - per-user supply is tracked via gsToken balance in BalanceManager
+        // Only track total pool liquidity - per-user supply is tracked via sxToken balance in BalanceManager
         $.totalLiquidity[token] += amount;
+
+        // Track that user now has a position in this asset
+        _addUserAsset(user, token);
 
         emit LiquidityDeposited(user, token, amount, block.timestamp);
     }
@@ -232,11 +235,16 @@ contract LendingManager is
             }
         }
 
-        // Only decrease total pool liquidity - per-user supply is tracked via gsToken balance
+        // Only decrease total pool liquidity - per-user supply is tracked via sxToken balance
         $.totalLiquidity[token] -= amount;
 
         actualAmount = amount;
         IERC20(token).safeTransfer(msg.sender, actualAmount);
+
+        // Remove asset from tracking if user has no more position
+        if (!_hasAssetPosition(msg.sender, token)) {
+            _removeUserAsset(msg.sender, token);
+        }
 
         emit LiquidityWithdrawn(msg.sender, token, actualAmount, 0, block.timestamp);
     }
@@ -293,7 +301,7 @@ contract LendingManager is
             }
         }
 
-        // Only decrease total pool liquidity - per-user supply is tracked via gsToken balance
+        // Only decrease total pool liquidity - per-user supply is tracked via sxToken balance
         $.totalLiquidity[token] -= amount;
 
         actualAmount = amount;
@@ -382,16 +390,19 @@ contract LendingManager is
         // console.log("Token:", token);
         // console.log("Amount:", amount);
         // console.log("Asset enabled:", $.assetConfigs[token].enabled);
-        
+
         if (!$.assetConfigs[token].enabled) revert UnsupportedAsset();
         if (amount == 0) revert InvalidAmount();
+
+        // Note: No need to migrate here - fallback to supportedAssets handles legacy users
+        // and _addUserAsset at the end will start tracking for future operations
 
         // console.log("Before _updateInterest");
         _updateInterest(token);
         // console.log("After _updateInterest");
 
         UserPosition storage position = $.userPositions[user][token];
-        
+
         _updateUserPosition(user, token);
 
         // console.log("totalLiquidity:", $.totalLiquidity[token]);
@@ -415,6 +426,9 @@ contract LendingManager is
         uint256 previousBorrowed = position.borrowed;
         position.borrowed += amount;
         $.totalBorrowed[token] += amount;
+
+        // Track that user now has a position in this asset
+        _addUserAsset(user, token);
 
         IERC20(token).safeTransfer(user, amount);
 
@@ -480,6 +494,11 @@ contract LendingManager is
 
         position.borrowed -= principalPayment;
         $.totalBorrowed[token] -= principalPayment;
+
+        // Remove asset from tracking if user has no more position
+        if (!_hasAssetPosition(user, token)) {
+            _removeUserAsset(user, token);
+        }
 
         emit Repaid(user, token, principalPayment, interestPayment, block.timestamp);
     }
@@ -613,7 +632,7 @@ contract LendingManager is
         // Add the additional borrow amount to the debt (converted to USD value)
         if (additionalBorrowAmount > 0) {
             uint256 price = _getTokenPrice(token);
-            uint256 additionalDebtValue = (additionalBorrowAmount * price) / (10 ** _getTokenDecimals(token));
+            uint256 additionalDebtValue = (additionalBorrowAmount * price) / (10 ** IERC20Metadata(token).decimals());
             totalDebtValue += additionalDebtValue;
         }
 
@@ -632,11 +651,81 @@ contract LendingManager is
         address token,
         uint256 additionalAmount
     ) internal view returns (bool) {
-        // Get the projected health factor after borrowing additional amount
-        uint256 projectedHealthFactor = this.getProjectedHealthFactor(user, token, additionalAmount);
+        // Gas-optimized: Only loop through user's actual assets (not all supported assets)
+        Storage storage $ = getStorage();
+
+        if ($.balanceManager == address(0) || $.oracle == address(0)) {
+            return false; // Cannot verify collateral without oracle or balance manager
+        }
+
+        IBalanceManagerForLending bm = IBalanceManagerForLending($.balanceManager);
+        IOracle oracle = IOracle($.oracle);
+
+        uint256 totalCollateralValue = 0;
+        uint256 totalDebtValue = 0;
+        uint256 minLiquidationThreshold = $.BASIS_POINTS;
+
+        // KEY OPTIMIZATION: Loop through user's actual assets (typically 1-3)
+        // instead of ALL supported assets (9)
+        // MIGRATION: If userAssets is empty (legacy user), fall back to supportedAssets
+        address[] memory userAssetsList = $.userAssets[user];
+        if (userAssetsList.length == 0) {
+            userAssetsList = $.supportedAssets;
+        }
+
+        for (uint256 i = 0; i < userAssetsList.length; i++) {
+            address assetToken = userAssetsList[i];
+
+            // Cache synthetic token lookup
+            address syntheticToken = bm.getSyntheticToken(assetToken);
+            if (syntheticToken == address(0)) continue;
+
+            // Get balance and debt
+            uint256 supplyBalance = bm.getBalance(user, Currency.wrap(syntheticToken));
+            uint256 debt = _calculateUserDebt(user, assetToken);
+
+            // Skip if no position (shouldn't happen, but defensive)
+            if (supplyBalance == 0 && debt == 0) continue;
+
+            uint256 price = oracle.getPriceForCollateral(syntheticToken);
+            uint256 decimals = IERC20Metadata(assetToken).decimals();
+
+            // Calculate collateral value
+            if (supplyBalance > 0) {
+                uint256 tokenValue = (supplyBalance * price) / (10 ** decimals);
+                totalCollateralValue += tokenValue;
+
+                // Update min liquidation threshold
+                AssetConfig memory config = $.assetConfigs[assetToken];
+                if (config.liquidationThreshold < minLiquidationThreshold) {
+                    minLiquidationThreshold = config.liquidationThreshold;
+                }
+            }
+
+            // Calculate debt value
+            if (debt > 0) {
+                uint256 debtValue = (debt * price) / (10 ** decimals);
+                totalDebtValue += debtValue;
+            }
+        }
+
+        // Add the additional borrow amount to the debt
+        if (additionalAmount > 0) {
+            address syntheticToken = bm.getSyntheticToken(token);
+            uint256 price = oracle.getPriceForCollateral(syntheticToken);
+            uint256 additionalDebtValue = (additionalAmount * price) / (10 ** IERC20Metadata(token).decimals());
+            totalDebtValue += additionalDebtValue;
+        }
+
+        if (totalDebtValue == 0) {
+            return true; // No debt means sufficient collateral
+        }
+
+        uint256 weightedCollateralValue = (totalCollateralValue * minLiquidationThreshold) / $.BASIS_POINTS;
+        uint256 projectedHealthFactor = (weightedCollateralValue * $.PRECISION) / totalDebtValue;
 
         // User must have health factor >= 1.0 (PRECISION) after borrowing
-        return projectedHealthFactor >= getStorage().PRECISION;
+        return projectedHealthFactor >= $.PRECISION;
     }
 
     function getGeneratedInterest(address token) external view returns (uint256) {
@@ -715,7 +804,7 @@ contract LendingManager is
 
     function getUserPosition(address user, address token) external view returns (uint256 supplied, uint256 borrowed, uint256 lastUpdate) {
         UserPosition storage position = getStorage().userPositions[user][token];
-        // Supply is now tracked via gsToken balance in BalanceManager
+        // Supply is now tracked via sxToken balance in BalanceManager
         uint256 userSupply = _getUserSupplyBalance(user, token);
         return (userSupply, position.borrowed, position.lastYieldUpdate);
     }
@@ -879,6 +968,73 @@ contract LendingManager is
         position.lastYieldUpdate = block.timestamp;
     }
 
+    /// @notice Add an asset to user's tracking list (if not already tracked)
+    function _addUserAsset(address user, address token) internal {
+        Storage storage $ = getStorage();
+        if (!$.userAssetExists[user][token]) {
+            $.userAssets[user].push(token);
+            $.userAssetExists[user][token] = true;
+        }
+    }
+
+    /// @notice Remove an asset from user's tracking list
+    function _removeUserAsset(address user, address token) internal {
+        Storage storage $ = getStorage();
+        if (!$.userAssetExists[user][token]) return;
+
+        address[] storage assets = $.userAssets[user];
+        for (uint256 i = 0; i < assets.length; i++) {
+            if (assets[i] == token) {
+                // Replace with last element and pop
+                assets[i] = assets[assets.length - 1];
+                assets.pop();
+                $.userAssetExists[user][token] = false;
+                break;
+            }
+        }
+    }
+
+    /// @notice Check if user has any position in the asset (collateral or debt)
+    function _hasAssetPosition(address user, address token) internal view returns (bool) {
+        Storage storage $ = getStorage();
+
+        // Check if user has borrowed this token
+        if ($.userPositions[user][token].borrowed > 0) {
+            return true;
+        }
+
+        // Check if user has supplied this token (via BalanceManager)
+        if ($.balanceManager != address(0)) {
+            IBalanceManagerForLending bm = IBalanceManagerForLending($.balanceManager);
+            address syntheticToken = bm.getSyntheticToken(token);
+            if (syntheticToken != address(0)) {
+                uint256 balance = bm.getBalance(user, Currency.wrap(syntheticToken));
+                if (balance > 0) {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
+    /// @notice Migrate legacy user to new tracking system (non-view, modifies storage)
+    /// @dev Scans all supported assets and adds ones with positions to userAssets
+    function _migrateLegacyUser(address user) internal {
+        Storage storage $ = getStorage();
+
+        // Skip if user already has tracking
+        if ($.userAssets[user].length > 0) return;
+
+        // Scan all supported assets and add ones with positions
+        for (uint256 i = 0; i < $.supportedAssets.length; i++) {
+            address token = $.supportedAssets[i];
+            if (_hasAssetPosition(user, token)) {
+                _addUserAsset(user, token);
+            }
+        }
+    }
+
     function _calculateUtilizationRate(address token) internal view returns (uint256) {
         Storage storage $ = getStorage();
         if ($.totalLiquidity[token] == 0) return 0;
@@ -1007,7 +1163,7 @@ contract LendingManager is
                 IERC20(collateralToken).safeTransfer(liquidator, collateralToSeize);
             }
 
-            // Reduce borrower's gsToken balance (seize collateral)
+            // Reduce borrower's sxToken balance (seize collateral)
             IBalanceManagerForLending($.balanceManager).seizeCollateral(borrower, collateralToken, collateralToSeize);
         }
 
@@ -1078,7 +1234,7 @@ contract LendingManager is
 
         // Get internal BalanceManager balance (represents user's supply ownership)
         // Note: deposit() updates internal balance, which is used for trading.
-        // ERC20 gsTokens are not minted during deposit - internal balance IS the ownership.
+        // ERC20 sxTokens are not minted during deposit - internal balance IS the ownership.
         return bm.getBalance(user, Currency.wrap(syntheticToken));
     }
 
@@ -1101,13 +1257,20 @@ contract LendingManager is
         Storage storage $ = getStorage();
         uint256 totalValue = 0;
 
-        for (uint256 i = 0; i < $.supportedAssets.length; i++) {
-            address token = $.supportedAssets[i];
+        // Only loop through user's actual assets (gas optimization)
+        // MIGRATION: Fall back to all assets if user tracking not set up yet
+        address[] memory userAssetsList = $.userAssets[user];
+        if (userAssetsList.length == 0) {
+            userAssetsList = $.supportedAssets;
+        }
+
+        for (uint256 i = 0; i < userAssetsList.length; i++) {
+            address token = userAssetsList[i];
             uint256 supplyBalance = _getUserSupplyBalance(user, token);
 
             if (supplyBalance > 0) {
                 uint256 price = _getTokenPrice(token);
-                uint256 tokenValue = (supplyBalance * price) / (10 ** _getTokenDecimals(token));
+                uint256 tokenValue = (supplyBalance * price) / (10 ** IERC20Metadata(token).decimals());
                 totalValue += tokenValue;
             }
         }
@@ -1118,18 +1281,25 @@ contract LendingManager is
     function _getTotalDebtValue(address user) internal view returns (uint256) {
         Storage storage $ = getStorage();
         uint256 totalDebt = 0;
-        
-        for (uint256 i = 0; i < $.supportedAssets.length; i++) {
-            address token = $.supportedAssets[i];
+
+        // Only loop through user's actual assets (gas optimization)
+        // MIGRATION: Fall back to all assets if user tracking not set up yet
+        address[] memory userAssetsList = $.userAssets[user];
+        if (userAssetsList.length == 0) {
+            userAssetsList = $.supportedAssets;
+        }
+
+        for (uint256 i = 0; i < userAssetsList.length; i++) {
+            address token = userAssetsList[i];
             uint256 debt = _calculateUserDebt(user, token);
-            
+
             if (debt > 0) {
                 uint256 price = _getTokenPrice(token);
-                uint256 debtValue = (debt * price) / (10 ** _getTokenDecimals(token));
+                uint256 debtValue = (debt * price) / (10 ** IERC20Metadata(token).decimals());
                 totalDebt += debtValue;
             }
         }
-        
+
         return totalDebt;
     }
 
@@ -1137,8 +1307,15 @@ contract LendingManager is
         Storage storage $ = getStorage();
         uint256 minThreshold = $.BASIS_POINTS;
 
-        for (uint256 i = 0; i < $.supportedAssets.length; i++) {
-            address token = $.supportedAssets[i];
+        // Only loop through user's actual assets (gas optimization)
+        // MIGRATION: Fall back to all assets if user tracking not set up yet
+        address[] memory userAssetsList = $.userAssets[user];
+        if (userAssetsList.length == 0) {
+            userAssetsList = $.supportedAssets;
+        }
+
+        for (uint256 i = 0; i < userAssetsList.length; i++) {
+            address token = userAssetsList[i];
             uint256 supplyBalance = _getUserSupplyBalance(user, token);
 
             if (supplyBalance > 0) {
@@ -1170,6 +1347,6 @@ contract LendingManager is
     }
 
     // Note: updateCollateral and transferSupply have been removed.
-    // Supply ownership is now tracked via gsToken balance in BalanceManager,
+    // Supply ownership is now tracked via sxToken balance in BalanceManager,
     // eliminating the need for separate supply tracking in LendingManager.
 }

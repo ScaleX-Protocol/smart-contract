@@ -3,6 +3,9 @@ cache/
 out/
 yarn.lock
 
+# Backup files
+*.bak
+
 # Ignores development broadcast logs
 /broadcast/
 /broadcast/*/31337/
@@ -26,3 +29,6 @@ cross-chain-deposit.log
 population.log
 
 /.claude/
+
+# bv (beads viewer) local config and caches
+.bv/

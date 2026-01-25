@@ -24,60 +24,60 @@ contract ConfigureOracleTokens is Script {
 
         string memory json = vm.readFile(deploymentPath);
         address oracle = _extractAddress(json, "Oracle");
-        address gsUSDC = _extractAddress(json, "gsUSDC");
-        address gsWETH = _extractAddress(json, "gsWETH");
-        address gsWBTC = _extractAddress(json, "gsWBTC");
+        address sxUSDC = _extractAddress(json, "sxUSDC");
+        address sxWETH = _extractAddress(json, "sxWETH");
+        address sxWBTC = _extractAddress(json, "sxWBTC");
         address wethUsdcPool = _extractAddress(json, "WETH_USDC_Pool");
         address wbtcUsdcPool = _extractAddress(json, "WBTC_USDC_Pool");
 
         console.log("Loaded addresses:");
         console.log("  Oracle:", oracle);
-        console.log("  gsUSDC:", gsUSDC);
-        console.log("  gsWETH:", gsWETH);
-        console.log("  gsWBTC:", gsWBTC);
+        console.log("  sxUSDC:", sxUSDC);
+        console.log("  sxWETH:", sxWETH);
+        console.log("  sxWBTC:", sxWBTC);
         console.log("  WETH/USDC Pool:", wethUsdcPool);
         console.log("  WBTC/USDC Pool:", wbtcUsdcPool);
 
         // Validate addresses
         require(oracle != address(0), "Oracle address is zero");
-        require(gsUSDC != address(0), "gsUSDC address is zero");
-        require(gsWETH != address(0), "gsWETH address is zero");
-        require(gsWBTC != address(0), "gsWBTC address is zero");
+        require(sxUSDC != address(0), "sxUSDC address is zero");
+        require(sxWETH != address(0), "sxWETH address is zero");
+        require(sxWBTC != address(0), "sxWBTC address is zero");
 
         vm.startBroadcast(deployerPrivateKey);
 
         // Step 1: Add tokens to Oracle
         console.log("Step 1: Adding tokens to Oracle...");
 
-        IOracle(oracle).addToken(gsUSDC, 0);
-        console.log("[OK] gsUSDC added to Oracle");
+        IOracle(oracle).addToken(sxUSDC, 0);
+        console.log("[OK] sxUSDC added to Oracle");
 
-        IOracle(oracle).addToken(gsWETH, 0);
-        console.log("[OK] gsWETH added to Oracle");
+        IOracle(oracle).addToken(sxWETH, 0);
+        console.log("[OK] sxWETH added to Oracle");
 
-        IOracle(oracle).addToken(gsWBTC, 0);
-        console.log("[OK] gsWBTC added to Oracle");
+        IOracle(oracle).addToken(sxWBTC, 0);
+        console.log("[OK] sxWBTC added to Oracle");
 
         // Step 2: Set OrderBooks for each token
         console.log("Step 2: Setting OrderBooks for tokens...");
 
-        IOracle(oracle).setTokenOrderBook(gsWETH, wethUsdcPool);
-        console.log("[OK] gsWETH OrderBook set");
+        IOracle(oracle).setTokenOrderBook(sxWETH, wethUsdcPool);
+        console.log("[OK] sxWETH OrderBook set");
 
-        IOracle(oracle).setTokenOrderBook(gsWBTC, wbtcUsdcPool);
-        console.log("[OK] gsWBTC OrderBook set");
+        IOracle(oracle).setTokenOrderBook(sxWBTC, wbtcUsdcPool);
+        console.log("[OK] sxWBTC OrderBook set");
 
         // Step 3: Initialize prices (for bootstrapping)
         console.log("Step 3: Initializing prices...");
 
-        IOracle(oracle).initializePrice(gsWETH, 3000e6); // $3000 per WETH (6 decimals for USD)
-        console.log("[OK] gsWETH price initialized: $3000");
+        IOracle(oracle).initializePrice(sxWETH, 3000e6); // $3000 per WETH (6 decimals for USD)
+        console.log("[OK] sxWETH price initialized: $3000");
 
-        IOracle(oracle).initializePrice(gsWBTC, 95000e6); // $95000 per WBTC
-        console.log("[OK] gsWBTC price initialized: $95000");
+        IOracle(oracle).initializePrice(sxWBTC, 95000e6); // $95000 per WBTC
+        console.log("[OK] sxWBTC price initialized: $95000");
 
-        IOracle(oracle).initializePrice(gsUSDC, 1e6); // $1 per USDC
-        console.log("[OK] gsUSDC price initialized: $1");
+        IOracle(oracle).initializePrice(sxUSDC, 1e6); // $1 per USDC
+        console.log("[OK] sxUSDC price initialized: $1");
 
         vm.stopBroadcast();
 
@@ -87,17 +87,17 @@ contract ConfigureOracleTokens is Script {
         // Note: We'll verify prices work instead, as tokenPriceData.supported is internal
         console.log("Verifying prices...");
 
-        uint256 gsWETHPrice = IOracle(oracle).getSpotPrice(gsWETH);
-        console.log("gsWETH spot price:", gsWETHPrice);
-        require(gsWETHPrice == 3000e6, "gsWETH price incorrect");
+        uint256 sxWETHPrice = IOracle(oracle).getSpotPrice(sxWETH);
+        console.log("sxWETH spot price:", sxWETHPrice);
+        require(sxWETHPrice == 3000e6, "sxWETH price incorrect");
 
-        uint256 gsUSDCPrice = IOracle(oracle).getSpotPrice(gsUSDC);
-        console.log("gsUSDC spot price:", gsUSDCPrice);
-        require(gsUSDCPrice == 1e6, "gsUSDC price incorrect");
+        uint256 sxUSDCPrice = IOracle(oracle).getSpotPrice(sxUSDC);
+        console.log("sxUSDC spot price:", sxUSDCPrice);
+        require(sxUSDCPrice == 1e6, "sxUSDC price incorrect");
 
-        uint256 gsWBTCPrice = IOracle(oracle).getSpotPrice(gsWBTC);
-        console.log("gsWBTC spot price:", gsWBTCPrice);
-        require(gsWBTCPrice == 95000e6, "gsWBTC price incorrect");
+        uint256 sxWBTCPrice = IOracle(oracle).getSpotPrice(sxWBTC);
+        console.log("sxWBTC spot price:", sxWBTCPrice);
+        require(sxWBTCPrice == 95000e6, "sxWBTC price incorrect");
 
         console.log("=== ORACLE TOKEN CONFIGURATION COMPLETED ===");
     }
