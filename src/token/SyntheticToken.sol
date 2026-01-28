@@ -20,6 +20,7 @@ contract SyntheticToken is ERC20, Ownable, ISyntheticERC20 {
     address public minter;
     address public burner;
     address public underlyingToken;
+    uint8 private immutable _tokenDecimals;
 
     // Events
     event Mint(address indexed to, uint256 amount);
@@ -39,9 +40,17 @@ contract SyntheticToken is ERC20, Ownable, ISyntheticERC20 {
         address _burner,
         address _underlyingToken
     ) ERC20(_name, _symbol) Ownable(_burner) {
+        _tokenDecimals = _decimals;
         minter = _minter;
         burner = _burner;
         underlyingToken = _underlyingToken;
+    }
+
+    /**
+     * @dev Returns the number of decimals used to get its user representation.
+     */
+    function decimals() public view virtual override returns (uint8) {
+        return _tokenDecimals;
     }
 
     /**

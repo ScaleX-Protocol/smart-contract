@@ -659,7 +659,7 @@ contract LendingManager is
         }
 
         IBalanceManagerForLending bm = IBalanceManagerForLending($.balanceManager);
-        IOracle oracle = IOracle($.oracle);
+        IOracle oracleContract = IOracle($.oracle);
 
         uint256 totalCollateralValue = 0;
         uint256 totalDebtValue = 0;
@@ -687,7 +687,7 @@ contract LendingManager is
             // Skip if no position (shouldn't happen, but defensive)
             if (supplyBalance == 0 && debt == 0) continue;
 
-            uint256 price = oracle.getPriceForCollateral(syntheticToken);
+            uint256 price = oracleContract.getPriceForCollateral(syntheticToken);
             uint256 decimals = IERC20Metadata(assetToken).decimals();
 
             // Calculate collateral value
@@ -712,7 +712,7 @@ contract LendingManager is
         // Add the additional borrow amount to the debt
         if (additionalAmount > 0) {
             address syntheticToken = bm.getSyntheticToken(token);
-            uint256 price = oracle.getPriceForCollateral(syntheticToken);
+            uint256 price = oracleContract.getPriceForCollateral(syntheticToken);
             uint256 additionalDebtValue = (additionalAmount * price) / (10 ** IERC20Metadata(token).decimals());
             totalDebtValue += additionalDebtValue;
         }
