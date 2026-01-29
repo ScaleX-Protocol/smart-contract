@@ -308,6 +308,19 @@ export const OrderBookABI: any[] = [
 	},
 	{
 		"type": "function",
+		"name": "oracle",
+		"inputs": [],
+		"outputs": [
+			{
+				"name": "",
+				"type": "address",
+				"internalType": "address"
+			}
+		],
+		"stateMutability": "view"
+	},
+	{
+		"type": "function",
 		"name": "owner",
 		"inputs": [],
 		"outputs": [
@@ -946,11 +959,6 @@ export const OrderBookABI: any[] = [
 	},
 	{
 		"type": "error",
-		"name": "AutoRepayOnlyForBuyOrders",
-		"inputs": []
-	},
-	{
-		"type": "error",
 		"name": "FillOrKillNotFulfilled",
 		"inputs": [
 			{
@@ -987,6 +995,38 @@ export const OrderBookABI: any[] = [
 			},
 			{
 				"name": "userBalance",
+				"type": "uint256",
+				"internalType": "uint256"
+			}
+		]
+	},
+	{
+		"type": "error",
+		"name": "InsufficientHealthFactorForBorrow",
+		"inputs": [
+			{
+				"name": "projected",
+				"type": "uint256",
+				"internalType": "uint256"
+			},
+			{
+				"name": "minimum",
+				"type": "uint256",
+				"internalType": "uint256"
+			}
+		]
+	},
+	{
+		"type": "error",
+		"name": "InsufficientOrderBalance",
+		"inputs": [
+			{
+				"name": "available",
+				"type": "uint256",
+				"internalType": "uint256"
+			},
+			{
+				"name": "required",
 				"type": "uint256",
 				"internalType": "uint256"
 			}
@@ -1057,6 +1097,22 @@ export const OrderBookABI: any[] = [
 				"name": "slippageBps",
 				"type": "uint256",
 				"internalType": "uint256"
+			}
+		]
+	},
+	{
+		"type": "error",
+		"name": "NegativeSpreadCreated",
+		"inputs": [
+			{
+				"name": "bestBid",
+				"type": "uint128",
+				"internalType": "uint128"
+			},
+			{
+				"name": "bestAsk",
+				"type": "uint128",
+				"internalType": "uint128"
 			}
 		]
 	},
