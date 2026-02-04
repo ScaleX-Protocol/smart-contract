@@ -43,6 +43,8 @@ baseSepolia = "http://127.0.0.1:8545"
 # Espresso Testnet Networks
 rariTestnet = "https://rari.caff.testnet.espresso.network"
 appchainTestnet = "https://appchain.caff.testnet.espresso.network"
+# Arc Testnet (Circle)
+arcTestnet = "https://rpc.testnet.arc.network"
 
 [etherscan]
 mainnet = { key = "${ETHERSCAN_API_KEY}" }
