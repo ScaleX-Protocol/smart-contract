@@ -17,6 +17,7 @@ abstract contract OrderBookStorage {
         address balanceManager;
         address router;
         IOracle oracle; // Oracle for real-time price updates
+        address autoBorrowHelper; // External helper for auto-borrow logic
         uint48 nextOrderId;
         uint48 expiryDays;
         PoolKey poolKey;

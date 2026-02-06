@@ -8,6 +8,7 @@ import {ReentrancyGuardUpgradeable} from "@openzeppelin/contracts-upgradeable/ut
 import {ITokenRegistry} from "./interfaces/ITokenRegistry.sol";
 import {IOrderBook} from "./interfaces/IOrderBook.sol";
 import {IOracle} from "./interfaces/IOracle.sol";
+import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 
 /**
  * @title Oracle
@@ -53,7 +54,7 @@ contract Oracle is Initializable, OwnableUpgradeable, ReentrancyGuardUpgradeable
 
     // NEW: Support multiple OrderBooks per token (token => orderbook => authorized)
     mapping(address => mapping(address => bool)) public authorizedOrderBooks;
-    
+
     // Events
     event PriceUpdate(address indexed token, uint256 price, uint256 timestamp);
     event TokenAdded(address indexed token, uint256 priceId);
@@ -221,10 +222,30 @@ contract Oracle is Initializable, OwnableUpgradeable, ReentrancyGuardUpgradeable
             return;
         }
 
-        // Store price point immediately when trade occurs
-        _storePricePoint(token, uint256(price), block.timestamp);
+        // Convert OrderBook price (quote per base) to USD price (8 decimals)
+        // price parameter is in quote currency units per base currency
+        // We need to convert it to USD per base currency
+        IOrderBook orderBook = IOrderBook(msg.sender);
+        address quoteCurrency = orderBook.getQuoteCurrency();
 
-        emit PriceUpdate(token, uint256(price), block.timestamp);
+        // Get quote currency decimals and USD price
+        uint8 quoteDecimals = IERC20Metadata(quoteCurrency).decimals();
+        uint256 quoteUsdPrice = this.getSpotPrice(quoteCurrency); // USD price of quote currency (8 decimals)
+
+        // Convert: (orderBookPrice × quoteUsdPrice) / (10^quoteDecimals)
+        // Example: (194900 × 100000000) / 100 = 194900000000 ($1949.00)
+        uint256 usdPrice;
+        if (quoteUsdPrice > 0) {
+            usdPrice = (uint256(price) * quoteUsdPrice) / (10 ** quoteDecimals);
+        } else {
+            // Fallback: if quote currency has no price, use raw price (backward compatibility)
+            usdPrice = uint256(price);
+        }
+
+        // Store the converted USD price
+        _storePricePoint(token, usdPrice, block.timestamp);
+
+        emit PriceUpdate(token, usdPrice, block.timestamp);
     }
     
     function updateTokenRegistry(address _tokenRegistry) external onlyOwner {
