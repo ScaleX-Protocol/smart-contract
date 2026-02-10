@@ -14,8 +14,8 @@ ignored_error_codes = [5574, 1385]
 gas_limit = 30_000_000
 gas_price = 1_000_000_000_000
 legacy = true
-# Allow larger contracts for development
-#size_limit = 500000
+# Allow larger contracts for development (TEMPORARILY for testnet fix)
+size_limit = 30000
 # Enable hardhat compatibility for larger contract support
 #hardhat = true
 remappings = [

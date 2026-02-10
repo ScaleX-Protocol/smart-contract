@@ -1593,6 +1593,54 @@ ORACLE_ADDRESS=$(cat ./deployments/${CORE_CHAIN_ID}.json | jq -r '.Oracle // "0x
             print_error "Some pools failed to create - check the DeployPhase3 script output"
         fi
 
+        # Add delay before Phase 4
+        echo "⏳ Waiting 15 seconds before Phase 4 to prevent rate limiting..."
+        sleep 15
+
+        # Step 3.5: Phase 4 - AutoBorrowHelper Deployment
+        print_step "Step 3.5: Phase 4 - AutoBorrowHelper Deployment..."
+
+        echo "  📊 Deploying AutoBorrowHelper (this will show transaction details)..."
+        if [[ -n "$VERIFY_FLAGS" ]]; then
+            if eval "forge script script/deployments/DeployPhase4.s.sol:DeployPhase4 \
+                --rpc-url \"\${SCALEX_CORE_RPC}\" \
+                --broadcast \
+                --private-key \$PRIVATE_KEY \
+                --gas-estimate-multiplier 120 \
+                \$SLOW_FLAG \
+                --legacy \
+                $VERIFY_FLAGS"; then
+                print_success "Phase 4 AutoBorrowHelper deployment completed successfully"
+            else
+                print_error "Phase 4 AutoBorrowHelper deployment failed"
+                echo "  Check the forge script output above for error details"
+                return 1
+            fi
+        else
+            if forge script script/deployments/DeployPhase4.s.sol:DeployPhase4 \
+                --rpc-url "${SCALEX_CORE_RPC}" \
+                --broadcast \
+                --private-key $PRIVATE_KEY \
+                --gas-estimate-multiplier 120 \
+                $SLOW_FLAG \
+                --legacy; then
+                print_success "Phase 4 AutoBorrowHelper deployment completed successfully"
+            else
+                print_error "Phase 4 AutoBorrowHelper deployment failed"
+                echo "  Check the forge script output above for error details"
+                return 1
+            fi
+        fi
+
+        # Verify AutoBorrowHelper was deployed
+        AUTO_BORROW_HELPER=$(cat ./deployments/${CORE_CHAIN_ID}.json | jq -r '.AutoBorrowHelper // "0x0000000000000000000000000000000000000000"')
+
+        if [[ "$AUTO_BORROW_HELPER" != "0x0000000000000000000000000000000000000000" ]]; then
+            print_success "AutoBorrowHelper deployed: $AUTO_BORROW_HELPER"
+        else
+            print_error "AutoBorrowHelper address is zero - deployment failed"
+        fi
+
         # Step 4.8: Verify OrderBook Authorizations and Oracle Configuration
         print_step "Step 4.8: Verifying OrderBook Authorizations and Oracle Configuration..."
 
@@ -1671,6 +1719,71 @@ ORACLE_ADDRESS=$(cat ./deployments/${CORE_CHAIN_ID}.json | jq -r '.Oracle // "0x
                 fi
             fi
         fi
+
+        # Step 4.8.1: Verify PoolKey Storage Integrity
+        print_step "Step 4.8.1: Verifying PoolKey storage integrity..."
+
+        # Load expected synthetic token addresses
+        QUOTE_TOKEN_KEY=$(get_quote_token_key)
+        SYNTHETIC_QUOTE_KEY="sx${QUOTE_SYMBOL}"
+        EXPECTED_QUOTE=$(cat ./deployments/${CORE_CHAIN_ID}.json | jq -r ".$SYNTHETIC_QUOTE_KEY // \"0x0000000000000000000000000000000000000000\"")
+        EXPECTED_WETH=$(cat ./deployments/${CORE_CHAIN_ID}.json | jq -r '.sxWETH // "0x0000000000000000000000000000000000000000"')
+        EXPECTED_WBTC=$(cat ./deployments/${CORE_CHAIN_ID}.json | jq -r '.sxWBTC // "0x0000000000000000000000000000000000000000"')
+
+        # Verify WETH pool poolKey
+        if [[ "$WETH_QUOTE_POOL" != "0x0000000000000000000000000000000000000000" ]]; then
+            echo "  🔍 Verifying WETH/$QUOTE_SYMBOL poolKey storage..."
+
+            WETH_BASE=$(cast call $WETH_QUOTE_POOL "getBaseCurrency()" --rpc-url "${SCALEX_CORE_RPC}" 2>/dev/null | tail -1)
+            WETH_QUOTE=$(cast call $WETH_QUOTE_POOL "getQuoteCurrency()" --rpc-url "${SCALEX_CORE_RPC}" 2>/dev/null | tail -1)
+
+            # Normalize addresses
+            WETH_BASE="0x$(echo $WETH_BASE | sed 's/^0x//' | tail -c 41)"
+            WETH_QUOTE="0x$(echo $WETH_QUOTE | sed 's/^0x//' | tail -c 41)"
+
+            if [[ "${WETH_BASE,,}" == "${EXPECTED_WETH,,}" ]] && [[ "${WETH_QUOTE,,}" == "${EXPECTED_QUOTE,,}" ]]; then
+                print_success "  ✅ WETH/$QUOTE_SYMBOL poolKey correct (base: sxWETH, quote: $SYNTHETIC_QUOTE_KEY)"
+            else
+                print_error "  ❌ WETH/$QUOTE_SYMBOL poolKey CORRUPTED!"
+                print_error "     Expected base: $EXPECTED_WETH"
+                print_error "     Got base:      $WETH_BASE"
+                print_error "     Expected quote: $EXPECTED_QUOTE"
+                print_error "     Got quote:      $WETH_QUOTE"
+                print_error ""
+                print_error "  🚨 CRITICAL: Storage layout corruption detected!"
+                print_error "     This usually happens when struct fields are added/removed in upgrades."
+                print_error "     You may need to run a storage fix script."
+                return 1
+            fi
+        fi
+
+        # Verify WBTC pool poolKey
+        if [[ "$WBTC_QUOTE_POOL" != "0x0000000000000000000000000000000000000000" ]]; then
+            echo "  🔍 Verifying WBTC/$QUOTE_SYMBOL poolKey storage..."
+
+            WBTC_BASE=$(cast call $WBTC_QUOTE_POOL "getBaseCurrency()" --rpc-url "${SCALEX_CORE_RPC}" 2>/dev/null | tail -1)
+            WBTC_QUOTE=$(cast call $WBTC_QUOTE_POOL "getQuoteCurrency()" --rpc-url "${SCALEX_CORE_RPC}" 2>/dev/null | tail -1)
+
+            # Normalize addresses
+            WBTC_BASE="0x$(echo $WBTC_BASE | sed 's/^0x//' | tail -c 41)"
+            WBTC_QUOTE="0x$(echo $WBTC_QUOTE | sed 's/^0x//' | tail -c 41)"
+
+            if [[ "${WBTC_BASE,,}" == "${EXPECTED_WBTC,,}" ]] && [[ "${WBTC_QUOTE,,}" == "${EXPECTED_QUOTE,,}" ]]; then
+                print_success "  ✅ WBTC/$QUOTE_SYMBOL poolKey correct (base: sxWBTC, quote: $SYNTHETIC_QUOTE_KEY)"
+            else
+                print_error "  ❌ WBTC/$QUOTE_SYMBOL poolKey CORRUPTED!"
+                print_error "     Expected base: $EXPECTED_WBTC"
+                print_error "     Got base:      $WBTC_BASE"
+                print_error "     Expected quote: $EXPECTED_QUOTE"
+                print_error "     Got quote:      $WBTC_QUOTE"
+                print_error ""
+                print_error "  🚨 CRITICAL: Storage layout corruption detected!"
+                return 1
+            fi
+        fi
+
+        print_success "✅ PoolKey storage integrity verified successfully"
+        echo ""
 
         # Verify RWA pool OrderBooks if they exist
         GOLD_USDC_POOL=$(cat ./deployments/${CORE_CHAIN_ID}.json | jq -r '.GOLD_USDC_Pool // "0x0000000000000000000000000000000000000000"')

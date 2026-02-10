@@ -57,6 +57,10 @@ contract Oracle is Initializable, OwnableUpgradeable, ReentrancyGuardUpgradeable
     // NEW: Support multiple OrderBooks per token (token => orderbook => authorized)
     mapping(address => mapping(address => bool)) public authorizedOrderBooks;
 
+    // Fixed prices for stablecoins (e.g., IDRX = $1.00)
+    // Maps token address => fixed price (0 = use TWAP, >0 = use fixed price)
+    mapping(address => uint256) public fixedPrices;
+
     // Events
     event PriceUpdate(address indexed token, uint256 price, uint256 timestamp);
     event TokenAdded(address indexed token, uint256 priceId);
@@ -66,6 +70,7 @@ contract Oracle is Initializable, OwnableUpgradeable, ReentrancyGuardUpgradeable
     event MinTradeVolumeUpdated(uint256 newMinTradeVolume);
     event OrderBookAuthorized(address indexed token, address indexed orderBook, bool authorized);
     event SyntheticTokenFactorySet(address indexed factory);
+    event FixedPriceSet(address indexed token, uint256 price);
     
     // Errors
     error TokenNotSupported(address token);
@@ -158,6 +163,14 @@ contract Oracle is Initializable, OwnableUpgradeable, ReentrancyGuardUpgradeable
         if (_factory == address(0)) revert ZeroAddress();
         syntheticTokenFactory = SyntheticTokenFactory(_factory);
         emit SyntheticTokenFactorySet(_factory);
+    }
+
+    /// @notice Set a fixed price for a stablecoin (e.g., IDRX = $1.00)
+    /// @param token The token address (use 0 to disable fixed price and use TWAP)
+    /// @param price The fixed price in 8 decimals (0 = disable, use TWAP)
+    function setFixedPrice(address token, uint256 price) external onlyOwner {
+        fixedPrices[token] = price;
+        emit FixedPriceSet(token, price);
     }
 
     /// @notice Initialize price for a token (for bootstrapping when no trades exist yet)
@@ -306,6 +319,11 @@ contract Oracle is Initializable, OwnableUpgradeable, ReentrancyGuardUpgradeable
         // Resolve to synthetic token if necessary
         address resolvedToken = _resolveToken(token);
 
+        // Check for fixed price (stablecoins)
+        if (fixedPrices[resolvedToken] > 0) {
+            return fixedPrices[resolvedToken];
+        }
+
         if (!tokenPriceData[resolvedToken].supported) {
             revert TokenNotSupported(resolvedToken);
         }
@@ -319,6 +337,11 @@ contract Oracle is Initializable, OwnableUpgradeable, ReentrancyGuardUpgradeable
     function getSpotPrice(address token) external view returns (uint256) {
         // Resolve to synthetic token if necessary
         address resolvedToken = _resolveToken(token);
+
+        // Check for fixed price (stablecoins)
+        if (fixedPrices[resolvedToken] > 0) {
+            return fixedPrices[resolvedToken];
+        }
 
         if (!tokenPriceData[resolvedToken].supported) {
             revert TokenNotSupported(resolvedToken);
@@ -358,6 +381,11 @@ contract Oracle is Initializable, OwnableUpgradeable, ReentrancyGuardUpgradeable
         // Resolve to synthetic token if necessary
         address resolvedToken = _resolveToken(token);
 
+        // Check for fixed price (stablecoins) - return immediately
+        if (fixedPrices[resolvedToken] > 0) {
+            return fixedPrices[resolvedToken];
+        }
+
         // Use longer TWAP for collateral to prevent manipulation
         // Take the more conservative (lower) price between 1h and 6h TWAP
         uint256 twap1h = this.getTWAP(resolvedToken, 1 hours);
@@ -376,6 +404,11 @@ contract Oracle is Initializable, OwnableUpgradeable, ReentrancyGuardUpgradeable
     function getPriceForBorrowing(address token) external view returns (uint256) {
         // Resolve to synthetic token if necessary
         address resolvedToken = _resolveToken(token);
+
+        // Check for fixed price (stablecoins) - return immediately
+        if (fixedPrices[resolvedToken] > 0) {
+            return fixedPrices[resolvedToken];
+        }
 
         // Use medium-term TWAP for borrowing to balance responsiveness and stability
         uint256 twap15m = this.getTWAP(resolvedToken, 15 minutes);

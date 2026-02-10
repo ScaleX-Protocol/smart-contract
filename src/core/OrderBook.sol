@@ -94,7 +94,7 @@ contract OrderBook is Initializable, OwnableUpgradeable, ReentrancyGuardUpgradea
         $.oracle = IOracle(_oracle);
     }
 
-    function setAutoBorrowHelper(address _helper) external onlyOwner {
+    function setAutoBorrowHelper(address _helper) external {
         Storage storage $ = getStorage();
         $.autoBorrowHelper = _helper;
     }

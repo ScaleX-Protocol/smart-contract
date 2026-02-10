@@ -308,10 +308,33 @@ contract ChainBalanceManager is
         
         $.balanceOf[to][token] += amount;
         depositedAmount = amount;
-        
+
         emit TokenDeposited(to, token, amount);
     }
-    
+
+    /// @notice Deposit tokens on behalf of a user (tokens already in contract)
+    /// @dev Used by LendingManager after borrowing - converts to synthetic token balance
+    /// @param user The user to credit
+    /// @param underlyingToken The underlying token address
+    /// @param amount The amount to credit
+    function depositFor(address user, address underlyingToken, uint256 amount) external nonReentrant {
+        if (amount == 0) revert ZeroAmount();
+        if (user == address(0)) revert ZeroAddress();
+
+        Storage storage $ = getStorage();
+
+        // Get synthetic token
+        address syntheticToken = $.sourceToSynthetic[underlyingToken];
+        if (syntheticToken == address(0)) {
+            revert TokenMappingNotFound(underlyingToken);
+        }
+
+        // Credit user's synthetic token balance
+        $.balanceOf[user][syntheticToken] += amount;
+
+        emit TokenDeposited(user, syntheticToken, amount);
+    }
+
     function withdraw(
         address to,
         Currency currency,

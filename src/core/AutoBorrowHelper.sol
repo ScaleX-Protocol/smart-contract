@@ -81,7 +81,7 @@ contract AutoBorrowHelper {
         }
 
         // Borrow through BalanceManager (handles both borrow and synthetic token creation)
-        try bm.borrowForUser(user, syntheticToken, amount) {
+        try bm.borrowForUser(user, underlyingToken, amount) {
             // Success - synthetic tokens credited to user's balance
         } catch {
             revert AutoBorrowFailed(user, underlyingToken, amount);
