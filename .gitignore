@@ -33,3 +33,6 @@ population.log
 # bv (beads viewer) local config and caches
 .bv/
 .local/
+
+# AI agent integration docs (design phase)
+docs/ai-agent-integration/

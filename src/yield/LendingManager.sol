@@ -16,6 +16,7 @@ interface IBalanceManagerForLending {
     function getBalance(address user, Currency currency) external view returns (uint256);
     function getSyntheticToken(address realToken) external view returns (address);
     function seizeCollateral(address user, address underlyingToken, uint256 amount) external;
+    function depositFor(address user, address token, uint256 amount) external;
 }
 
 // Oracle interfaces
@@ -385,11 +386,6 @@ contract LendingManager is
     /// @param amount The amount to borrow
     function borrowForUser(address user, address token, uint256 amount) external onlyBalanceManager {
         Storage storage $ = getStorage();
-        // console.log("=== borrowForUser DEBUG ===");
-        // console.log("User:", user);
-        // console.log("Token:", token);
-        // console.log("Amount:", amount);
-        // console.log("Asset enabled:", $.assetConfigs[token].enabled);
 
         if (!$.assetConfigs[token].enabled) revert UnsupportedAsset();
         if (amount == 0) revert InvalidAmount();
@@ -397,23 +393,16 @@ contract LendingManager is
         // Note: No need to migrate here - fallback to supportedAssets handles legacy users
         // and _addUserAsset at the end will start tracking for future operations
 
-        // console.log("Before _updateInterest");
         _updateInterest(token);
-        // console.log("After _updateInterest");
 
         UserPosition storage position = $.userPositions[user][token];
 
         _updateUserPosition(user, token);
 
-        // console.log("totalLiquidity:", $.totalLiquidity[token]);
-        // console.log("totalBorrowed:", $.totalBorrowed[token]);
         
         uint256 availableLiquidity = $.totalLiquidity[token] - $.totalBorrowed[token];
-        // console.log("availableLiquidity:", availableLiquidity);
-        // console.log("requested amount:", amount);
         
         if (availableLiquidity < amount) {
-            // console.log("InsufficientLiquidity - available:", availableLiquidity, "requested:", amount);
             revert InsufficientLiquidity();
         }
 
@@ -430,7 +419,10 @@ contract LendingManager is
         // Track that user now has a position in this asset
         _addUserAsset(user, token);
 
-        IERC20(token).safeTransfer(user, amount);
+        // Transfer to BalanceManager and credit user's synthetic token balance
+        address balanceManager = msg.sender; // msg.sender is BalanceManager (onlyBalanceManager modifier)
+        IERC20(token).safeTransfer(balanceManager, amount);
+        IBalanceManagerForLending(balanceManager).depositFor(user, token, amount);
 
         emit Borrowed(user, token, amount, block.timestamp);
     }
@@ -702,18 +694,19 @@ contract LendingManager is
                 }
             }
 
-            // Calculate debt value
+            // Calculate debt value (use borrowing price for conservative debt valuation)
             if (debt > 0) {
-                uint256 debtValue = (debt * price) / (10 ** decimals);
+                uint256 borrowPrice = oracleContract.getPriceForBorrowing(syntheticToken);
+                uint256 debtValue = (debt * borrowPrice) / (10 ** decimals);
                 totalDebtValue += debtValue;
             }
         }
 
-        // Add the additional borrow amount to the debt
+        // Add the additional borrow amount to the debt (use borrowing price for conservative debt valuation)
         if (additionalAmount > 0) {
             address syntheticToken = bm.getSyntheticToken(token);
-            uint256 price = oracleContract.getPriceForCollateral(syntheticToken);
-            uint256 additionalDebtValue = (additionalAmount * price) / (10 ** IERC20Metadata(token).decimals());
+            uint256 borrowPrice = oracleContract.getPriceForBorrowing(syntheticToken);
+            uint256 additionalDebtValue = (additionalAmount * borrowPrice) / (10 ** IERC20Metadata(token).decimals());
             totalDebtValue += additionalDebtValue;
         }
 
@@ -726,6 +719,94 @@ contract LendingManager is
 
         // User must have health factor >= 1.0 (PRECISION) after borrowing
         return projectedHealthFactor >= $.PRECISION;
+    }
+
+    // DEBUG FUNCTION - Exposes internal collateral check details
+    function debugCollateralCheck(
+        address user,
+        address token,
+        uint256 additionalAmount
+    ) external view returns (
+        uint256 totalCollateralValue,
+        uint256 totalDebtValue,
+        uint256 minLiquidationThreshold,
+        uint256 weightedCollateralValue,
+        uint256 projectedHealthFactor,
+        bool hasSufficientCollateral,
+        uint256 userAssetsLength,
+        address[] memory assetsList,
+        uint256[] memory balances,
+        uint256[] memory prices
+    ) {
+        Storage storage $ = getStorage();
+
+        if ($.balanceManager == address(0) || $.oracle == address(0)) {
+            return (0, 0, 0, 0, 0, false, 0, new address[](0), new uint256[](0), new uint256[](0));
+        }
+
+        IBalanceManagerForLending bm = IBalanceManagerForLending($.balanceManager);
+        IOracle oracleContract = IOracle($.oracle);
+
+        minLiquidationThreshold = $.BASIS_POINTS;
+
+        // Get user assets list
+        address[] memory userAssetsList = $.userAssets[user];
+        if (userAssetsList.length == 0) {
+            userAssetsList = $.supportedAssets;
+        }
+        userAssetsLength = userAssetsList.length;
+        assetsList = userAssetsList;
+        balances = new uint256[](userAssetsList.length);
+        prices = new uint256[](userAssetsList.length);
+
+        for (uint256 i = 0; i < userAssetsList.length; i++) {
+            address assetToken = userAssetsList[i];
+
+            address syntheticToken = bm.getSyntheticToken(assetToken);
+            if (syntheticToken == address(0)) continue;
+
+            uint256 supplyBalance = bm.getBalance(user, Currency.wrap(syntheticToken));
+            uint256 debt = _calculateUserDebt(user, assetToken);
+
+            balances[i] = supplyBalance;
+
+            if (supplyBalance == 0 && debt == 0) continue;
+
+            uint256 price = oracleContract.getPriceForCollateral(syntheticToken);
+            uint256 decimals = IERC20Metadata(assetToken).decimals();
+            prices[i] = price;
+
+            if (supplyBalance > 0) {
+                uint256 tokenValue = (supplyBalance * price) / (10 ** decimals);
+                totalCollateralValue += tokenValue;
+
+                AssetConfig memory config = $.assetConfigs[assetToken];
+                if (config.liquidationThreshold < minLiquidationThreshold) {
+                    minLiquidationThreshold = config.liquidationThreshold;
+                }
+            }
+
+            if (debt > 0) {
+                uint256 debtValue = (debt * price) / (10 ** decimals);
+                totalDebtValue += debtValue;
+            }
+        }
+
+        if (additionalAmount > 0) {
+            address syntheticToken = bm.getSyntheticToken(token);
+            uint256 price = oracleContract.getPriceForCollateral(syntheticToken);
+            uint256 additionalDebtValue = (additionalAmount * price) / (10 ** IERC20Metadata(token).decimals());
+            totalDebtValue += additionalDebtValue;
+        }
+
+        if (totalDebtValue == 0) {
+            hasSufficientCollateral = true;
+            projectedHealthFactor = type(uint256).max;
+        } else {
+            weightedCollateralValue = (totalCollateralValue * minLiquidationThreshold) / $.BASIS_POINTS;
+            projectedHealthFactor = (weightedCollateralValue * $.PRECISION) / totalDebtValue;
+            hasSufficientCollateral = projectedHealthFactor >= $.PRECISION;
+        }
     }
 
     function getGeneratedInterest(address token) external view returns (uint256) {
@@ -906,60 +987,33 @@ contract LendingManager is
     function _updateInterest(address token) internal {
         Storage storage $ = getStorage();
         
-        // console.log("=== _updateInterest DEBUG ===");
-        // console.log("Token:", token);
-        // console.log("lastInterestUpdate:", $.lastInterestUpdate[token]);
-        // console.log("block.timestamp:", block.timestamp);
         
         // Initialize lastInterestUpdate if it's 0 (unset)
         if ($.lastInterestUpdate[token] == 0) {
-            // console.log("Initializing lastInterestUpdate");
             $.lastInterestUpdate[token] = block.timestamp;
             return;
         }
         
         if (block.timestamp == $.lastInterestUpdate[token]) {
-            // console.log("Same timestamp - skipping");
             return;
         }
 
         uint256 timeDelta = block.timestamp - $.lastInterestUpdate[token];
-        // console.log("timeDelta:", timeDelta);
         
-        // console.log("Before _calculateUtilizationRate");
         uint256 utilizationRate = _calculateUtilizationRate(token);
-        // console.log("utilizationRate:", utilizationRate);
         
-        // console.log("Before _calculateBorrowRate");
         uint256 borrowRate = _calculateBorrowRate(token, utilizationRate);
-        // console.log("borrowRate:", borrowRate);
         
-        // console.log("Before _calculateSupplyRate");
         uint256 supplyRate = _calculateSupplyRate(token, utilizationRate);
-        // console.log("supplyRate:", supplyRate);
 
-        // console.log("SECONDS_PER_YEAR:", $.SECONDS_PER_YEAR);
 
         uint256 borrowInterest = (borrowRate * timeDelta) / $.SECONDS_PER_YEAR;
-        // console.log("borrowInterest calculation");
-        // console.log("borrowRate:", borrowRate);
-        // console.log("timeDelta:", timeDelta);
-        // console.log("SECONDS_PER_YEAR:", $.SECONDS_PER_YEAR);
-        // console.log("borrowInterest:", borrowInterest);
         
         uint256 supplyInterest = (supplyRate * timeDelta) / $.SECONDS_PER_YEAR;
-        // console.log("supplyInterest calculation");
-        // console.log("supplyRate:", supplyRate);
-        // console.log("timeDelta:", timeDelta);
-        // console.log("SECONDS_PER_YEAR:", $.SECONDS_PER_YEAR);
-        // console.log("supplyInterest:", supplyInterest);
         
-        // console.log("totalAccumulatedInterest before:", $.totalAccumulatedInterest[token]);
         $.totalAccumulatedInterest[token] += borrowInterest;
-        // console.log("totalAccumulatedInterest after:", $.totalAccumulatedInterest[token]);
 
         $.lastInterestUpdate[token] = block.timestamp;
-        // console.log("=== END _updateInterest DEBUG ===");
     }
 
     function _updateUserPosition(address user, address token) internal {
@@ -1069,31 +1123,18 @@ contract LendingManager is
 
     function _calculateSupplyRate(address token, uint256 utilizationRate) internal view returns (uint256) {
         Storage storage $ = getStorage();
-        // console.log("=== _calculateSupplyRate DEBUG ===");
         
         uint256 borrowRate = _calculateBorrowRate(token, utilizationRate);
-        // console.log("borrowRate:", borrowRate);
         
         uint256 protocolReserve = $.assetConfigs[token].reserveFactor;
-        // console.log("protocolReserve:", protocolReserve);
         
-        // console.log("BASIS_POINTS:", $.BASIS_POINTS);
         
         uint256 basisPointsMinusReserve = $.BASIS_POINTS - protocolReserve;
-        // console.log("basisPointsMinusReserve:", basisPointsMinusReserve);
         
         uint256 denominator = $.BASIS_POINTS * $.BASIS_POINTS;
-        // console.log("denominator:", denominator);
         
-        // console.log("About to calculate supply rate");
-        // console.log("borrowRate:", borrowRate);
-        // console.log("utilizationRate:", utilizationRate);
-        // console.log("basisPointsMinusReserve:", basisPointsMinusReserve);
-        // console.log("denominator:", denominator);
         
         uint256 result = (borrowRate * utilizationRate * basisPointsMinusReserve) / denominator;
-        // console.log("supplyRate result:", result);
-        // console.log("=== END _calculateSupplyRate DEBUG ===");
         
         return result;
     }

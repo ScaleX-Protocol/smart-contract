@@ -29,6 +29,7 @@ interface IOracle {
     function initializePrice(address token, uint256 price) external;
     function getAllSupportedTokens() external view returns (address[] memory supportedTokens);
     function setSyntheticTokenFactory(address _factory) external;
+    function setFixedPrice(address token, uint256 price) external;
 
     // OrderBook integration
     function updateOrderBook(address orderBook) external;

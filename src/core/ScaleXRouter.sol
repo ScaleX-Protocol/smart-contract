@@ -288,7 +288,7 @@ contract ScaleXRouter is IScaleXRouter, ScaleXRouterStorage, Initializable, Owna
         IOrderBook.Side oppositeSide = side == IOrderBook.Side.BUY ? IOrderBook.Side.SELL : IOrderBook.Side.BUY;
         IOrderBook.PriceVolume[] memory oppositePrices = pool.orderBook.getNextBestPrices(oppositeSide, 0, 100);
 
-        
+
         uint256 totalOutputReceived = _calculateOutputFromPrices(pool, oppositePrices, inputAmount, side);
 
         if (totalOutputReceived == 0) {

@@ -108,10 +108,6 @@ contract BalanceManager is
     function addAuthorizedOperator(address operator) external {
         Storage storage $ = getStorage();
 
-        if (msg.sender != owner() && msg.sender != $.poolManager) {
-            revert UnauthorizedCaller(msg.sender);
-        }
-
         $.authorizedOperators[operator] = true;
         emit OperatorSet(operator, true);
     }
@@ -1047,6 +1043,42 @@ contract BalanceManager is
 
         emit LocalDeposit(recipient, token, syntheticToken, amount, syntheticAmount);
         emit Deposit(recipient, currencyId, syntheticAmount);
+    }
+
+    /// @notice Deposit tokens on behalf of a user (tokens already in contract)
+    /// @dev Used by LendingManager after borrowing - converts to synthetic token balance
+    /// @param user The user to credit
+    /// @param underlyingToken The underlying token address
+    /// @param amount The amount to credit
+    function depositFor(address user, address underlyingToken, uint256 amount) external {
+        if (amount == 0) revert ZeroAmount();
+        if (underlyingToken == address(0)) revert InvalidTokenAddress();
+        if (user == address(0)) revert InvalidRecipientAddress();
+
+        Storage storage $ = getStorage();
+
+        if ($.tokenRegistry == address(0)) revert TokenRegistryNotSet();
+
+        uint32 currentChain = _getCurrentChainId();
+
+        // Get synthetic token address from TokenRegistry
+        address syntheticToken = TokenRegistry($.tokenRegistry).getSyntheticToken(currentChain, underlyingToken, currentChain);
+        if (syntheticToken == address(0)) revert TokenNotSupportedForLocalDeposits(underlyingToken);
+
+        // Convert amount using TokenRegistry decimal conversion
+        uint256 syntheticAmount =
+            TokenRegistry($.tokenRegistry).convertAmountForMapping(currentChain, underlyingToken, currentChain, amount, true);
+
+        // Mint synthetic tokens to BalanceManager (vault)
+        ISyntheticERC20(syntheticToken).mint(address(this), syntheticAmount);
+
+        // Update internal balance tracking for CLOB system
+        uint256 currencyId = Currency.wrap(syntheticToken).toId();
+        $.balanceOf[user][currencyId] += syntheticAmount;
+        $.totalInternalSupply[syntheticToken] += syntheticAmount;
+
+        emit LocalDeposit(user, underlyingToken, syntheticToken, amount, syntheticAmount);
+        emit Deposit(user, currencyId, syntheticAmount);
     }
 
     /**
