@@ -48,6 +48,8 @@ interface IPoolManager is IPoolManagerErrors {
 
     function updatePoolLiquidity(PoolKey calldata key, uint256 liquidityScore) external;
 
+    function updatePoolTradingRules(PoolId _poolId, IOrderBook.TradingRules memory _newRules) external;
+
     function getAllCurrencies() external view returns (Currency[] memory);
 
     function getCommonIntermediaries() external view returns (Currency[] memory);
