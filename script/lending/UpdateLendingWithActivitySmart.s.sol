@@ -6,6 +6,7 @@ import {LendingManager} from "../../src/yield/LendingManager.sol";
 import {BalanceManager} from "../../src/core/BalanceManager.sol";
 import {Oracle} from "../../src/core/Oracle.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {Currency} from "../../src/core/libraries/Currency.sol";
 import "../utils/DeployHelpers.s.sol";
 
 /**
@@ -200,7 +201,7 @@ contract UpdateLendingWithActivitySmart is Script, DeployHelpers {
             state.currentUtilization = (state.poolTotalBorrow * 10000) / state.poolTotalSupply;
         }
 
-        state.availableBalance = balanceManager.getBalance(primaryAccount, tokenAddress);
+        state.availableBalance = balanceManager.getBalance(primaryAccount, Currency.wrap(tokenAddress));
 
         return state;
     }
@@ -247,7 +248,7 @@ contract UpdateLendingWithActivitySmart is Script, DeployHelpers {
             }
 
             if (neededSupply == 0) {
-                console.log("[SKIP]", tokenSymbol, "- no supply needed (utilization:", stateBefore.currentUtilization / 100, "%)");
+                console.log("[SKIP] %s - no supply needed (utilization: %d%%)", tokenSymbol, stateBefore.currentUtilization / 100);
                 continue;
             }
 
@@ -280,7 +281,7 @@ contract UpdateLendingWithActivitySmart is Script, DeployHelpers {
             // Check if we're already at or above target utilization
             if (stateBefore.currentUtilization >= targetUtilization) {
                 console.log("[SKIP]", tokenSymbol, "- already at target utilization");
-                console.log("     Current:", stateBefore.currentUtilization / 100, "% Target:", targetUtilization / 100, "%");
+                console.log("     Current: %d%% Target: %d%%", stateBefore.currentUtilization / 100, targetUtilization / 100);
                 continue;
             }
 
@@ -297,24 +298,24 @@ contract UpdateLendingWithActivitySmart is Script, DeployHelpers {
                 continue;
             }
 
-            // Check borrowing power
-            try lendingManager.getUserBorrowingPower(primaryAccount) returns (uint256 borrowingPower) {
-                if (borrowingPower == 0) {
-                    console.log("[SKIP]", tokenSymbol, "- no borrowing power (need collateral)");
+            // Check health factor (must be > 1e18 to borrow)
+            try lendingManager.getHealthFactor(primaryAccount) returns (uint256 healthFactor) {
+                if (healthFactor < 1e18 && healthFactor > 0) {
+                    console.log("[SKIP]", tokenSymbol, "- health factor too low");
                     continue;
                 }
 
-                console.log("     Borrowing Power:", borrowingPower);
-                console.log("     Need to borrow:", neededBorrow, "to reach", targetUtilization / 100, "% utilization");
+                console.log("     Health Factor:", healthFactor);
+                console.log("     Need to borrow: %d to reach %d%% utilization", neededBorrow, targetUtilization / 100);
 
                 // Try to borrow
                 try lendingManager.borrow(tokenAddress, neededBorrow) {
                     console.log("[OK]", tokenSymbol, "borrowed:", neededBorrow);
 
                     CurrentState memory stateAfter = _getCurrentState(tokenAddress);
-                    console.log("     Borrow:", stateBefore.userBorrow, "->", stateAfter.userBorrow);
-                    console.log("     Pool Borrow:", stateBefore.poolTotalBorrow, "->", stateAfter.poolTotalBorrow);
-                    console.log("     Utilization:", stateBefore.currentUtilization / 100, "% ->", stateAfter.currentUtilization / 100, "%");
+                    console.log("     Borrow: %d -> %d", stateBefore.userBorrow, stateAfter.userBorrow);
+                    console.log("     Pool Borrow: %d -> %d", stateBefore.poolTotalBorrow, stateAfter.poolTotalBorrow);
+                    console.log("     Utilization: %d%% -> %d%%", stateBefore.currentUtilization / 100, stateAfter.currentUtilization / 100);
 
                     if (stateAfter.currentUtilization >= targetUtilization) {
                         console.log("     [OK] Target utilization reached!");

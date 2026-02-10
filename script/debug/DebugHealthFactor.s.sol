@@ -9,8 +9,8 @@ contract DebugHealthFactor is Script {
     function run() external view {
         address user = 0xC21C5b2d33b791BEb51360a6dcb592ECdE37DB2C;
         address lendingManager = 0x17D803b6Bb4ECF60e8f8b60f4489afdA1743e021;
-        address weth = 0x8b732595a59c9a18aca0aca3221a656eb38158fc; // WETH address
-        address idrx = 0x80fd9a0f8bca5255692016d67e0733bf5262c142; // IDRX address
+        address weth = 0x8b732595a59c9a18acA0Aca3221A656Eb38158fC; // WETH address
+        address idrx = 0x80FD9a0F8BCA5255692016D67E0733bf5262C142; // IDRX address
 
         // The amount user is trying to borrow (0.025648 WETH in wei)
         uint256 borrowAmount = 25648196098739855;
@@ -49,9 +49,9 @@ contract DebugHealthFactor is Script {
 
         // Get oracle prices
         console.log("=== ORACLE PRICES ===");
-        IOracle oracle = IOracle(lm.getOracle());
-        uint256 idrxPrice = oracle.getTokenPrice(idrx);
-        uint256 wethPrice = oracle.getTokenPrice(weth);
+        IOracle oracle = IOracle(lm.oracle());
+        uint256 idrxPrice = oracle.getPriceForCollateral(idrx);
+        uint256 wethPrice = oracle.getPriceForCollateral(weth);
         console.log("IDRX Price (8 decimals):", idrxPrice);
         console.log("WETH Price (8 decimals):", wethPrice);
         console.log("IDRX Price USD:", idrxPrice / 1e8);
@@ -120,6 +120,6 @@ contract DebugHealthFactor is Script {
     function getOracle() external view returns (address) {
         address lendingManager = 0x17D803b6Bb4ECF60e8f8b60f4489afdA1743e021;
         LendingManager lm = LendingManager(lendingManager);
-        return lm.getOracle();
+        return lm.oracle();
     }
 }

@@ -14,18 +14,22 @@ contract PlaceSellOrdersWorkaround is MarketOrderBook {
     function run() public override {
         setUp();
 
-        loadDeployments();
-        uint256 deployerPrivateKey = getDeployerKey();
+        uint256 deployerPrivateKey = vm.envUint("PRIVATE_KEY");
+        deployerAddress = vm.addr(deployerPrivateKey);
 
         console.log("\n=== Placing SELL Limit Orders (Workaround for 6-decimal BUY orders) ===\n");
 
         vm.startBroadcast(deployerPrivateKey);
 
+        // Get currency objects from parent class
+        Currency weth = Currency.wrap(address(synthWETH));
+        Currency quote = Currency.wrap(address(synthQuote));
+
         // Get pool
         IPoolManager.Pool memory pool = poolManagerResolver.getPool(weth, quote, address(poolManager));
 
-        // Ensure we have WETH balance in BalanceManager
-        _makeLocalDeposits(1e18, 0); // Deposit 1 ETH
+        // Ensure we have WETH balance in BalanceManager - mint and deposit locally
+        _mintAndDepositWETH(1e18);
 
         // Place SELL limit orders at prices compatible with old 6-decimal BUY orders
         // Old BUY orders are at: 1,980,000,000 (1980 IDRX * 1e6)
@@ -50,11 +54,11 @@ contract PlaceSellOrdersWorkaround is MarketOrderBook {
         for (uint i = 0; i < sellPrices.length; i++) {
             try scalexRouter.placeLimitOrder(
                 pool,
-                quantity,
                 sellPrices[i],
+                quantity,
                 IOrderBook.Side.SELL,
-                address(0),
-                bytes32(0)
+                IOrderBook.TimeInForce.GTC,
+                0 // depositAmount - using existing balance
             ) returns (uint48 orderId) {
                 console.log("  [OK] Placed SELL order ID:", orderId, "at price:", sellPrices[i]);
             } catch Error(string memory reason) {
@@ -68,5 +72,23 @@ contract PlaceSellOrdersWorkaround is MarketOrderBook {
 
         console.log("\n[OK] SELL orders placement complete!");
         console.log("Market BUY orders should now be able to execute.\n");
+    }
+
+    function _mintAndDepositWETH(uint256 ethAmount) private {
+        console.log("Depositing ETH amount:", ethAmount / 1e18, "ETH");
+
+        // Mint tokens if we don't have enough balance
+        if (tokenWETH.balanceOf(deployerAddress) < ethAmount) {
+            MockWETH(address(tokenWETH)).mint(deployerAddress, ethAmount);
+            console.log("[SUCCESS] WETH minted to deployer account");
+        }
+
+        // Approve BalanceManager to spend WETH
+        tokenWETH.approve(address(balanceManager), ethAmount);
+        console.log("[SUCCESS] WETH approved for BalanceManager");
+
+        // Deposit real WETH to BalanceManager (will receive synthetic balance)
+        balanceManager.depositLocal(address(tokenWETH), ethAmount, deployerAddress);
+        console.log("[SUCCESS] WETH deposited to BalanceManager");
     }
 }

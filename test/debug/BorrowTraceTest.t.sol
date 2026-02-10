@@ -31,12 +31,12 @@ contract BorrowTraceTest is Test {
     address constant LENDING_MANAGER = 0x86ad7E133e6bA69b0Cd05a7B173a195ceA6a51F2;
     address constant ORACLE = 0x9AA212Ddd987FBcD0D058206159098802Da10868;
 
-    address constant USDC = 0x3D07EAD4dB56bE5c555dA4e66b766BF7e0A5Fe5D;
-    address constant WETH = 0x8f4AF46cfFDA37c5F97664395A088e184c6e8E84;
-    address constant sxUSDC = 0xC2Cb1A5b80F4D7db7B04F7dBc250204BA9e3F655;
-    address constant sxWETH = 0x2b3a28cE0Cd7e03DAA5a4a3b20E6dA30FA9f20a7;
+    address constant USDC = 0x3d07Ead4db56be5C555Da4E66B766bF7e0A5fe5d;
+    address constant WETH = 0x8F4Af46CFfda37C5f97664395A088E184C6E8E84;
+    address constant sxUSDC = 0xc2CB1a5b80f4d7dB7B04f7DBC250204Ba9E3F655;
+    address constant sxWETH = 0x2b3A28Ce0cD7E03daa5a4A3B20e6DA30Fa9f20a7;
 
-    address constant USER = 0x73c7448760517E3E903C0b72ff26E702A5f8c305;
+    address constant USER = 0x73c7448760517E3E903C0B72Ff26e702A5F8c305;
 
     // Fork setup
     string LISK_SEPOLIA_RPC = "https://lisk-sepolia.drpc.org";

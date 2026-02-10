@@ -43,7 +43,7 @@ contract TestBorrow is Script, DeployHelpers {
         try lendingManager.borrow(weth, borrowAmount) {
             console.log("[SUCCESS] Borrowed 1 WETH");
 
-            uint256 newBorrow = lendingManager.getUserBorrow(deployer, weth);
+            uint256 newBorrow = lendingManager.getUserDebt(deployer, weth);
             console.log("New Borrow Balance:", newBorrow);
         } catch Error(string memory reason) {
             console.log("[ERROR] Borrow failed:");

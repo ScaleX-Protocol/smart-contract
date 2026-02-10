@@ -4,6 +4,7 @@ pragma solidity ^0.8.26;
 import {Script, console} from "forge-std/Script.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {BalanceManager} from "../../src/core/BalanceManager.sol";
+import {Currency} from "../../src/core/libraries/Currency.sol";
 
 contract WithdrawAndRedepositIDRX is Script {
     function run() external {
@@ -16,13 +17,13 @@ contract WithdrawAndRedepositIDRX is Script {
         
         // Check current balance
         console.log("=== Step 1: Withdraw incorrectly scaled balance ===");
-        uint256 currentBalance = BalanceManager(balanceManager).getBalance(mmBotAddress, idrxToken);
+        uint256 currentBalance = BalanceManager(balanceManager).getBalance(mmBotAddress, Currency.wrap(idrxToken));
         console.log("Current IDRX balance (raw):", currentBalance);
         
         if (currentBalance > 0) {
             console.log("Withdrawing all IDRX...");
             // Withdraw for the MM-bot address (only owner/operator can withdraw for others)
-            BalanceManager(balanceManager).withdrawLocal(idrxToken, currentBalance, mmBotAddress);
+            BalanceManager(balanceManager).withdraw(Currency.wrap(idrxToken), currentBalance, mmBotAddress);
             console.log("Withdrawn!");
         } else {
             console.log("No balance to withdraw");
@@ -52,7 +53,7 @@ contract WithdrawAndRedepositIDRX is Script {
         
         // Verify
         console.log("\n=== Verification ===");
-        uint256 newBalance = BalanceManager(balanceManager).getBalance(mmBotAddress, idrxToken);
+        uint256 newBalance = BalanceManager(balanceManager).getBalance(mmBotAddress, Currency.wrap(idrxToken));
         console.log("New IDRX balance (raw):", newBalance);
         console.log("New IDRX balance (formatted):", newBalance / 1e18, "IDRX");
         console.log("\n=== SUCCESS! MM-bot can now place BUY orders! ===");

@@ -6,6 +6,8 @@ import {IPoolManager} from "@scalexcore/interfaces/IPoolManager.sol";
 import {IOrderBook} from "@scalexcore/interfaces/IOrderBook.sol";
 import {ScaleXRouter} from "@scalexcore/ScaleXRouter.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {PoolKey} from "@scalexcore/libraries/Pool.sol";
+import {Currency} from "@scalexcore/libraries/Currency.sol";
 
 /**
  * @title PlaceStandingOrders
@@ -27,8 +29,6 @@ contract PlaceStandingOrders is Script {
         address weth = vm.parseJsonAddress(json, ".WETH");
         address sxUSDC = vm.parseJsonAddress(json, ".sxUSDC");
         address sxWETH = vm.parseJsonAddress(json, ".sxWETH");
-        address wethUsdcPool = vm.parseJsonAddress(json, ".WETH_USDC_Pool");
-
         vm.startBroadcast(privateKey);
 
         console.log("Placing standing limit orders to keep Oracle prices fresh...");
@@ -37,8 +37,9 @@ contract PlaceStandingOrders is Script {
         IERC20(weth).approve(scaleXRouter, type(uint256).max);
         IERC20(usdc).approve(scaleXRouter, type(uint256).max);
 
-        // Get pool from PoolManager
-        IPoolManager.Pool memory pool = IPoolManager(poolManager).getPool(wethUsdcPool);
+        // Get pool from PoolManager using PoolKey
+        PoolKey memory poolKey = PoolKey(Currency.wrap(sxWETH), Currency.wrap(sxUSDC));
+        IPoolManager.Pool memory pool = IPoolManager(poolManager).getPool(poolKey);
 
         // Place buy order for WETH at $1900 (below market)
         console.log("Placing standing buy order: 0.1 WETH @ $1900...");

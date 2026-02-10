@@ -19,7 +19,7 @@ contract VerifyOracleFallback is Script {
         // Test token addresses (Testnet 11155111)
         address sxWETH = 0x49830c92204c0cBfc5c01B39E464A8Fa196ed6F6;
         address underlyingWETH = 0x8b732595a59c9a18acA0Aca3221A656Eb38158fC;
-        address sxIDRX = 0x0a3eeCf8d7D68DD4C943C6e42BAB11a3F4F07db7;
+        address sxIDRX = 0x0a3eECF8d7d68dD4c943c6e42bab11A3f4F07DB7;
         address underlyingIDRX = 0x80FD9a0F8BCA5255692016D67E0733bf5262C142;
 
         console.log("=== Verifying Oracle Auto-Fallback ===");
@@ -35,7 +35,7 @@ contract VerifyOracleFallback is Script {
         address configuredFactory = address(oracle.syntheticTokenFactory());
         console.log("   Oracle.syntheticTokenFactory():", configuredFactory);
         require(configuredFactory == factoryAddress, "Factory not configured correctly");
-        console.log("   ✅ Factory configured correctly");
+        console.log("   [OK] Factory configured correctly");
         console.log("");
 
         // Test WETH
@@ -61,7 +61,7 @@ contract VerifyOracleFallback is Script {
         console.log("   Oracle.getSpotPrice(underlying):", underlyingPrice);
 
         require(underlyingPrice == syntheticPrice, "Price fallback not working for WETH");
-        console.log("   ✅ Underlying query returns synthetic price ($", syntheticPrice / 1e8, ")");
+        console.log("   [OK] Underlying query returns synthetic price ($", syntheticPrice / 1e8, ")");
         console.log("");
 
         // Test IDRX
@@ -84,7 +84,7 @@ contract VerifyOracleFallback is Script {
         console.log("   Oracle.getSpotPrice(underlying):", underlyingPrice);
 
         require(underlyingPrice == syntheticPrice, "Price fallback not working for IDRX");
-        console.log("   ✅ Underlying query returns synthetic price ($", syntheticPrice / 1e8, ")");
+        console.log("   [OK] Underlying query returns synthetic price ($", syntheticPrice / 1e8, ")");
         console.log("");
 
         console.log("=== All Tests Passed ===");
