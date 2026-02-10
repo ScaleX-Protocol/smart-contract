@@ -28,6 +28,7 @@ interface IOracle {
     function setAuthorizedOrderBook(address token, address orderBook, bool authorized) external;
     function initializePrice(address token, uint256 price) external;
     function getAllSupportedTokens() external view returns (address[] memory supportedTokens);
+    function setSyntheticTokenFactory(address _factory) external;
 
     // OrderBook integration
     function updateOrderBook(address orderBook) external;

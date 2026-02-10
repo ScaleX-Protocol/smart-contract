@@ -969,6 +969,109 @@ export const ScaleXRouterABI: any[] = [
 				"name": "user",
 				"type": "address",
 				"internalType": "address"
+			},
+			{
+				"name": "depositAmount",
+				"type": "uint256",
+				"internalType": "uint256"
+			}
+		],
+		"outputs": [
+			{
+				"name": "receivedAmount",
+				"type": "uint256",
+				"internalType": "uint256"
+			}
+		],
+		"stateMutability": "nonpayable"
+	},
+	{
+		"type": "function",
+		"name": "swap",
+		"inputs": [
+			{
+				"name": "srcCurrency",
+				"type": "address",
+				"internalType": "Currency"
+			},
+			{
+				"name": "dstCurrency",
+				"type": "address",
+				"internalType": "Currency"
+			},
+			{
+				"name": "srcAmount",
+				"type": "uint256",
+				"internalType": "uint256"
+			},
+			{
+				"name": "minDstAmount",
+				"type": "uint256",
+				"internalType": "uint256"
+			},
+			{
+				"name": "maxHops",
+				"type": "uint8",
+				"internalType": "uint8"
+			},
+			{
+				"name": "user",
+				"type": "address",
+				"internalType": "address"
+			}
+		],
+		"outputs": [
+			{
+				"name": "receivedAmount",
+				"type": "uint256",
+				"internalType": "uint256"
+			}
+		],
+		"stateMutability": "nonpayable"
+	},
+	{
+		"type": "function",
+		"name": "swap",
+		"inputs": [
+			{
+				"name": "srcCurrency",
+				"type": "address",
+				"internalType": "Currency"
+			},
+			{
+				"name": "dstCurrency",
+				"type": "address",
+				"internalType": "Currency"
+			},
+			{
+				"name": "srcAmount",
+				"type": "uint256",
+				"internalType": "uint256"
+			},
+			{
+				"name": "minDstAmount",
+				"type": "uint256",
+				"internalType": "uint256"
+			},
+			{
+				"name": "maxHops",
+				"type": "uint8",
+				"internalType": "uint8"
+			},
+			{
+				"name": "user",
+				"type": "address",
+				"internalType": "address"
+			},
+			{
+				"name": "depositAmount",
+				"type": "uint256",
+				"internalType": "uint256"
+			},
+			{
+				"name": "keepInBalance",
+				"type": "bool",
+				"internalType": "bool"
 			}
 		],
 		"outputs": [
@@ -1134,6 +1237,38 @@ export const ScaleXRouterABI: any[] = [
 	},
 	{
 		"type": "error",
+		"name": "InsufficientHealthFactorForBorrow",
+		"inputs": [
+			{
+				"name": "projected",
+				"type": "uint256",
+				"internalType": "uint256"
+			},
+			{
+				"name": "minimum",
+				"type": "uint256",
+				"internalType": "uint256"
+			}
+		]
+	},
+	{
+		"type": "error",
+		"name": "InsufficientOrderBalance",
+		"inputs": [
+			{
+				"name": "available",
+				"type": "uint256",
+				"internalType": "uint256"
+			},
+			{
+				"name": "required",
+				"type": "uint256",
+				"internalType": "uint256"
+			}
+		]
+	},
+	{
+		"type": "error",
 		"name": "InsufficientSwapBalance",
 		"inputs": [
 			{
@@ -1265,6 +1400,22 @@ export const ScaleXRouterABI: any[] = [
 				"name": "messageId",
 				"type": "bytes32",
 				"internalType": "bytes32"
+			}
+		]
+	},
+	{
+		"type": "error",
+		"name": "NegativeSpreadCreated",
+		"inputs": [
+			{
+				"name": "bestBid",
+				"type": "uint128",
+				"internalType": "uint128"
+			},
+			{
+				"name": "bestAsk",
+				"type": "uint128",
+				"internalType": "uint128"
 			}
 		]
 	},

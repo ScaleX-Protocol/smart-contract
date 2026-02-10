@@ -659,7 +659,7 @@ contract LendingManager is
         }
 
         IBalanceManagerForLending bm = IBalanceManagerForLending($.balanceManager);
-        IOracle oracle = IOracle($.oracle);
+        IOracle oracleContract = IOracle($.oracle);
 
         uint256 totalCollateralValue = 0;
         uint256 totalDebtValue = 0;
@@ -687,7 +687,7 @@ contract LendingManager is
             // Skip if no position (shouldn't happen, but defensive)
             if (supplyBalance == 0 && debt == 0) continue;
 
-            uint256 price = oracle.getPriceForCollateral(syntheticToken);
+            uint256 price = oracleContract.getPriceForCollateral(syntheticToken);
             uint256 decimals = IERC20Metadata(assetToken).decimals();
 
             // Calculate collateral value
@@ -712,7 +712,7 @@ contract LendingManager is
         // Add the additional borrow amount to the debt
         if (additionalAmount > 0) {
             address syntheticToken = bm.getSyntheticToken(token);
-            uint256 price = oracle.getPriceForCollateral(syntheticToken);
+            uint256 price = oracleContract.getPriceForCollateral(syntheticToken);
             uint256 additionalDebtValue = (additionalAmount * price) / (10 ** IERC20Metadata(token).decimals());
             totalDebtValue += additionalDebtValue;
         }
@@ -1196,20 +1196,11 @@ contract LendingManager is
     function _getTokenPrice(address token) internal view returns (uint256) {
         Storage storage $ = getStorage();
 
-        // Convert underlying token to synthetic token for Oracle pricing
-        address priceToken = token;
-        if ($.balanceManager != address(0)) {
-            IBalanceManagerForLending bm = IBalanceManagerForLending($.balanceManager);
-            address syntheticToken = bm.getSyntheticToken(token);
-            if (syntheticToken != address(0)) {
-                priceToken = syntheticToken;
-            }
-        }
-
+        // Oracle now handles underlying → synthetic conversion internally
         if ($.oracle != address(0)) {
-            return IOracle($.oracle).getPriceForCollateral(priceToken);
+            return IOracle($.oracle).getPriceForCollateral(token);
         } else if ($.priceOracle != address(0)) {
-            return IPriceOracle($.priceOracle).getAssetPrice(priceToken);
+            return IPriceOracle($.priceOracle).getAssetPrice(token);
         } else {
             return 1e18;
         }

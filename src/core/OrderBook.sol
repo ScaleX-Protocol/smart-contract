@@ -9,6 +9,7 @@ import {IOrderBook} from "./interfaces/IOrderBook.sol";
 import {IOrderBookErrors} from "./interfaces/IOrderBookErrors.sol";
 import {IOracle} from "./interfaces/IOracle.sol";
 import {ILendingManager} from "./interfaces/ILendingManager.sol";
+import {IAutoBorrowHelper} from "./interfaces/IAutoBorrowHelper.sol";
 import {Currency, CurrencyLibrary} from "./libraries/Currency.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {PoolKey} from "./libraries/Pool.sol";
@@ -59,6 +60,16 @@ contract OrderBook is Initializable, OwnableUpgradeable, ReentrancyGuardUpgradea
         return $.tradingRules;
     }
 
+    function getQuoteCurrency() external view returns (address) {
+        Storage storage $ = getStorage();
+        return Currency.unwrap($.poolKey.quoteCurrency);
+    }
+
+    function getBaseCurrency() external view returns (address) {
+        Storage storage $ = getStorage();
+        return Currency.unwrap($.poolKey.baseCurrency);
+    }
+
     function setRouter(
         address _router
     ) external onlyOwner {
@@ -81,6 +92,11 @@ contract OrderBook is Initializable, OwnableUpgradeable, ReentrancyGuardUpgradea
     function setOracle(address _oracle) external {
         Storage storage $ = getStorage();
         $.oracle = IOracle(_oracle);
+    }
+
+    function setAutoBorrowHelper(address _helper) external onlyOwner {
+        Storage storage $ = getStorage();
+        $.autoBorrowHelper = _helper;
     }
 
     function validateOrder(
@@ -208,11 +224,6 @@ contract OrderBook is Initializable, OwnableUpgradeable, ReentrancyGuardUpgradea
             _validateAutoRepay(user, side);
         }
 
-        // Validate auto-borrow if enabled  
-        if (autoBorrow) {
-            _validateAutoBorrow(user, side);
-        }
-
         orderId = $.nextOrderId;
 
         Order memory newOrder = Order({
@@ -241,9 +252,26 @@ contract OrderBook is Initializable, OwnableUpgradeable, ReentrancyGuardUpgradea
             amountToLock = quantity;
             currencyToLock = $.poolKey.baseCurrency;
         }
-        _validateOrderBalance(user, currencyToLock, amountToLock, autoBorrow);
+        // Validate and execute auto-borrow if needed (before locking)
+        if ($.autoBorrowHelper != address(0)) {
+            IAutoBorrowHelper($.autoBorrowHelper).validateAndBorrowIfNeeded(
+                $.balanceManager, user, currencyToLock, amountToLock, autoBorrow
+            );
+        }
 
-        _lockOrderAmount(user, side, price, quantity);
+        // Inline lock amount to save bytecode
+        {
+            uint256 amountToLock;
+            Currency currencyToLock;
+            if (side == Side.BUY) {
+                amountToLock = PoolIdLibrary.baseToQuote(quantity, price, $.poolKey.baseCurrency.decimals());
+                currencyToLock = $.poolKey.quoteCurrency;
+            } else {
+                amountToLock = quantity;
+                currencyToLock = $.poolKey.baseCurrency;
+            }
+            IBalanceManager($.balanceManager).lock(user, currencyToLock, amountToLock);
+        }
 
         _addOrderToQueue(newOrder);
 
@@ -303,35 +331,6 @@ contract OrderBook is Initializable, OwnableUpgradeable, ReentrancyGuardUpgradea
         return syntheticToken; // Fallback to the token itself
     }
 
-    function _validateAutoBorrow(address user, Side side) private view {
-        // Auto-borrow works for both BUY and SELL orders
-        IBalanceManager bm = IBalanceManager(getStorage().balanceManager);
-        address lendingManager = bm.lendingManager();
-        
-        if (lendingManager == address(0)) {
-            return; // No lending manager available
-        }
-
-        // Determine which token needs to be borrowed based on order side
-        address tokenToBorrow;
-        if (side == Side.SELL) {
-            // SELL orders need to borrow base tokens (e.g., USDC)
-            tokenToBorrow = Currency.unwrap(getStorage().poolKey.baseCurrency);
-        } else {
-            // BUY orders need to borrow quote tokens (e.g., WETH) 
-            tokenToBorrow = Currency.unwrap(getStorage().poolKey.quoteCurrency);
-        }
-        
-        // Check if user has sufficient collateral
-        try ILendingManager(lendingManager).getUserSupply(user, tokenToBorrow) returns (uint256 userSupply) {
-            if (userSupply == 0) {
-                revert NoCollateralToBorrow();
-            }
-        } catch {
-            // If checking specific token supply fails, allow auto-borrow
-            // (user may have other collateral or different lending protocol)
-        }
-    }
 
     /// @dev Validates that no negative spread exists (best bid < best ask)
     /// @notice This catches cases where self-trade prevention skips matches, creating crossed markets
@@ -357,64 +356,8 @@ contract OrderBook is Initializable, OwnableUpgradeable, ReentrancyGuardUpgradea
         }
     }
 
-    /// @dev Validates that user has sufficient balance for the order, considering autoBorrow
-    /// @param user The user address
-    /// @param currency The currency to check balance for
-    /// @param requiredAmount The amount required for the order
-    /// @param autoBorrow Whether auto-borrow is enabled for this order
-    function _validateOrderBalance(
-        address user,
-        Currency currency,
-        uint256 requiredAmount,
-        bool autoBorrow
-    ) private view {
-        Storage storage $ = getStorage();
-        IBalanceManager bm = IBalanceManager($.balanceManager);
-        uint256 userBalance = bm.getBalance(user, currency);
 
-        if (requiredAmount > userBalance) {
-            if (!autoBorrow) {
-                // No auto-borrow: revert if insufficient balance
-                revert InsufficientOrderBalance(userBalance, requiredAmount);
-            }
 
-            // Auto-borrow enabled: check projected health factor
-            uint256 shortfall = requiredAmount - userBalance;
-            address syntheticToken = Currency.unwrap(currency);
-            address underlyingToken = _getUnderlyingToken(syntheticToken);
-            address lendingManager = bm.lendingManager();
-
-            if (lendingManager == address(0)) {
-                revert InsufficientOrderBalance(userBalance, requiredAmount);
-            }
-
-            // Check if borrowing the shortfall would keep health factor >= 1.0
-            uint256 projectedHF = ILendingManager(lendingManager)
-                .getProjectedHealthFactor(user, underlyingToken, shortfall);
-
-            if (projectedHF < 1e18) {
-                revert InsufficientHealthFactorForBorrow(projectedHF, 1e18);
-            }
-        }
-    }
-
-    function _lockOrderAmount(address user, Side side, uint128 price, uint128 quantity) private {
-        Storage storage $ = getStorage();
-        PoolKey memory poolKey = $.poolKey;
-
-        uint256 amountToLock;
-        Currency currencyToLock;
-
-        if (side == Side.BUY) {
-            amountToLock = PoolIdLibrary.baseToQuote(quantity, price, poolKey.baseCurrency.decimals());
-            currencyToLock = poolKey.quoteCurrency;
-        } else {
-            amountToLock = quantity;
-            currencyToLock = poolKey.baseCurrency;
-        }
-
-        IBalanceManager($.balanceManager).lock(user, currencyToLock, amountToLock);
-    }
 
     function _handleTimeInForce(
         Order memory order,
@@ -472,8 +415,12 @@ contract OrderBook is Initializable, OwnableUpgradeable, ReentrancyGuardUpgradea
 
         validateBasicOrderParameters(0, quantity, OrderType.MARKET);
 
-        // Validate balance before placing market SELL order
-        _validateOrderBalance(user, $.poolKey.baseCurrency, quantity, autoBorrow);
+        // Market orders: validate balance (borrow happens during matching)
+        if ($.autoBorrowHelper != address(0)) {
+            IAutoBorrowHelper($.autoBorrowHelper).validateBalanceOnly(
+                $.balanceManager, user, $.poolKey.baseCurrency, quantity, autoBorrow
+            );
+        }
 
         orderId = $.nextOrderId;
 
@@ -535,8 +482,12 @@ contract OrderBook is Initializable, OwnableUpgradeable, ReentrancyGuardUpgradea
             revert OrderTooSmall(quoteAmount, $.tradingRules.minOrderSize);
         }
 
-        // Validate balance before placing market BUY order
-        _validateOrderBalance(user, $.poolKey.quoteCurrency, quoteAmount, autoBorrow);
+        // Market orders: validate balance (borrow happens during matching)
+        if ($.autoBorrowHelper != address(0)) {
+            IAutoBorrowHelper($.autoBorrowHelper).validateBalanceOnly(
+                $.balanceManager, user, $.poolKey.quoteCurrency, quoteAmount, autoBorrow
+            );
+        }
 
         orderId = $.nextOrderId;
 
@@ -1347,11 +1298,9 @@ contract OrderBook is Initializable, OwnableUpgradeable, ReentrancyGuardUpgradea
         uint48 orderId
     ) private {
         Storage storage $ = getStorage();
-        
-        // Get lending manager
         IBalanceManager bm = IBalanceManager($.balanceManager);
         address lendingManager = bm.lendingManager();
-        
+
         if (lendingManager == address(0)) {
             return; // No lending manager available
         }
@@ -1365,8 +1314,9 @@ contract OrderBook is Initializable, OwnableUpgradeable, ReentrancyGuardUpgradea
             // BUY orders need to borrow quote tokens (e.g., WETH) to buy
             tokenToBorrow = Currency.unwrap($.poolKey.quoteCurrency);
         }
-        
-        try ILendingManager(lendingManager).borrow(tokenToBorrow, amount) {
+
+        // Borrow through BalanceManager to borrow on behalf of the user
+        try bm.borrowForUser(user, tokenToBorrow, amount) {
             emit AutoBorrowExecuted(user, tokenToBorrow, amount, block.timestamp, orderId);
         } catch {
             // If borrowing fails, emit event and continue

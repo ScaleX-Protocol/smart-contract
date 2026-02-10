@@ -8,6 +8,8 @@ import {ReentrancyGuardUpgradeable} from "@openzeppelin/contracts-upgradeable/ut
 import {ITokenRegistry} from "./interfaces/ITokenRegistry.sol";
 import {IOrderBook} from "./interfaces/IOrderBook.sol";
 import {IOracle} from "./interfaces/IOracle.sol";
+import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
+import {SyntheticTokenFactory} from "./SyntheticTokenFactory.sol";
 
 /**
  * @title Oracle
@@ -47,13 +49,14 @@ contract Oracle is Initializable, OwnableUpgradeable, ReentrancyGuardUpgradeable
     
     // Interfaces
     ITokenRegistry public tokenRegistry;
-    
+    SyntheticTokenFactory public syntheticTokenFactory;
+
     // Multi-token OrderBook support
     mapping(address => IOrderBook) public tokenOrderBooks;
 
     // NEW: Support multiple OrderBooks per token (token => orderbook => authorized)
     mapping(address => mapping(address => bool)) public authorizedOrderBooks;
-    
+
     // Events
     event PriceUpdate(address indexed token, uint256 price, uint256 timestamp);
     event TokenAdded(address indexed token, uint256 priceId);
@@ -62,6 +65,7 @@ contract Oracle is Initializable, OwnableUpgradeable, ReentrancyGuardUpgradeable
     event OracleUpdated(address indexed tokenRegistry);
     event MinTradeVolumeUpdated(uint256 newMinTradeVolume);
     event OrderBookAuthorized(address indexed token, address indexed orderBook, bool authorized);
+    event SyntheticTokenFactorySet(address indexed factory);
     
     // Errors
     error TokenNotSupported(address token);
@@ -148,6 +152,14 @@ contract Oracle is Initializable, OwnableUpgradeable, ReentrancyGuardUpgradeable
         emit MinTradeVolumeUpdated(_minTradeVolume);
     }
 
+    /// @notice Set SyntheticTokenFactory reference for underlying → synthetic token resolution
+    /// @param _factory Address of the SyntheticTokenFactory contract
+    function setSyntheticTokenFactory(address _factory) external onlyOwner {
+        if (_factory == address(0)) revert ZeroAddress();
+        syntheticTokenFactory = SyntheticTokenFactory(_factory);
+        emit SyntheticTokenFactorySet(_factory);
+    }
+
     /// @notice Initialize price for a token (for bootstrapping when no trades exist yet)
     /// @dev Only callable by owner, should be removed once sufficient trading data exists
     function initializePrice(address token, uint256 price) external onlyOwner {
@@ -221,10 +233,30 @@ contract Oracle is Initializable, OwnableUpgradeable, ReentrancyGuardUpgradeable
             return;
         }
 
-        // Store price point immediately when trade occurs
-        _storePricePoint(token, uint256(price), block.timestamp);
+        // Convert OrderBook price (quote per base) to USD price (8 decimals)
+        // price parameter is in quote currency units per base currency
+        // We need to convert it to USD per base currency
+        IOrderBook orderBook = IOrderBook(msg.sender);
+        address quoteCurrency = orderBook.getQuoteCurrency();
 
-        emit PriceUpdate(token, uint256(price), block.timestamp);
+        // Get quote currency decimals and USD price
+        uint8 quoteDecimals = IERC20Metadata(quoteCurrency).decimals();
+        uint256 quoteUsdPrice = this.getSpotPrice(quoteCurrency); // USD price of quote currency (8 decimals)
+
+        // Convert: (orderBookPrice × quoteUsdPrice) / (10^quoteDecimals)
+        // Example: (194900 × 100000000) / 100 = 194900000000 ($1949.00)
+        uint256 usdPrice;
+        if (quoteUsdPrice > 0) {
+            usdPrice = (uint256(price) * quoteUsdPrice) / (10 ** quoteDecimals);
+        } else {
+            // Fallback: if quote currency has no price, use raw price (backward compatibility)
+            usdPrice = uint256(price);
+        }
+
+        // Store the converted USD price
+        _storePricePoint(token, usdPrice, block.timestamp);
+
+        emit PriceUpdate(token, usdPrice, block.timestamp);
     }
     
     function updateTokenRegistry(address _tokenRegistry) external onlyOwner {
@@ -271,28 +303,34 @@ contract Oracle is Initializable, OwnableUpgradeable, ReentrancyGuardUpgradeable
     // =============================================================
     
     function getTWAP(address token, uint256 window) external view returns (uint256) {
-        if (!tokenPriceData[token].supported) {
-            revert TokenNotSupported(token);
+        // Resolve to synthetic token if necessary
+        address resolvedToken = _resolveToken(token);
+
+        if (!tokenPriceData[resolvedToken].supported) {
+            revert TokenNotSupported(resolvedToken);
         }
-        
+
         uint256 currentTime = block.timestamp;
         uint256 targetTime = currentTime > window ? currentTime - window : 0;
-        
-        return _calculateTWAP(token, targetTime, currentTime);
+
+        return _calculateTWAP(resolvedToken, targetTime, currentTime);
     }
     
     function getSpotPrice(address token) external view returns (uint256) {
-        if (!tokenPriceData[token].supported) {
-            revert TokenNotSupported(token);
+        // Resolve to synthetic token if necessary
+        address resolvedToken = _resolveToken(token);
+
+        if (!tokenPriceData[resolvedToken].supported) {
+            revert TokenNotSupported(resolvedToken);
         }
-        
-        TokenPriceData storage data = tokenPriceData[token];
-        
+
+        TokenPriceData storage data = tokenPriceData[resolvedToken];
+
         // Only return stored price from trades
         if (data.lastUpdateTime > 0) {
             return data.priceHistory[data.lastUpdateTime].price;
         }
-        
+
         // No trade data yet - return 0
         return 0;
     }
@@ -317,13 +355,16 @@ contract Oracle is Initializable, OwnableUpgradeable, ReentrancyGuardUpgradeable
     }
     
     function getPriceForCollateral(address token) external view returns (uint256) {
+        // Resolve to synthetic token if necessary
+        address resolvedToken = _resolveToken(token);
+
         // Use longer TWAP for collateral to prevent manipulation
         // Take the more conservative (lower) price between 1h and 6h TWAP
-        uint256 twap1h = this.getTWAP(token, 1 hours);
-        uint256 twap6h = this.getTWAP(token, 6 hours);
+        uint256 twap1h = this.getTWAP(resolvedToken, 1 hours);
+        uint256 twap6h = this.getTWAP(resolvedToken, 6 hours);
 
         if (twap1h == 0 && twap6h == 0) {
-            return this.getSpotPrice(token); 
+            return this.getSpotPrice(resolvedToken);
         }
 
         if (twap1h == 0) return twap6h;
@@ -333,12 +374,15 @@ contract Oracle is Initializable, OwnableUpgradeable, ReentrancyGuardUpgradeable
     }
     
     function getPriceForBorrowing(address token) external view returns (uint256) {
+        // Resolve to synthetic token if necessary
+        address resolvedToken = _resolveToken(token);
+
         // Use medium-term TWAP for borrowing to balance responsiveness and stability
-        uint256 twap15m = this.getTWAP(token, 15 minutes);
-        uint256 twap1h = this.getTWAP(token, 1 hours);
+        uint256 twap15m = this.getTWAP(resolvedToken, 15 minutes);
+        uint256 twap1h = this.getTWAP(resolvedToken, 1 hours);
 
         if (twap15m == 0 && twap1h == 0) {
-            return this.getSpotPrice(token); 
+            return this.getSpotPrice(resolvedToken);
         }
 
         if (twap15m == 0) return twap1h;
@@ -476,7 +520,42 @@ contract Oracle is Initializable, OwnableUpgradeable, ReentrancyGuardUpgradeable
     // =============================================================
     //                   INTERNAL FUNCTIONS
     // =============================================================
-    
+
+    /// @notice Resolves token to its price-bearing token (synthetic if underlying)
+    /// @dev Handles BOTH synthetic and underlying token queries:
+    ///      - Synthetic token query: Returns immediately if has price data
+    ///      - Underlying token query: Looks up synthetic via factory
+    /// @param token Token address to resolve (can be synthetic OR underlying)
+    /// @return address Token address to use for price lookup
+    function _resolveToken(address token) internal view returns (address) {
+        // CASE 1: Token already has direct price data (e.g., synthetic token)
+        // This handles: getSpotPrice(sxWETH) → returns sxWETH
+        if (tokenPriceData[token].supported) {
+            return token;
+        }
+
+        // CASE 2: Token is underlying, need to find its synthetic
+        // This handles: getSpotPrice(underlying WETH) → returns sxWETH
+        if (address(syntheticTokenFactory) != address(0)) {
+            // Query factory for synthetic token on current chain
+            address syntheticToken = syntheticTokenFactory.getSyntheticToken(
+                uint32(block.chainid),
+                token
+            );
+
+            // Validate: exists, active, and has price data
+            if (syntheticToken != address(0) &&
+                syntheticTokenFactory.isSyntheticTokenActive(syntheticToken) &&
+                tokenPriceData[syntheticToken].supported) {
+                return syntheticToken;
+            }
+        }
+
+        // CASE 3: Unknown token - fall back to original
+        // Will revert with TokenNotSupported in calling function
+        return token;
+    }
+
     function _getCurrentPrice(address token) internal view returns (uint256) {
         // Get token-specific OrderBook
         IOrderBook tokenOrderBook = tokenOrderBooks[token];

@@ -449,7 +449,7 @@ if [[ "$USER_WETH_SUPPLY" == "0" ]]; then
 else
     echo "    User has WETH collateral - attempting borrowing $QUOTE_SYMBOL..."
     # Check if user has sufficient borrowing capacity (basic check)
-    WETH_COLLATERAL_VALUE=$((USER_WETH_SUPPLY / 1000000000000000000))  # Convert to WETH units
+    WETH_COLLATERAL_VALUE=$(echo "$USER_WETH_SUPPLY" | awk '{printf "%.0f", $1/1000000000000000000}')  # Convert to WETH units
     # Assuming 1 WETH = $2000, user can borrow up to 80% LTV = 1600 worth
     if [[ $WETH_COLLATERAL_VALUE -ge 1 ]]; then  # Need at least 1 WETH to borrow 1000 quote currency
         # For now, borrowing should be done through ScaleXRouter if it supports lending integration
@@ -457,14 +457,28 @@ else
         if [[ "$SCALEX_ROUTER_ADDRESS" != "0x0000000000000000000000000000000000000000" ]]; then
             echo "    🔄 Attempting borrowing 1,000 $QUOTE_SYMBOL through ScaleXRouter using WETH collateral..."
             # Note: This uses ScaleXRouter.borrow() which delegates to LendingManager
-            if cast send $SCALEX_ROUTER_ADDRESS "borrow(address,uint256)" $QUOTE_ADDRESS $BORROW_AMOUNT --rpc-url "${SCALEX_CORE_RPC}" --private-key $PRIVATE_KEY_2 2>/dev/null; then
-                print_success "Secondary trader successfully borrowed 1,000 $QUOTE_SYMBOL via ScaleXRouter"
-                BORROWING_SUCCESS=true
+            BORROW_TX=$(cast send $SCALEX_ROUTER_ADDRESS "borrow(address,uint256)" $QUOTE_ADDRESS $BORROW_AMOUNT --rpc-url "${SCALEX_CORE_RPC}" --private-key $PRIVATE_KEY_2 2>&1)
+            if echo "$BORROW_TX" | grep -q "transactionHash"; then
+                # Extract transaction hash
+                TX_HASH=$(echo "$BORROW_TX" | grep "transactionHash" | awk '{print $2}')
+                # Wait for receipt (retry up to 5 times with 2s delay)
+                TX_STATUS=""
+                for i in {1..5}; do
+                    sleep 2
+                    TX_STATUS=$(cast receipt $TX_HASH --rpc-url "${SCALEX_CORE_RPC}" 2>/dev/null | grep "^status" | awk '{print $2}')
+                    if [[ -n "$TX_STATUS" ]]; then break; fi
+                done
+                if [[ "$TX_STATUS" == "1" ]]; then
+                    print_success "Secondary trader successfully borrowed 1,000 $QUOTE_SYMBOL via ScaleXRouter"
+                    BORROWING_SUCCESS=true
+                else
+                    print_warning "ScaleXRouter borrowing transaction reverted or timed out"
+                    echo "    Transaction status: $TX_STATUS"
+                    BORROWING_SUCCESS=false
+                fi
             else
                 print_warning "ScaleXRouter borrowing failed - checking authorization..."
-                # Try to get more specific error
-                ERROR_RESULT=$(cast send $SCALEX_ROUTER_ADDRESS "borrow(address,uint256)" $QUOTE_ADDRESS $BORROW_AMOUNT --rpc-url "${SCALEX_CORE_RPC}" --private-key $PRIVATE_KEY_2 2>&1 || echo "Unknown error")
-                echo "    Error details: $ERROR_RESULT"
+                echo "    Error details: $BORROW_TX"
                 BORROWING_SUCCESS=false
             fi
         else
@@ -614,13 +628,28 @@ echo "    💎 Primary trader WETH balance: $(echo $PRIMARY_WETH_BALANCE_BEFORE 
 BORROW_WETH_AMOUNT=2000000000000000000  # 2 WETH
 if [[ $PRIMARY_QUOTE_SUPPLY -gt 0 ]] || [[ $PRIMARY_WBTC_SUPPLY -gt 0 ]]; then
     echo "    🔄 Attempting to borrow 2 WETH through ScaleXRouter..."
-    if cast send $SCALEX_ROUTER_ADDRESS "borrow(address,uint256)" $WETH_ADDRESS $BORROW_WETH_AMOUNT --rpc-url "${SCALEX_CORE_RPC}" --private-key $PRIVATE_KEY 2>/dev/null; then
-        print_success "✅ Primary trader successfully borrowed 2 WETH"
-        BORROW_2_SUCCESS=true
+    BORROW_WETH_TX=$(cast send $SCALEX_ROUTER_ADDRESS "borrow(address,uint256)" $WETH_ADDRESS $BORROW_WETH_AMOUNT --rpc-url "${SCALEX_CORE_RPC}" --private-key $PRIVATE_KEY 2>&1)
+    if echo "$BORROW_WETH_TX" | grep -q "transactionHash"; then
+        # Extract transaction hash
+        TX_HASH=$(echo "$BORROW_WETH_TX" | grep "transactionHash" | awk '{print $2}')
+        # Wait for receipt (retry up to 5 times with 2s delay)
+        TX_STATUS=""
+        for i in {1..5}; do
+            sleep 2
+            TX_STATUS=$(cast receipt $TX_HASH --rpc-url "${SCALEX_CORE_RPC}" 2>/dev/null | grep "^status" | awk '{print $2}')
+            if [[ -n "$TX_STATUS" ]]; then break; fi
+        done
+        if [[ "$TX_STATUS" == "1" ]]; then
+            print_success "✅ Primary trader successfully borrowed 2 WETH"
+            BORROW_2_SUCCESS=true
+        else
+            print_warning "WETH borrowing transaction reverted or timed out"
+            echo "    Transaction status: $TX_STATUS"
+            BORROW_2_SUCCESS=false
+        fi
     else
         print_warning "WETH borrowing failed - checking authorization..."
-        ERROR_RESULT=$(cast send $SCALEX_ROUTER_ADDRESS "borrow(address,uint256)" $WETH_ADDRESS $BORROW_WETH_AMOUNT --rpc-url "${SCALEX_CORE_RPC}" --private-key $PRIVATE_KEY 2>&1 || echo "Unknown error")
-        echo "    Error details: $ERROR_RESULT"
+        echo "    Error details: $BORROW_WETH_TX"
         BORROW_2_SUCCESS=false
     fi
 else
@@ -670,13 +699,28 @@ if [[ "$BORROW_1_SUCCESS" == true ]] && [[ $SECONDARY_QUOTE_DEBT -gt 0 ]]; then
             echo "    ✅ $QUOTE_SYMBOL approval for repayment successful"
 
             # Execute repayment
-            if cast send $SCALEX_ROUTER_ADDRESS "repay(address,uint256)" $QUOTE_ADDRESS $REPAY_AMOUNT --rpc-url "${SCALEX_CORE_RPC}" --private-key $PRIVATE_KEY_2 2>/dev/null; then
-                print_success "✅ Secondary trader successfully repaid 500 $QUOTE_SYMBOL"
-                REPAY_1_SUCCESS=true
+            REPAY_TX=$(cast send $SCALEX_ROUTER_ADDRESS "repay(address,uint256)" $QUOTE_ADDRESS $REPAY_AMOUNT --rpc-url "${SCALEX_CORE_RPC}" --private-key $PRIVATE_KEY_2 2>&1)
+            if echo "$REPAY_TX" | grep -q "transactionHash"; then
+                # Extract transaction hash
+                TX_HASH=$(echo "$REPAY_TX" | grep "transactionHash" | awk '{print $2}')
+                # Wait for receipt (retry up to 5 times with 2s delay)
+                TX_STATUS=""
+                for i in {1..5}; do
+                    sleep 2
+                    TX_STATUS=$(cast receipt $TX_HASH --rpc-url "${SCALEX_CORE_RPC}" 2>/dev/null | grep "^status" | awk '{print $2}')
+                    if [[ -n "$TX_STATUS" ]]; then break; fi
+                done
+                if [[ "$TX_STATUS" == "1" ]]; then
+                    print_success "✅ Secondary trader successfully repaid 500 $QUOTE_SYMBOL"
+                    REPAY_1_SUCCESS=true
+                else
+                    print_warning "$QUOTE_SYMBOL repayment transaction reverted or timed out"
+                    echo "    Transaction status: $TX_STATUS"
+                    REPAY_1_SUCCESS=false
+                fi
             else
                 print_warning "$QUOTE_SYMBOL repayment failed - checking error..."
-                ERROR_RESULT=$(cast send $SCALEX_ROUTER_ADDRESS "repay(address,uint256)" $QUOTE_ADDRESS $REPAY_AMOUNT --rpc-url "${SCALEX_CORE_RPC}" --private-key $PRIVATE_KEY_2 2>&1 || echo "Unknown error")
-                echo "    Error details: $ERROR_RESULT"
+                echo "    Error details: $REPAY_TX"
                 REPAY_1_SUCCESS=false
             fi
         else
@@ -726,13 +770,28 @@ if [[ "$BORROW_2_SUCCESS" == true ]] && [[ $PRIMARY_WETH_DEBT -gt 0 ]]; then
             echo "    ✅ WETH approval for repayment successful"
 
             # Execute repayment
-            if cast send $SCALEX_ROUTER_ADDRESS "repay(address,uint256)" $WETH_ADDRESS $REPAY_WETH_AMOUNT --rpc-url "${SCALEX_CORE_RPC}" --private-key $PRIVATE_KEY 2>/dev/null; then
-                print_success "✅ Primary trader successfully repaid 1 WETH"
-                REPAY_2_SUCCESS=true
+            REPAY_TX=$(cast send $SCALEX_ROUTER_ADDRESS "repay(address,uint256)" $WETH_ADDRESS $REPAY_WETH_AMOUNT --rpc-url "${SCALEX_CORE_RPC}" --private-key $PRIVATE_KEY 2>&1)
+            if echo "$REPAY_TX" | grep -q "transactionHash"; then
+                # Extract transaction hash
+                TX_HASH=$(echo "$REPAY_TX" | grep "transactionHash" | awk '{print $2}')
+                # Wait for receipt (retry up to 5 times with 2s delay)
+                TX_STATUS=""
+                for i in {1..5}; do
+                    sleep 2
+                    TX_STATUS=$(cast receipt $TX_HASH --rpc-url "${SCALEX_CORE_RPC}" 2>/dev/null | grep "^status" | awk '{print $2}')
+                    if [[ -n "$TX_STATUS" ]]; then break; fi
+                done
+                if [[ "$TX_STATUS" == "1" ]]; then
+                    print_success "✅ Primary trader successfully repaid 1 WETH"
+                    REPAY_2_SUCCESS=true
+                else
+                    print_warning "WETH repayment transaction reverted or timed out"
+                    echo "    Transaction status: $TX_STATUS"
+                    REPAY_2_SUCCESS=false
+                fi
             else
                 print_warning "WETH repayment failed - checking error..."
-                ERROR_RESULT=$(cast send $SCALEX_ROUTER_ADDRESS "repay(address,uint256)" $WETH_ADDRESS $REPAY_WETH_AMOUNT --rpc-url "${SCALEX_CORE_RPC}" --private-key $PRIVATE_KEY 2>&1 || echo "Unknown error")
-                echo "    Error details: $ERROR_RESULT"
+                echo "    Error details: $REPAY_TX"
                 REPAY_2_SUCCESS=false
             fi
         else

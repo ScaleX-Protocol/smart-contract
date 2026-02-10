@@ -211,4 +211,8 @@ interface IOrderBook is IOrderBookErrors {
     function updateTradingRules(
         TradingRules memory _newRules
     ) external;
+
+    function getQuoteCurrency() external view returns (address);
+
+    function getBaseCurrency() external view returns (address);
 }

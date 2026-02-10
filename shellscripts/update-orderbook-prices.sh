@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # SCALEX Order Book Price Update Script
-# Updates ALL order books with current market prices (except ETH/WETH)
+# Updates selected order books with current market prices (except ETH/WETH)
 
 # ========================================
 # ENVIRONMENT VARIABLES
@@ -14,6 +14,10 @@
 # OPTIONAL (with January 2026 defaults):
 # - SCALEX_CORE_RPC: RPC URL for core chain (default: http://127.0.0.1:8545)
 # - CORE_CHAIN_ID: Chain ID for deployment (default: auto-detected from RPC)
+# - MARKETS: Comma-separated list of markets to update (default: ALL)
+#            Available: WETH,WBTC,GOLD,SILVER,GOOGLE,NVIDIA,APPLE,MNT
+#            Example: MARKETS="WBTC,GOLD" to only update WBTC and GOLD pools
+# - WETH_PRICE: Ethereum price in quote currency (default: 3300 * PRICE_MULTIPLIER = $3,300)
 # - WBTC_PRICE: Bitcoin price in USDC with 6 decimals (default: 95000000000 = $95,000)
 # - GOLD_PRICE: Gold price in USDC with 6 decimals (default: 4450000000 = $4,450)
 # - SILVER_PRICE: Silver price in USDC with 6 decimals (default: 78000000 = $78)
@@ -27,8 +31,17 @@
 # - FORGE_TIMEOUT: Timeout for forge operations (default: 1200 seconds)
 #
 # USAGE EXAMPLES:
-# # Basic usage with defaults (January 2026 prices):
+# # Basic usage with defaults (January 2026 prices, all markets):
 # bash shellscripts/update-orderbook-prices.sh
+#
+# # Update only specific markets:
+# MARKETS="WBTC,GOLD" bash shellscripts/update-orderbook-prices.sh
+#
+# # Update single market with custom price:
+# MARKETS="WBTC" WBTC_PRICE=96000000000 bash shellscripts/update-orderbook-prices.sh
+#
+# # Update RWA markets only:
+# MARKETS="GOLD,SILVER,GOOGLE,NVIDIA,APPLE" bash shellscripts/update-orderbook-prices.sh
 #
 # # Update with custom prices:
 # WBTC_PRICE=96000000000 GOLD_PRICE=4500000000 SILVER_PRICE=80000000 \
@@ -64,7 +77,7 @@ else
     echo "⚡ Slow mode disabled (may cause RPC rate limiting on public RPCs)"
 fi
 
-echo "🚀 Starting Order Book Price Update (All Pools Except ETH)..."
+echo "🚀 Starting Order Book Price Update..."
 
 # Colors for output
 RED='\033[0;31m'
@@ -162,6 +175,40 @@ export SCALEX_CORE_RPC="${SCALEX_CORE_RPC:-http://127.0.0.1:8545}"
 # Set quote currency from environment (default to USDC)
 export QUOTE_CURRENCY="${QUOTE_CURRENCY:-USDC}"
 
+# Set selected markets (default to ALL)
+# Available markets: WBTC, GOLD, SILVER, GOOGLE, NVIDIA, APPLE, MNT
+export MARKETS="${MARKETS:-ALL}"
+
+# All available markets for reference
+ALL_MARKETS=("WETH" "WBTC" "GOLD" "SILVER" "GOOGLE" "NVIDIA" "APPLE" "MNT")
+
+# Function to check if a market is selected
+is_market_selected() {
+    local market="$1"
+    local markets_upper=$(echo "$MARKETS" | tr '[:lower:]' '[:upper:]')
+
+    # If ALL or empty, all markets are selected
+    if [[ "$markets_upper" == "ALL" ]] || [[ -z "$MARKETS" ]]; then
+        return 0
+    fi
+
+    # Check if market is in the comma-separated list (case-insensitive)
+    if echo ",$markets_upper," | grep -qi ",$market,"; then
+        return 0
+    fi
+
+    return 1
+}
+
+# Build list of selected markets for display
+SELECTED_MARKETS=()
+for market in "${ALL_MARKETS[@]}"; do
+    if is_market_selected "$market"; then
+        SELECTED_MARKETS+=("$market")
+    fi
+done
+TOTAL_SELECTED_POOLS=${#SELECTED_MARKETS[@]}
+
 # Try to detect chain ID from RPC if not set
 if [[ -z "$CORE_CHAIN_ID" ]]; then
     print_step "Detecting chain ID from RPC..."
@@ -179,14 +226,32 @@ if [[ ! -f "$DEPLOYMENT_FILE" ]]; then
 fi
 print_success "Deployment file found"
 
-# Set default prices (January 2026 market prices)
-export WBTC_PRICE="${WBTC_PRICE:-95000000000}"     # $95,000
-export GOLD_PRICE="${GOLD_PRICE:-4450000000}"      # $4,450
-export SILVER_PRICE="${SILVER_PRICE:-78000000}"    # $78
-export GOOGL_PRICE="${GOOGL_PRICE:-314000000}"     # $314
-export NVDA_PRICE="${NVDA_PRICE:-188000000}"       # $188
-export AAPL_PRICE="${AAPL_PRICE:-265000000}"       # $265
-export MNT_PRICE="${MNT_PRICE:-1000000}"           # $1
+# Read quote currency decimals from .env (defaults to 6 for USDC)
+QUOTE_DECIMALS_VALUE=$(grep "^QUOTE_DECIMALS=" .env 2>/dev/null | cut -d'=' -f2 || echo "6")
+export QUOTE_DECIMALS="${QUOTE_DECIMALS:-$QUOTE_DECIMALS_VALUE}"
+
+# Calculate price multiplier based on quote decimals
+# For IDRX (2 decimals): 10^2 = 100
+# For USDC (6 decimals): 10^6 = 1,000,000
+if command -v bc >/dev/null 2>&1; then
+    PRICE_MULTIPLIER=$(echo "10^${QUOTE_DECIMALS}" | bc)
+else
+    # Fallback for systems without bc
+    PRICE_MULTIPLIER=1
+    for ((i=0; i<QUOTE_DECIMALS; i++)); do
+        PRICE_MULTIPLIER=$((PRICE_MULTIPLIER * 10))
+    done
+fi
+
+# Set default prices (January 2026 market prices) scaled to quote currency decimals
+export WETH_PRICE="${WETH_PRICE:-$((3300 * PRICE_MULTIPLIER))}"      # $3,300
+export WBTC_PRICE="${WBTC_PRICE:-$((95000 * PRICE_MULTIPLIER))}"     # $95,000
+export GOLD_PRICE="${GOLD_PRICE:-$((4450 * PRICE_MULTIPLIER))}"      # $4,450
+export SILVER_PRICE="${SILVER_PRICE:-$((78 * PRICE_MULTIPLIER))}"    # $78
+export GOOGL_PRICE="${GOOGL_PRICE:-$((314 * PRICE_MULTIPLIER))}"     # $314
+export NVDA_PRICE="${NVDA_PRICE:-$((188 * PRICE_MULTIPLIER))}"       # $188
+export AAPL_PRICE="${AAPL_PRICE:-$((265 * PRICE_MULTIPLIER))}"       # $265
+export MNT_PRICE="${MNT_PRICE:-$((1 * PRICE_MULTIPLIER))}"           # $1
 
 # Set boolean flags
 VERIFY_PRICES="${VERIFY_PRICES:-true}"
@@ -199,19 +264,23 @@ echo "  Network: Chain ID $CORE_CHAIN_ID"
 echo "  RPC: ${SCALEX_CORE_RPC}"
 echo "  Deployment: ${DEPLOYMENT_FILE}"
 echo "  Quote Currency: ${QUOTE_CURRENCY}"
-echo "  Total Pools: 7 (excluding WETH)"
+echo "  Selected Markets: ${SELECTED_MARKETS[*]}"
+echo "  Total Pools: $TOTAL_SELECTED_POOLS (excluding WETH)"
 echo "  Verify Prices: ${VERIFY_PRICES}"
 echo "  Execute Market Orders: ${EXECUTE_MARKET_ORDERS}"
 
 echo ""
 print_step "Price Configuration (January 2026):"
-echo "  WBTC:   \$$(format_price $WBTC_PRICE) (Bitcoin)"
-echo "  GOLD:   \$$(format_price $GOLD_PRICE) (Gold RWA)"
-echo "  SILVER: \$$(format_price $SILVER_PRICE) (Silver RWA)"
-echo "  GOOGLE: \$$(format_price $GOOGL_PRICE) (Google Stock RWA)"
-echo "  NVIDIA: \$$(format_price $NVDA_PRICE) (Nvidia Stock RWA)"
-echo "  APPLE:  \$$(format_price $AAPL_PRICE) (Apple Stock RWA)"
-echo "  MNT:    \$$(format_price $MNT_PRICE) (MNT Token)"
+echo "  Quote Decimals: ${QUOTE_DECIMALS}"
+echo "  Price Multiplier: ${PRICE_MULTIPLIER}"
+echo "  WETH:   \$$(format_price $WETH_PRICE $QUOTE_DECIMALS) (Ethereum)"
+echo "  WBTC:   \$$(format_price $WBTC_PRICE $QUOTE_DECIMALS) (Bitcoin)"
+echo "  GOLD:   \$$(format_price $GOLD_PRICE $QUOTE_DECIMALS) (Gold RWA)"
+echo "  SILVER: \$$(format_price $SILVER_PRICE $QUOTE_DECIMALS) (Silver RWA)"
+echo "  GOOGLE: \$$(format_price $GOOGL_PRICE $QUOTE_DECIMALS) (Google Stock RWA)"
+echo "  NVIDIA: \$$(format_price $NVDA_PRICE $QUOTE_DECIMALS) (Nvidia Stock RWA)"
+echo "  APPLE:  \$$(format_price $AAPL_PRICE $QUOTE_DECIMALS) (Apple Stock RWA)"
+echo "  MNT:    \$$(format_price $MNT_PRICE $QUOTE_DECIMALS) (MNT Token)"
 
 # Create timestamp for report
 TIMESTAMP=$(date +%s)
@@ -233,69 +302,18 @@ if forge script script/trading/FillOrderBooks.s.sol:FillOrderBooks \
     TOTAL_SELL_ORDERS=$(grep -c "\[OK\] SELL order placed" /tmp/fill_orders_output.log || echo "0")
     TOTAL_ORDERS_PLACED=$((TOTAL_BUY_ORDERS + TOTAL_SELL_ORDERS))
 
-    # Check which pools succeeded
-    if grep -q "=== Filling WBTC/${QUOTE_CURRENCY} Order Book ===" /tmp/fill_orders_output.log && grep -A 20 "=== Filling WBTC/${QUOTE_CURRENCY} Order Book ===" /tmp/fill_orders_output.log | grep -q "\[OK\]"; then
-        print_success "WBTC: Orders placed successfully"
-        POOLS_SUCCEEDED=$((POOLS_SUCCEEDED + 1))
-    else
-        print_warning "WBTC: Failed to place orders"
-        POOLS_FAILED=$((POOLS_FAILED + 1))
-        FAILED_POOLS+=("WBTC")
-    fi
-
-    if grep -q "=== Filling GOLD/${QUOTE_CURRENCY} Order Book ===" /tmp/fill_orders_output.log && grep -A 20 "=== Filling GOLD/${QUOTE_CURRENCY} Order Book ===" /tmp/fill_orders_output.log | grep -q "\[OK\]"; then
-        print_success "GOLD: Orders placed successfully"
-        POOLS_SUCCEEDED=$((POOLS_SUCCEEDED + 1))
-    else
-        print_warning "GOLD: Failed to place orders"
-        POOLS_FAILED=$((POOLS_FAILED + 1))
-        FAILED_POOLS+=("GOLD")
-    fi
-
-    if grep -q "=== Filling SILVER/${QUOTE_CURRENCY} Order Book ===" /tmp/fill_orders_output.log && grep -A 20 "=== Filling SILVER/${QUOTE_CURRENCY} Order Book ===" /tmp/fill_orders_output.log | grep -q "\[OK\]"; then
-        print_success "SILVER: Orders placed successfully"
-        POOLS_SUCCEEDED=$((POOLS_SUCCEEDED + 1))
-    else
-        print_warning "SILVER: Failed to place orders"
-        POOLS_FAILED=$((POOLS_FAILED + 1))
-        FAILED_POOLS+=("SILVER")
-    fi
-
-    if grep -q "=== Filling GOOGLE/${QUOTE_CURRENCY} Order Book ===" /tmp/fill_orders_output.log && grep -A 20 "=== Filling GOOGLE/${QUOTE_CURRENCY} Order Book ===" /tmp/fill_orders_output.log | grep -q "\[OK\]"; then
-        print_success "GOOGLE: Orders placed successfully"
-        POOLS_SUCCEEDED=$((POOLS_SUCCEEDED + 1))
-    else
-        print_warning "GOOGLE: Failed to place orders"
-        POOLS_FAILED=$((POOLS_FAILED + 1))
-        FAILED_POOLS+=("GOOGLE")
-    fi
-
-    if grep -q "=== Filling NVIDIA/${QUOTE_CURRENCY} Order Book ===" /tmp/fill_orders_output.log && grep -A 20 "=== Filling NVIDIA/${QUOTE_CURRENCY} Order Book ===" /tmp/fill_orders_output.log | grep -q "\[OK\]"; then
-        print_success "NVIDIA: Orders placed successfully"
-        POOLS_SUCCEEDED=$((POOLS_SUCCEEDED + 1))
-    else
-        print_warning "NVIDIA: Failed to place orders"
-        POOLS_FAILED=$((POOLS_FAILED + 1))
-        FAILED_POOLS+=("NVIDIA")
-    fi
-
-    if grep -q "=== Filling MNT/${QUOTE_CURRENCY} Order Book ===" /tmp/fill_orders_output.log && grep -A 20 "=== Filling MNT/${QUOTE_CURRENCY} Order Book ===" /tmp/fill_orders_output.log | grep -q "\[OK\]"; then
-        print_success "MNT: Orders placed successfully"
-        POOLS_SUCCEEDED=$((POOLS_SUCCEEDED + 1))
-    else
-        print_warning "MNT: Failed to place orders"
-        POOLS_FAILED=$((POOLS_FAILED + 1))
-        FAILED_POOLS+=("MNT")
-    fi
-
-    if grep -q "=== Filling APPLE/${QUOTE_CURRENCY} Order Book ===" /tmp/fill_orders_output.log && grep -A 20 "=== Filling APPLE/${QUOTE_CURRENCY} Order Book ===" /tmp/fill_orders_output.log | grep -q "\[OK\]"; then
-        print_success "APPLE: Orders placed successfully"
-        POOLS_SUCCEEDED=$((POOLS_SUCCEEDED + 1))
-    else
-        print_warning "APPLE: Failed to place orders"
-        POOLS_FAILED=$((POOLS_FAILED + 1))
-        FAILED_POOLS+=("APPLE")
-    fi
+    # Check which selected pools succeeded
+    for market in "${SELECTED_MARKETS[@]}"; do
+        if grep -q "=== Filling ${market}/${QUOTE_CURRENCY} Order Book ===" /tmp/fill_orders_output.log && \
+           grep -A 20 "=== Filling ${market}/${QUOTE_CURRENCY} Order Book ===" /tmp/fill_orders_output.log | grep -q "\[OK\]"; then
+            print_success "${market}: Orders placed successfully"
+            POOLS_SUCCEEDED=$((POOLS_SUCCEEDED + 1))
+        else
+            print_warning "${market}: Failed to place orders"
+            POOLS_FAILED=$((POOLS_FAILED + 1))
+            FAILED_POOLS+=("${market}")
+        fi
+    done
 
     print_success "Placed $TOTAL_ORDERS_PLACED total orders ($TOTAL_BUY_ORDERS BUY, $TOTAL_SELL_ORDERS SELL)"
 else
@@ -312,108 +330,40 @@ if [[ "$VERIFY_PRICES" == "true" ]]; then
     echo "  ⏳ Waiting 10 seconds for transactions to be mined..."
     sleep 10
 
-    # Read pool addresses from deployment file
+    # Read pool addresses from deployment file (only for selected markets)
     if command -v jq >/dev/null 2>&1; then
-        WBTC_POOL=$(jq -r ".WBTC_${QUOTE_CURRENCY}_Pool // \"0x0\"" "$DEPLOYMENT_FILE")
-        GOLD_POOL=$(jq -r ".GOLD_${QUOTE_CURRENCY}_Pool // \"0x0\"" "$DEPLOYMENT_FILE")
-        SILVER_POOL=$(jq -r ".SILVER_${QUOTE_CURRENCY}_Pool // \"0x0\"" "$DEPLOYMENT_FILE")
-        GOOGLE_POOL=$(jq -r ".GOOGLE_${QUOTE_CURRENCY}_Pool // \"0x0\"" "$DEPLOYMENT_FILE")
-        NVIDIA_POOL=$(jq -r ".NVIDIA_${QUOTE_CURRENCY}_Pool // \"0x0\"" "$DEPLOYMENT_FILE")
-        MNT_POOL=$(jq -r ".MNT_${QUOTE_CURRENCY}_Pool // \"0x0\"" "$DEPLOYMENT_FILE")
-        APPLE_POOL=$(jq -r ".APPLE_${QUOTE_CURRENCY}_Pool // \"0x0\"" "$DEPLOYMENT_FILE")
+        for market in "${SELECTED_MARKETS[@]}"; do
+            POOL_ADDR=$(jq -r ".${market}_${QUOTE_CURRENCY}_Pool // \"0x0\"" "$DEPLOYMENT_FILE")
+            # Use dynamic variable assignment
+            declare "${market}_POOL=$POOL_ADDR"
+        done
     else
         print_warning "jq not found - skipping price verification"
         VERIFY_PRICES="false"
     fi
 
     if [[ "$VERIFY_PRICES" == "true" ]]; then
-        # Verify WBTC pool
-        if [[ "$WBTC_POOL" != "0x0" ]]; then
-            WBTC_BUY=$(get_best_price "$WBTC_POOL" 0)
-            WBTC_SELL=$(get_best_price "$WBTC_POOL" 1)
-            if [[ "$WBTC_BUY" != "0" ]] && [[ "$WBTC_SELL" != "0" ]]; then
-                SPREAD=$((WBTC_SELL - WBTC_BUY))
-                print_success "WBTC: BUY=\$$(format_price $WBTC_BUY) SELL=\$$(format_price $WBTC_SELL) (spread: \$$(format_price $SPREAD))"
-            else
-                print_warning "WBTC: No orders found on-chain"
-            fi
-        fi
+        # Verify only selected pools
+        for market in "${SELECTED_MARKETS[@]}"; do
+            POOL_VAR="${market}_POOL"
+            POOL_ADDR="${!POOL_VAR}"
 
-        # Verify GOLD pool
-        if [[ "$GOLD_POOL" != "0x0" ]]; then
-            GOLD_BUY=$(get_best_price "$GOLD_POOL" 0)
-            GOLD_SELL=$(get_best_price "$GOLD_POOL" 1)
-            if [[ "$GOLD_BUY" != "0" ]] && [[ "$GOLD_SELL" != "0" ]]; then
-                SPREAD=$((GOLD_SELL - GOLD_BUY))
-                print_success "GOLD: BUY=\$$(format_price $GOLD_BUY) SELL=\$$(format_price $GOLD_SELL) (spread: \$$(format_price $SPREAD))"
-            else
-                print_warning "GOLD: No orders found on-chain"
-            fi
-        fi
+            if [[ -n "$POOL_ADDR" ]] && [[ "$POOL_ADDR" != "0x0" ]] && [[ "$POOL_ADDR" != "null" ]]; then
+                BEST_BUY=$(get_best_price "$POOL_ADDR" 0)
+                BEST_SELL=$(get_best_price "$POOL_ADDR" 1)
 
-        # Verify SILVER pool
-        if [[ "$SILVER_POOL" != "0x0" ]]; then
-            SILVER_BUY=$(get_best_price "$SILVER_POOL" 0)
-            SILVER_SELL=$(get_best_price "$SILVER_POOL" 1)
-            if [[ "$SILVER_BUY" != "0" ]] && [[ "$SILVER_SELL" != "0" ]]; then
-                SPREAD=$((SILVER_SELL - SILVER_BUY))
-                print_success "SILVER: BUY=\$$(format_price $SILVER_BUY) SELL=\$$(format_price $SILVER_SELL) (spread: \$$(format_price $SPREAD))"
-            else
-                print_warning "SILVER: No orders found on-chain"
-            fi
-        fi
-
-        # Verify GOOGLE pool
-        if [[ "$GOOGLE_POOL" != "0x0" ]]; then
-            GOOGLE_BUY=$(get_best_price "$GOOGLE_POOL" 0)
-            GOOGLE_SELL=$(get_best_price "$GOOGLE_POOL" 1)
-            if [[ "$GOOGLE_BUY" != "0" ]] && [[ "$GOOGLE_SELL" != "0" ]]; then
-                SPREAD=$((GOOGLE_SELL - GOOGLE_BUY))
-                print_success "GOOGLE: BUY=\$$(format_price $GOOGLE_BUY) SELL=\$$(format_price $GOOGLE_SELL) (spread: \$$(format_price $SPREAD))"
-            else
-                print_warning "GOOGLE: No orders found on-chain"
-            fi
-        fi
-
-        # Verify NVIDIA pool
-        if [[ "$NVIDIA_POOL" != "0x0" ]]; then
-            NVIDIA_BUY=$(get_best_price "$NVIDIA_POOL" 0)
-            NVIDIA_SELL=$(get_best_price "$NVIDIA_POOL" 1)
-            if [[ "$NVIDIA_BUY" != "0" ]] && [[ "$NVIDIA_SELL" != "0" ]]; then
-                SPREAD=$((NVIDIA_SELL - NVIDIA_BUY))
-                print_success "NVIDIA: BUY=\$$(format_price $NVIDIA_BUY) SELL=\$$(format_price $NVIDIA_SELL) (spread: \$$(format_price $SPREAD))"
-            else
-                print_warning "NVIDIA: No orders found on-chain"
-            fi
-        fi
-
-        # Verify MNT pool
-        if [[ "$MNT_POOL" != "0x0" ]]; then
-            MNT_BUY=$(get_best_price "$MNT_POOL" 0)
-            MNT_SELL=$(get_best_price "$MNT_POOL" 1)
-            if [[ "$MNT_BUY" != "0" ]] || [[ "$MNT_SELL" != "0" ]]; then
-                if [[ "$MNT_BUY" != "0" ]] && [[ "$MNT_SELL" != "0" ]]; then
-                    SPREAD=$((MNT_SELL - MNT_BUY))
-                    print_success "MNT: BUY=\$$(format_price $MNT_BUY) SELL=\$$(format_price $MNT_SELL) (spread: \$$(format_price $SPREAD))"
+                if [[ "$BEST_BUY" != "0" ]] && [[ "$BEST_SELL" != "0" ]]; then
+                    SPREAD=$((BEST_SELL - BEST_BUY))
+                    print_success "${market}: BUY=\$$(format_price $BEST_BUY $QUOTE_DECIMALS) SELL=\$$(format_price $BEST_SELL $QUOTE_DECIMALS) (spread: \$$(format_price $SPREAD $QUOTE_DECIMALS))"
+                elif [[ "$BEST_BUY" != "0" ]] || [[ "$BEST_SELL" != "0" ]]; then
+                    print_warning "${market}: Partial orders found (BUY=\$$(format_price $BEST_BUY $QUOTE_DECIMALS) SELL=\$$(format_price $BEST_SELL $QUOTE_DECIMALS))"
                 else
-                    print_warning "MNT: Partial orders found (BUY=\$$(format_price $MNT_BUY) SELL=\$$(format_price $MNT_SELL))"
+                    print_warning "${market}: No orders found on-chain"
                 fi
             else
-                print_warning "MNT: No orders found on-chain"
+                print_warning "${market}: Pool not found in deployment file"
             fi
-        fi
-
-        # Verify APPLE pool
-        if [[ "$APPLE_POOL" != "0x0" ]]; then
-            APPLE_BUY=$(get_best_price "$APPLE_POOL" 0)
-            APPLE_SELL=$(get_best_price "$APPLE_POOL" 1)
-            if [[ "$APPLE_BUY" != "0" ]] && [[ "$APPLE_SELL" != "0" ]]; then
-                SPREAD=$((APPLE_SELL - APPLE_BUY))
-                print_success "APPLE: BUY=\$$(format_price $APPLE_BUY) SELL=\$$(format_price $APPLE_SELL) (spread: \$$(format_price $SPREAD))"
-            else
-                print_warning "APPLE: No orders found on-chain"
-            fi
-        fi
+        done
     fi
 else
     echo ""
@@ -465,20 +415,23 @@ Generated: $(date)
 - Network: Chain ID $CORE_CHAIN_ID
 - RPC: ${SCALEX_CORE_RPC}
 - Deployment File: ${DEPLOYMENT_FILE}
-- Total Pools: 7 (excluding WETH)
+- Quote Currency: ${QUOTE_CURRENCY} (${QUOTE_DECIMALS} decimals)
+- Selected Markets: ${SELECTED_MARKETS[*]}
+- Total Pools: $TOTAL_SELECTED_POOLS (excluding WETH)
 
 ## Price Configuration (January 2026)
-- WBTC: \$$(format_price $WBTC_PRICE) (Bitcoin)
-- GOLD: \$$(format_price $GOLD_PRICE) (Gold RWA)
-- SILVER: \$$(format_price $SILVER_PRICE) (Silver RWA)
-- GOOGLE: \$$(format_price $GOOGL_PRICE) (Google Stock RWA)
-- NVIDIA: \$$(format_price $NVDA_PRICE) (Nvidia Stock RWA)
-- APPLE: \$$(format_price $AAPL_PRICE) (Apple Stock RWA)
-- MNT: \$$(format_price $MNT_PRICE) (MNT Token)
+- WETH: \$$(format_price $WETH_PRICE $QUOTE_DECIMALS) (Ethereum)
+- WBTC: \$$(format_price $WBTC_PRICE $QUOTE_DECIMALS) (Bitcoin)
+- GOLD: \$$(format_price $GOLD_PRICE $QUOTE_DECIMALS) (Gold RWA)
+- SILVER: \$$(format_price $SILVER_PRICE $QUOTE_DECIMALS) (Silver RWA)
+- GOOGLE: \$$(format_price $GOOGL_PRICE $QUOTE_DECIMALS) (Google Stock RWA)
+- NVIDIA: \$$(format_price $NVDA_PRICE $QUOTE_DECIMALS) (Nvidia Stock RWA)
+- APPLE: \$$(format_price $AAPL_PRICE $QUOTE_DECIMALS) (Apple Stock RWA)
+- MNT: \$$(format_price $MNT_PRICE $QUOTE_DECIMALS) (MNT Token)
 
 ## Summary
-- **Pools Succeeded:** $POOLS_SUCCEEDED/7
-- **Pools Failed:** $POOLS_FAILED/7
+- **Pools Succeeded:** $POOLS_SUCCEEDED/$TOTAL_SELECTED_POOLS
+- **Pools Failed:** $POOLS_FAILED/$TOTAL_SELECTED_POOLS
 - **Orders Placed:** $TOTAL_ORDERS_PLACED ($TOTAL_BUY_ORDERS BUY, $TOTAL_SELL_ORDERS SELL)
 
 ## Failed Pools
@@ -526,7 +479,7 @@ echo ""
 print_success "🎉 Order Book Price Update Complete!"
 echo ""
 echo "📊 Summary:"
-echo "  Pools Updated: $POOLS_SUCCEEDED/7 ($(( POOLS_SUCCEEDED * 100 / 7 ))%)"
+echo "  Pools Updated: $POOLS_SUCCEEDED/$TOTAL_SELECTED_POOLS ($(( POOLS_SUCCEEDED * 100 / TOTAL_SELECTED_POOLS ))%)"
 echo "  Orders Placed: $TOTAL_ORDERS_PLACED"
 if [[ "$EXECUTE_MARKET_ORDERS" == "true" ]] && [[ -n "${MARKET_ORDERS_EXECUTED:-}" ]]; then
     echo "  Market Orders Executed: $MARKET_ORDERS_EXECUTED trades (PRIVATE_KEY_2)"

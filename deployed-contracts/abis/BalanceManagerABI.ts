@@ -531,6 +531,25 @@ export const BalanceManagerABI: any[] = [
 	},
 	{
 		"type": "function",
+		"name": "isAuthorizedOperator",
+		"inputs": [
+			{
+				"name": "operator",
+				"type": "address",
+				"internalType": "address"
+			}
+		],
+		"outputs": [
+			{
+				"name": "",
+				"type": "bool",
+				"internalType": "bool"
+			}
+		],
+		"stateMutability": "view"
+	},
+	{
+		"type": "function",
 		"name": "isMessageProcessed",
 		"inputs": [
 			{
@@ -670,6 +689,34 @@ export const BalanceManagerABI: any[] = [
 	},
 	{
 		"type": "function",
+		"name": "repayFromSyntheticBalance",
+		"inputs": [
+			{
+				"name": "user",
+				"type": "address",
+				"internalType": "address"
+			},
+			{
+				"name": "syntheticToken",
+				"type": "address",
+				"internalType": "address"
+			},
+			{
+				"name": "underlyingToken",
+				"type": "address",
+				"internalType": "address"
+			},
+			{
+				"name": "amount",
+				"type": "uint256",
+				"internalType": "uint256"
+			}
+		],
+		"outputs": [],
+		"stateMutability": "nonpayable"
+	},
+	{
+		"type": "function",
 		"name": "requestWithdraw",
 		"inputs": [
 			{
@@ -691,6 +738,29 @@ export const BalanceManagerABI: any[] = [
 				"name": "recipient",
 				"type": "address",
 				"internalType": "address"
+			}
+		],
+		"outputs": [],
+		"stateMutability": "nonpayable"
+	},
+	{
+		"type": "function",
+		"name": "seizeCollateral",
+		"inputs": [
+			{
+				"name": "user",
+				"type": "address",
+				"internalType": "address"
+			},
+			{
+				"name": "underlyingToken",
+				"type": "address",
+				"internalType": "address"
+			},
+			{
+				"name": "amount",
+				"type": "uint256",
+				"internalType": "uint256"
 			}
 		],
 		"outputs": [],
@@ -1084,6 +1154,37 @@ export const BalanceManagerABI: any[] = [
 	},
 	{
 		"type": "event",
+		"name": "AutoRepayFromBalance",
+		"inputs": [
+			{
+				"name": "user",
+				"type": "address",
+				"indexed": true,
+				"internalType": "address"
+			},
+			{
+				"name": "syntheticToken",
+				"type": "address",
+				"indexed": true,
+				"internalType": "address"
+			},
+			{
+				"name": "underlyingToken",
+				"type": "address",
+				"indexed": true,
+				"internalType": "address"
+			},
+			{
+				"name": "amount",
+				"type": "uint256",
+				"indexed": false,
+				"internalType": "uint256"
+			}
+		],
+		"anonymous": false
+	},
+	{
+		"type": "event",
 		"name": "ChainBalanceManagerSet",
 		"inputs": [
 			{
@@ -1097,6 +1198,37 @@ export const BalanceManagerABI: any[] = [
 				"type": "address",
 				"indexed": true,
 				"internalType": "address"
+			}
+		],
+		"anonymous": false
+	},
+	{
+		"type": "event",
+		"name": "CollateralSeized",
+		"inputs": [
+			{
+				"name": "user",
+				"type": "address",
+				"indexed": true,
+				"internalType": "address"
+			},
+			{
+				"name": "syntheticToken",
+				"type": "address",
+				"indexed": true,
+				"internalType": "address"
+			},
+			{
+				"name": "underlyingToken",
+				"type": "address",
+				"indexed": true,
+				"internalType": "address"
+			},
+			{
+				"name": "amount",
+				"type": "uint256",
+				"indexed": false,
+				"internalType": "uint256"
 			}
 		],
 		"anonymous": false
