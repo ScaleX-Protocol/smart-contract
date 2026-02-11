@@ -1,0 +1,30 @@
+{
+  "network": "arbitrum-sepolia",
+  "chainId": 421614,
+  "chainlinkRouter": "0x234a5fb5Bd614a7AA2FfAB244D603abFA0Ac5C5C",
+  "donId": "fun-arbitrum-sepolia-1",
+  "subscriptionId": "YOUR_SUBSCRIPTION_ID",
+  "gasLimit": 300000,
+  "secrets": {
+    "indexerApiUrl": "https://api.scalex.example.com",
+    "reputationRegistry": "YOUR_REPUTATION_REGISTRY_ADDRESS"
+  },
+  "verification": {
+    "enabled": true,
+    "apiKey": "YOUR_ARBISCAN_API_KEY"
+  },
+  "networks": {
+    "arbitrum-sepolia": {
+      "url": "https://sepolia-rollup.arbitrum.io/rpc",
+      "chainId": 421614,
+      "router": "0x234a5fb5Bd614a7AA2FfAB244D603abFA0Ac5C5C",
+      "donId": "fun-arbitrum-sepolia-1"
+    },
+    "arbitrum-mainnet": {
+      "url": "https://arb1.arbitrum.io/rpc",
+      "chainId": 42161,
+      "router": "0x97083E831F8F0638855e2A515c90EdCF158DF238",
+      "donId": "fun-arbitrum-mainnet-1"
+    }
+  }
+}

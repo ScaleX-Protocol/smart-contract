@@ -36,3 +36,4 @@ population.log
 
 # AI agent integration docs (design phase)
 docs/ai-agent-integration/
+.DS_Store
