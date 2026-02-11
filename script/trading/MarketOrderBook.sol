@@ -70,7 +70,7 @@ contract MarketOrderBook is Script, DeployHelpers {
        tokenQuote = IERC20(deployed[quoteCurrency].addr);
    }
 
-   function run() public {
+   function run() public virtual {
        uint256 deployerPrivateKey = vm.envUint("PRIVATE_KEY_2");
        vm.startBroadcast(deployerPrivateKey);
 
