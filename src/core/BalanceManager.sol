@@ -203,7 +203,7 @@ contract BalanceManager is
             $.totalInternalSupply[syntheticToken] += amount;
         }
 
-        emit Deposit(user, currencyId, amount);
+        emit Deposit(user, currencyId, amount, 0, msg.sender);
         return amount;
     }
 
@@ -234,7 +234,7 @@ contract BalanceManager is
             $.lockedBalanceOf[user][orderBook][currencyId] += amount;
         }
 
-        emit Deposit(user, currencyId, amount);
+        emit Deposit(user, currencyId, amount, 0, msg.sender);
 
         return amount;
     }
@@ -366,13 +366,13 @@ contract BalanceManager is
             
             // Emit event with safety checks
             uint256 yieldToEmit = yieldAmount <= totalAmount ? yieldAmount : 0;
-            emit WithdrawalWithYield(user, currencyId, amount, yieldToEmit, remainingBalance);
+            emit WithdrawalWithYield(user, currencyId, amount, yieldToEmit, remainingBalance, block.timestamp, 0, msg.sender);
         } else {
             // No synthetic token case - regular withdrawal
             totalAmount = amount;
             $.balanceOf[user][currencyId] -= amount;
             currency.transfer(user, amount);
-            emit Withdrawal(user, currencyId, amount);
+            emit Withdrawal(user, currencyId, amount, 0, msg.sender);
         }
         
         return totalAmount;
@@ -409,7 +409,7 @@ contract BalanceManager is
         $.balanceOf[user][currencyId] -= amount;
         $.lockedBalanceOf[user][locker][currencyId] += amount;
 
-        emit Lock(user, currencyId, amount);
+        emit Lock(user, currencyId, amount, 0, msg.sender);
     }
 
     function unlock(address user, Currency currency, uint256 amount) external {
@@ -433,10 +433,10 @@ contract BalanceManager is
 
         $.lockedBalanceOf[user][msg.sender][currencyId] -= amount;
 
-        emit Unlock(user, currencyId, amount);
+        emit Unlock(user, currencyId, amount, 0, msg.sender);
         emit YieldAutoClaimed(user, currencyId, block.timestamp);
     }
-    
+
     function transferOut(address sender, address receiver, Currency currency, uint256 amount) external {
         Storage storage $ = getStorage();
         uint256 currencyId = _resolveCurrencyId(currency);
@@ -908,7 +908,7 @@ contract BalanceManager is
         $.balanceOf[message.user][currencyId] += message.amount;
 
         emit CrossChainDepositReceived(message.user, syntheticCurrency, message.amount, _origin);
-        emit Deposit(message.user, currencyId, message.amount);
+        emit Deposit(message.user, currencyId, message.amount, 0, address(this));
     }
 
     // Request withdrawal to source chain (burns synthetic, sends message)
@@ -961,7 +961,7 @@ contract BalanceManager is
         IMailbox($.mailbox).dispatch(targetChainId, recipientAddress, messageBody);
 
         emit CrossChainWithdrawSent(msg.sender, syntheticCurrency, amount, targetChainId);
-        emit Withdrawal(msg.sender, currencyId, amount);
+        emit Withdrawal(msg.sender, currencyId, amount, 0, msg.sender);
     }
 
     // View functions for cross-chain
@@ -1042,7 +1042,7 @@ contract BalanceManager is
         $.totalInternalSupply[syntheticToken] += syntheticAmount;
 
         emit LocalDeposit(recipient, token, syntheticToken, amount, syntheticAmount);
-        emit Deposit(recipient, currencyId, syntheticAmount);
+        emit Deposit(recipient, currencyId, syntheticAmount, 0, msg.sender);
     }
 
     /// @notice Deposit tokens on behalf of a user (tokens already in contract)
@@ -1078,7 +1078,7 @@ contract BalanceManager is
         $.totalInternalSupply[syntheticToken] += syntheticAmount;
 
         emit LocalDeposit(user, underlyingToken, syntheticToken, amount, syntheticAmount);
-        emit Deposit(user, currencyId, syntheticAmount);
+        emit Deposit(user, currencyId, syntheticAmount, 0, msg.sender);
     }
 
     /**

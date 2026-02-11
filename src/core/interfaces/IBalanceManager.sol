@@ -35,7 +35,7 @@ interface IBalanceManager {
         uint256 amount,
         address user
     ) external returns (uint256 totalAmount);
-    
+
     function initializeCrossChain(address _mailbox, uint32 _localDomain) external;
     
     function setChainBalanceManager(uint32 domain, address chainBalanceManager) external;
@@ -129,7 +129,9 @@ interface IBalanceManager {
         address indexed realToken,
         address indexed syntheticToken,
         uint256 amount,
-        uint256 timestamp
+        uint256 timestamp,
+        uint256 agentTokenId,
+        address executor
     );
     event WithdrawnWithYield(
         address indexed user,
@@ -137,7 +139,9 @@ interface IBalanceManager {
         address indexed syntheticToken,
         uint256 amount,
         uint256 yieldAmount,
-        uint256 timestamp
+        uint256 timestamp,
+        uint256 agentTokenId,
+        address executor
     );
     event PoolManagerSet(address indexed poolManager);
     event OperatorSet(address indexed operator, bool authorized);
@@ -151,10 +155,10 @@ interface IBalanceManager {
     event FeeUpdated(uint256 indexed feeMaker, uint256 indexed feeTaker);
     event LendingManagerSet(address indexed lendingManager);
     event YieldDistributorSet(address indexed yieldDistributor);
-    event Deposit(address indexed user, uint256 indexed id, uint256 amount);
-    event Withdrawal(address indexed user, uint256 indexed id, uint256 amount);
-    event Lock(address indexed user, uint256 indexed id, uint256 amount);
-    event Unlock(address indexed user, uint256 indexed id, uint256 amount);
+    event Deposit(address indexed user, uint256 indexed id, uint256 amount, uint256 agentTokenId, address executor);
+    event Withdrawal(address indexed user, uint256 indexed id, uint256 amount, uint256 agentTokenId, address executor);
+    event Lock(address indexed user, uint256 indexed id, uint256 amount, uint256 agentTokenId, address executor);
+    event Unlock(address indexed user, uint256 indexed id, uint256 amount, uint256 agentTokenId, address executor);
       // Cross-chain events
     event CrossChainDepositReceived(
         address indexed user, Currency indexed currency, uint256 amount, uint32 sourceChain
@@ -185,6 +189,6 @@ interface IBalanceManager {
     event YieldDistributed(address indexed underlyingToken, address indexed syntheticToken, uint256 amount, uint256 yieldPerToken);
     
     // Withdrawal and yield events (always include yield)
-    event WithdrawalWithYield(address indexed user, uint256 indexed currencyId, uint256 principal, uint256 yield, uint256 remainingBalance);
+    event WithdrawalWithYield(address indexed user, uint256 indexed currencyId, uint256 principal, uint256 yield, uint256 remainingBalance, uint256 timestamp, uint256 agentTokenId, address executor);
     event YieldAutoClaimed(address indexed user, uint256 indexed currencyId, uint256 timestamp);
 }

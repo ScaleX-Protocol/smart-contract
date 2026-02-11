@@ -107,7 +107,9 @@ interface IOrderBook is IOrderBookErrors {
         Status status,
         bool autoRepay,
         bool autoBorrow,
-        TimeInForce timeInForce
+        TimeInForce timeInForce,
+        uint256 agentTokenId,
+        address executor
     );
 
     event OrderMatched(
@@ -117,12 +119,14 @@ interface IOrderBook is IOrderBookErrors {
         IOrderBook.Side side,
         uint48 timestamp,
         uint128 executionPrice,
-        uint128 executedQuantity
+        uint128 executedQuantity,
+        uint256 agentTokenId,
+        address executor
     );
 
     event UpdateOrder(uint48 indexed orderId, uint48 timestamp, uint128 filled, IOrderBook.Status status);
 
-    event OrderCancelled(uint48 indexed orderId, address indexed user, uint48 timestamp, Status status);
+    event OrderCancelled(uint48 indexed orderId, address indexed user, uint48 timestamp, Status status, uint256 agentTokenId, address executor);
 
     event TradingRulesUpdated(PoolId indexed poolId, IOrderBook.TradingRules newRules);
 
@@ -132,7 +136,9 @@ interface IOrderBook is IOrderBookErrors {
         uint256 repayAmount,
         uint256 savings,
         uint256 timestamp,
-        uint48 orderId
+        uint48 orderId,
+        uint256 agentTokenId,
+        address executor
     );
 
     event AutoRepaymentFailed(
@@ -140,7 +146,9 @@ interface IOrderBook is IOrderBookErrors {
         address indexed debtToken,
         uint256 attemptedAmount,
         uint256 timestamp,
-        uint48 orderId
+        uint48 orderId,
+        uint256 agentTokenId,
+        address executor
     );
 
     event AutoBorrowExecuted(
@@ -148,7 +156,9 @@ interface IOrderBook is IOrderBookErrors {
         address indexed borrowedToken,
         uint256 borrowAmount,
         uint256 timestamp,
-        uint48 orderId
+        uint48 orderId,
+        uint256 agentTokenId,
+        address executor
     );
 
     event AutoBorrowFailed(
@@ -156,7 +166,9 @@ interface IOrderBook is IOrderBookErrors {
         address indexed attemptedToken,
         uint256 attemptedAmount,
         uint256 timestamp,
-        uint48 orderId
+        uint48 orderId,
+        uint256 agentTokenId,
+        address executor
     );
 
     function initialize(

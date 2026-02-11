@@ -259,23 +259,12 @@ contract OrderBook is Initializable, OwnableUpgradeable, ReentrancyGuardUpgradea
             );
         }
 
-        // Inline lock amount to save bytecode
-        {
-            uint256 amountToLock;
-            Currency currencyToLock;
-            if (side == Side.BUY) {
-                amountToLock = PoolIdLibrary.baseToQuote(quantity, price, $.poolKey.baseCurrency.decimals());
-                currencyToLock = $.poolKey.quoteCurrency;
-            } else {
-                amountToLock = quantity;
-                currencyToLock = $.poolKey.baseCurrency;
-            }
-            IBalanceManager($.balanceManager).lock(user, currencyToLock, amountToLock);
-        }
+        // Lock amount (reuse variables from above)
+        IBalanceManager($.balanceManager).lock(user, currencyToLock, amountToLock);
 
         _addOrderToQueue(newOrder);
 
-        emit OrderPlaced(orderId, user, side, price, quantity, newOrder.expiry, false, Status.OPEN, autoRepay, autoBorrow, timeInForce);
+        emit OrderPlaced(orderId, user, side, price, quantity, newOrder.expiry, false, Status.OPEN, autoRepay, autoBorrow, timeInForce, 0, msg.sender);
 
         _handleTimeInForce(newOrder, side, user, timeInForce);
 
@@ -332,6 +321,18 @@ contract OrderBook is Initializable, OwnableUpgradeable, ReentrancyGuardUpgradea
     }
 
 
+    /// @dev Helper function to emit OrderMatched event with agent tracking
+    function _emitOrderMatched(
+        address user,
+        uint48 buyOrderId,
+        uint48 sellOrderId,
+        Side side,
+        uint128 price,
+        uint128 quantity
+    ) private {
+        emit OrderMatched(user, buyOrderId, sellOrderId, side, uint48(block.timestamp), price, quantity, 0, msg.sender);
+    }
+
     /// @dev Validates that no negative spread exists (best bid < best ask)
     /// @notice This catches cases where self-trade prevention skips matches, creating crossed markets
     function _validateNoNegativeSpread() private view {
@@ -385,7 +386,7 @@ contract OrderBook is Initializable, OwnableUpgradeable, ReentrancyGuardUpgradea
         } else if (timeInForce == TimeInForce.IOC && filled < uint128(order.quantity)) {
             Order storage orderToCancel = $.orders[order.id];
             if (orderToCancel.quantity > orderToCancel.filled) {
-                _cancelOrder(order.id, user);
+                _cancelOrder(order.id, user, 0, msg.sender);
             }
         }
 
@@ -440,7 +441,7 @@ contract OrderBook is Initializable, OwnableUpgradeable, ReentrancyGuardUpgradea
             autoBorrow: autoBorrow
         });
 
-        emit OrderPlaced(orderId, user, side, 0, quantity, marketOrder.expiry, true, Status.OPEN, autoRepay, autoBorrow, TimeInForce.IOC);
+        emit OrderPlaced(orderId, user, side, 0, quantity, marketOrder.expiry, true, Status.OPEN, autoRepay, autoBorrow, TimeInForce.IOC, 0, msg.sender);
 
         uint128 filled = _matchOrder(marketOrder, side, user, true);
 
@@ -507,7 +508,7 @@ contract OrderBook is Initializable, OwnableUpgradeable, ReentrancyGuardUpgradea
             autoBorrow: autoBorrow
         });
 
-        emit OrderPlaced(orderId, user, side, 0, quoteAmount, marketOrder.expiry, true, Status.OPEN, autoRepay, autoBorrow, TimeInForce.IOC);
+        emit OrderPlaced(orderId, user, side, 0, quoteAmount, marketOrder.expiry, true, Status.OPEN, autoRepay, autoBorrow, TimeInForce.IOC, 0, msg.sender);
 
         uint128 baseAmountFilled = _matchOrderWithQuoteAmount(marketOrder, side, user, quoteAmount);
 
@@ -660,15 +661,7 @@ contract OrderBook is Initializable, OwnableUpgradeable, ReentrancyGuardUpgradea
             // Update Oracle with real-time price from this trade
             _updateOracleFromTrade(ctx.bestPrice, baseAmount);
 
-            emit OrderMatched(
-                ctx.user,
-                order.id,
-                matchingOrder.id,
-                Side.BUY,
-                uint48(block.timestamp),
-                ctx.bestPrice,
-                baseAmount
-            );
+            _emitOrderMatched(ctx.user, order.id, matchingOrder.id, Side.BUY, ctx.bestPrice, baseAmount);
 
             currentOrderId = matchingOrder.next;
         }
@@ -677,10 +670,10 @@ contract OrderBook is Initializable, OwnableUpgradeable, ReentrancyGuardUpgradea
     }
 
     function cancelOrder(uint48 orderId, address user) external onlyRouter {
-        _cancelOrder(orderId, user);
+        _cancelOrder(orderId, user, 0, msg.sender);
     }
 
-    function _cancelOrder(uint48 orderId, address user) private {
+    function _cancelOrder(uint48 orderId, address user, uint256 agentTokenId, address executor) private {
         Storage storage $ = getStorage();
         Order storage order = $.orders[orderId];
         IOrderBook.OrderQueue storage queue = $.orderQueues[order.side][order.price];
@@ -701,7 +694,7 @@ contract OrderBook is Initializable, OwnableUpgradeable, ReentrancyGuardUpgradea
 
         _removeOrderFromQueue(queue, order);
 
-        emit OrderCancelled(orderId, user, uint48(block.timestamp), Status.CANCELLED);
+        emit OrderCancelled(orderId, user, uint48(block.timestamp), Status.CANCELLED, agentTokenId, executor);
 
         uint256 amountToUnlock;
         if (order.side == Side.BUY) {
@@ -797,12 +790,11 @@ contract OrderBook is Initializable, OwnableUpgradeable, ReentrancyGuardUpgradea
         // Update Oracle with real-time price from this trade
         _updateOracleFromTrade(ctx.bestPrice, executedQuantity);
 
-        emit OrderMatched(
+        _emitOrderMatched(
             ctx.user,
             ctx.side == Side.BUY ? ctx.order.id : matchingOrder.id,
             ctx.side == Side.SELL ? ctx.order.id : matchingOrder.id,
             ctx.side,
-            uint48(block.timestamp),
             ctx.bestPrice,
             executedQuantity
         );
@@ -1317,10 +1309,10 @@ contract OrderBook is Initializable, OwnableUpgradeable, ReentrancyGuardUpgradea
 
         // Borrow through BalanceManager to borrow on behalf of the user
         try bm.borrowForUser(user, tokenToBorrow, amount) {
-            emit AutoBorrowExecuted(user, tokenToBorrow, amount, block.timestamp, orderId);
+            emit AutoBorrowExecuted(user, tokenToBorrow, amount, block.timestamp, orderId, 0, msg.sender);
         } catch {
             // If borrowing fails, emit event and continue
-            emit AutoBorrowFailed(user, tokenToBorrow, amount, block.timestamp, orderId);
+            emit AutoBorrowFailed(user, tokenToBorrow, amount, block.timestamp, orderId, 0, msg.sender);
         }
     }
 
@@ -1340,10 +1332,10 @@ contract OrderBook is Initializable, OwnableUpgradeable, ReentrancyGuardUpgradea
         // Execute repayment through BalanceManager
         // This deducts synthetic balance and repays underlying debt
         try bm.repayFromSyntheticBalance(user, syntheticToken, underlyingToken, repayAmount) {
-            emit AutoRepaymentExecuted(user, underlyingToken, repayAmount, 0, block.timestamp, orderId);
+            emit AutoRepaymentExecuted(user, underlyingToken, repayAmount, 0, block.timestamp, orderId, 0, msg.sender);
         } catch {
             // If repayment fails, emit event and continue (don't revert the trade)
-            emit AutoRepaymentFailed(user, underlyingToken, repayAmount, block.timestamp, orderId);
+            emit AutoRepaymentFailed(user, underlyingToken, repayAmount, block.timestamp, orderId, 0, msg.sender);
         }
     }
 

@@ -67,20 +67,26 @@ abstract contract LendingManagerStorage {
         address indexed user,
         address indexed token,
         uint256 amount,
-        uint256 timestamp
+        uint256 timestamp,
+        uint256 agentTokenId,
+        address executor
     );
     event LiquidityWithdrawn(
         address indexed user,
         address indexed token,
         uint256 amount,
         uint256 yield,
-        uint256 timestamp
+        uint256 timestamp,
+        uint256 agentTokenId,
+        address executor
     );
     event Borrowed(
         address indexed user,
         address indexed token,
         uint256 amount,
-        uint256 timestamp
+        uint256 timestamp,
+        uint256 agentTokenId,
+        address executor
     );
     event InterestGenerated(
         address indexed token,
@@ -97,7 +103,9 @@ abstract contract LendingManagerStorage {
         address indexed token,
         uint256 amount,
         uint256 interest,
-        uint256 timestamp
+        uint256 timestamp,
+        uint256 agentTokenId,
+        address executor
     );
     event Liquidated(
         address indexed borrower,

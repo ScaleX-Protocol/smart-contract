@@ -188,7 +188,7 @@ contract LendingManager is
         // Track that user now has a position in this asset
         _addUserAsset(user, token);
 
-        emit LiquidityDeposited(user, token, amount, block.timestamp);
+        emit LiquidityDeposited(user, token, amount, block.timestamp, 0, msg.sender);
     }
 
     function withdraw(
@@ -247,7 +247,7 @@ contract LendingManager is
             _removeUserAsset(msg.sender, token);
         }
 
-        emit LiquidityWithdrawn(msg.sender, token, actualAmount, 0, block.timestamp);
+        emit LiquidityWithdrawn(msg.sender, token, actualAmount, 0, block.timestamp, 0, msg.sender);
     }
 
     /// @notice Withdraw liquidity on behalf of a user
@@ -310,7 +310,7 @@ contract LendingManager is
 
         IERC20(token).safeTransfer(msg.sender, actualAmount);
 
-        emit LiquidityWithdrawn(user, token, actualAmount, yieldAmount, block.timestamp);
+        emit LiquidityWithdrawn(user, token, actualAmount, yieldAmount, block.timestamp, 0, msg.sender);
     }
 
     /// @notice Withdraw generated interest for distribution to liquidity providers
@@ -377,7 +377,7 @@ contract LendingManager is
 
         IERC20(token).safeTransfer(msg.sender, amount);
 
-        emit Borrowed(msg.sender, token, amount, block.timestamp);
+        emit Borrowed(msg.sender, token, amount, block.timestamp, 0, msg.sender);
     }
 
     /// @notice Borrow tokens on behalf of a user (for BalanceManager integration)
@@ -424,7 +424,7 @@ contract LendingManager is
         IERC20(token).safeTransfer(balanceManager, amount);
         IBalanceManagerForLending(balanceManager).depositFor(user, token, amount);
 
-        emit Borrowed(user, token, amount, block.timestamp);
+        emit Borrowed(user, token, amount, block.timestamp, 0, msg.sender);
     }
 
     function repay(address token, uint256 amount) external nonReentrant {
@@ -453,7 +453,7 @@ contract LendingManager is
         position.borrowed -= principalPayment;
         $.totalBorrowed[token] -= principalPayment;
 
-        emit Repaid(msg.sender, token, principalPayment, interestPayment, block.timestamp);
+        emit Repaid(msg.sender, token, principalPayment, interestPayment, block.timestamp, 0, msg.sender);
     }
 
     /// @notice Repay tokens on behalf of a user (for BalanceManager integration)
@@ -492,7 +492,7 @@ contract LendingManager is
             _removeUserAsset(user, token);
         }
 
-        emit Repaid(user, token, principalPayment, interestPayment, block.timestamp);
+        emit Repaid(user, token, principalPayment, interestPayment, block.timestamp, 0, msg.sender);
     }
 
     /// @notice Repay debt from user's balance (for auto-repay from OrderBook)
@@ -527,7 +527,7 @@ contract LendingManager is
         position.borrowed -= principalPayment;
         $.totalBorrowed[token] -= principalPayment;
 
-        emit Repaid(user, token, principalPayment, interestPayment, block.timestamp);
+        emit Repaid(user, token, principalPayment, interestPayment, block.timestamp, 0, msg.sender);
     }
 
     // =============================================================
