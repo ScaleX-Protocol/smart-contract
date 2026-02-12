@@ -40,7 +40,7 @@ mainnet = "https://eth-mainnet.g.alchemy.com/v2/${ALCHEMY_API_KEY}"
 sepolia = "https://eth-sepolia.g.alchemy.com/v2/${ALCHEMY_API_KEY}"
 arbitrum = "https://arb-mainnet.g.alchemy.com/v2/${ALCHEMY_API_KEY}"
 arbitrumSepolia = "https://arb-sepolia.g.alchemy.com/v2/jBG4sMyhez7V13jNTeQKfVfgNa54nCmF"
-baseSepolia = "http://127.0.0.1:8545"
+baseSepolia = "https://base-sepolia.infura.io/v3/${INFURA_API_KEY}"
 # Espresso Testnet Networks
 rariTestnet = "https://rari.caff.testnet.espresso.network"
 appchainTestnet = "https://appchain.caff.testnet.espresso.network"
