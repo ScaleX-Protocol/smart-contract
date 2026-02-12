@@ -1,0 +1,11 @@
+=== MANUAL UPGRADE AND AUTHORIZATION ===
+
+Step 1: Deploying OrderBook implementation...
+Error: server returned an error response: error code -32003: EVM error: CreateContractSizeLimit
+OrderBook implementation: 
+
+Step 2: Deploying PoolManager implementation...
+PoolManager implementation: null
+
+Step 3: Upgrading OrderBook beacon...
+Error: encode length mismatch: expected 1 types, got 0

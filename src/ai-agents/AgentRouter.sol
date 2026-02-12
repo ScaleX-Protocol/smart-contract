@@ -37,6 +37,9 @@ contract AgentRouter {
     mapping(uint256 => uint256) public lastTradeTime;  // agentTokenId => timestamp
     mapping(uint256 => mapping(uint256 => uint256)) public dailyVolumes;  // agentTokenId => day => volume
 
+    // Agent delegation - maps agentTokenId => executor address => authorized
+    mapping(uint256 => mapping(address => bool)) public authorizedExecutors;
+
     // ============ Events ============
 
     event AgentSwapExecuted(
@@ -122,6 +125,20 @@ contract AgentRouter {
         address indexed owner,
         uint256 indexed agentTokenId,
         string reason,
+        uint256 timestamp
+    );
+
+    event ExecutorAuthorized(
+        address indexed owner,
+        uint256 indexed agentTokenId,
+        address indexed executor,
+        uint256 timestamp
+    );
+
+    event ExecutorRevoked(
+        address indexed owner,
+        uint256 indexed agentTokenId,
+        address indexed executor,
         uint256 timestamp
     );
 
@@ -811,20 +828,71 @@ contract AgentRouter {
         );
     }
 
+    // ============ Delegation Management ============
+
+    /**
+     * @notice Authorize an executor (agent wallet) to act on behalf of the owner
+     * @param agentTokenId The agent token ID
+     * @param executor The address to authorize (agent's dedicated wallet)
+     * @dev Only the owner of the agent NFT can authorize executors
+     */
+    function authorizeExecutor(uint256 agentTokenId, address executor) external {
+        address owner = identityRegistry.ownerOf(agentTokenId);
+        require(msg.sender == owner, "Only agent owner can authorize");
+        require(executor != address(0), "Invalid executor address");
+        require(!authorizedExecutors[agentTokenId][executor], "Already authorized");
+
+        authorizedExecutors[agentTokenId][executor] = true;
+        emit ExecutorAuthorized(owner, agentTokenId, executor, block.timestamp);
+    }
+
+    /**
+     * @notice Revoke authorization for an executor
+     * @param agentTokenId The agent token ID
+     * @param executor The address to revoke
+     * @dev Only the owner of the agent NFT can revoke executors
+     */
+    function revokeExecutor(uint256 agentTokenId, address executor) external {
+        address owner = identityRegistry.ownerOf(agentTokenId);
+        require(msg.sender == owner, "Only agent owner can revoke");
+        require(authorizedExecutors[agentTokenId][executor], "Not authorized");
+
+        authorizedExecutors[agentTokenId][executor] = false;
+        emit ExecutorRevoked(owner, agentTokenId, executor, block.timestamp);
+    }
+
     // ============ Authorization Checks ============
 
     /**
      * @notice Check if an address is authorized to execute for this agent
-     * @dev In production, could check delegation registry or multi-sig
+     * @dev Checks if executor is owner, agent wallet, or explicitly authorized
      */
     function _isAuthorizedExecutor(
         uint256 agentTokenId,
         address owner,
         address executor
     ) internal view returns (bool) {
-        // For now, only the owner can execute
-        // In Phase 3, we'll add delegation support
-        return executor == owner;
+        // Owner can always execute
+        if (executor == owner) return true;
+
+        // Check if executor is the agent's registered wallet (from ERC-8004)
+        address agentWallet = _getAgentWallet(agentTokenId);
+        if (agentWallet != address(0) && executor == agentWallet) return true;
+
+        // Check if executor is explicitly authorized (fallback/additional authorization)
+        return authorizedExecutors[agentTokenId][executor];
+    }
+
+    /**
+     * @notice Get the agent wallet address from IdentityRegistry
+     * @dev Internal helper to safely get agent wallet
+     */
+    function _getAgentWallet(uint256 agentTokenId) internal view returns (address) {
+        try identityRegistry.getAgentWallet(agentTokenId) returns (address wallet) {
+            return wallet;
+        } catch {
+            return address(0);
+        }
     }
 
     // ============ View Functions ============
@@ -850,5 +918,25 @@ contract AgentRouter {
     function getDayStartValue(address owner) external view returns (uint256) {
         uint256 today = block.timestamp / 1 days;
         return dayStartValues[owner][today];
+    }
+
+    /**
+     * @notice Check if an executor is authorized for an agent
+     * @param agentTokenId The agent token ID
+     * @param executor The address to check
+     * @return bool True if authorized
+     */
+    function isExecutorAuthorized(uint256 agentTokenId, address executor) external view returns (bool) {
+        address owner = identityRegistry.ownerOf(agentTokenId);
+        return _isAuthorizedExecutor(agentTokenId, owner, executor);
+    }
+
+    /**
+     * @notice Get the agent wallet address for a token
+     * @param agentTokenId The agent token ID
+     * @return The wallet address controlled by the agent (from ERC-8004 registry)
+     */
+    function getAgentWallet(uint256 agentTokenId) external view returns (address) {
+        return _getAgentWallet(agentTokenId);
     }
 }

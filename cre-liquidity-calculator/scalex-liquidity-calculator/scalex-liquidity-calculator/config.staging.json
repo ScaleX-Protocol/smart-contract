@@ -1,0 +1,5 @@
+{
+  "schedule": "*/30 * * * * *",
+  "apiUrl": "https://base-sepolia-indexer.scalex.money/api/depth",
+  "symbol": "sxWETH/sxIDRX"
+}
