@@ -1692,6 +1692,78 @@ ORACLE_ADDRESS=$(cat ./deployments/${CORE_CHAIN_ID}.json | jq -r '.Oracle // "0x
             print_error "Agent Infrastructure deployment failed - addresses are zero"
         fi
 
+        # Add delay before Oracle Token Configuration
+        echo "⏳ Waiting 10 seconds before Oracle Token Configuration..."
+        sleep 10
+
+        # Step 3.7: Configure All Oracle Tokens
+        print_step "Step 3.7: Configuring All Oracle Tokens..."
+
+        echo "  🔮 Configuring oracle tokens for ALL synthetic assets (crypto + RWA)..."
+        if [[ -n "$VERIFY_FLAGS" ]]; then
+            if eval "forge script script/deployments/ConfigureAllOracleTokens.s.sol:ConfigureAllOracleTokens \
+                --rpc-url \"\${SCALEX_CORE_RPC}\" \
+                --broadcast \
+                --private-key \$PRIVATE_KEY \
+                --gas-estimate-multiplier 120 \
+                \$SLOW_FLAG \
+                --legacy \
+                $VERIFY_FLAGS"; then
+                print_success "Oracle token configuration completed successfully"
+            else
+                print_warning "Oracle token configuration encountered issues (may be partially complete)"
+                echo "  Check the forge script output above for details"
+            fi
+        else
+            if forge script script/deployments/ConfigureAllOracleTokens.s.sol:ConfigureAllOracleTokens \
+                --rpc-url "${SCALEX_CORE_RPC}" \
+                --broadcast \
+                --private-key $PRIVATE_KEY \
+                --gas-estimate-multiplier 120 \
+                $SLOW_FLAG \
+                --legacy; then
+                print_success "Oracle token configuration completed successfully"
+            else
+                print_warning "Oracle token configuration encountered issues (may be partially complete)"
+                echo "  Check the forge script output above for details"
+            fi
+        fi
+
+        # Verify oracle tokens are registered
+        ORACLE_ADDRESS=$(cat ./deployments/${CORE_CHAIN_ID}.json | jq -r '.Oracle // "0x0000000000000000000000000000000000000000"')
+        if [[ "$ORACLE_ADDRESS" != "0x0000000000000000000000000000000000000000" ]]; then
+            echo "  🔍 Verifying oracle token registration..."
+
+            # Get synthetic token addresses
+            SX_QUOTE_KEY="sx${QUOTE_SYMBOL}"
+            SX_QUOTE=$(cat ./deployments/${CORE_CHAIN_ID}.json | jq -r ".$SX_QUOTE_KEY // \"0x0000000000000000000000000000000000000000\"")
+            SX_WETH=$(cat ./deployments/${CORE_CHAIN_ID}.json | jq -r '.sxWETH // "0x0000000000000000000000000000000000000000"')
+            SX_WBTC=$(cat ./deployments/${CORE_CHAIN_ID}.json | jq -r '.sxWBTC // "0x0000000000000000000000000000000000000000"')
+            SX_GOLD=$(cat ./deployments/${CORE_CHAIN_ID}.json | jq -r '.sxGOLD // "0x0000000000000000000000000000000000000000"')
+            SX_SILVER=$(cat ./deployments/${CORE_CHAIN_ID}.json | jq -r '.sxSILVER // "0x0000000000000000000000000000000000000000"')
+
+            # Verify prices are set (quick spot check on a few tokens)
+            if [[ "$SX_WETH" != "0x0000000000000000000000000000000000000000" ]]; then
+                WETH_PRICE=$(cast call $ORACLE_ADDRESS "getSpotPrice(address)" $SX_WETH --rpc-url "${SCALEX_CORE_RPC}" 2>/dev/null || echo "0")
+                if [[ "$WETH_PRICE" != "0" ]] && [[ "$WETH_PRICE" != "0x0" ]]; then
+                    print_success "  ✅ sxWETH registered in oracle (price set)"
+                else
+                    print_warning "  ⚠️  sxWETH may not be fully configured in oracle"
+                fi
+            fi
+
+            if [[ "$SX_GOLD" != "0x0000000000000000000000000000000000000000" ]]; then
+                GOLD_PRICE=$(cast call $ORACLE_ADDRESS "getSpotPrice(address)" $SX_GOLD --rpc-url "${SCALEX_CORE_RPC}" 2>/dev/null || echo "0")
+                if [[ "$GOLD_PRICE" != "0" ]] && [[ "$GOLD_PRICE" != "0x0" ]]; then
+                    print_success "  ✅ sxGOLD registered in oracle (price set)"
+                else
+                    print_warning "  ⚠️  sxGOLD may not be fully configured in oracle"
+                fi
+            fi
+
+            print_success "Oracle token verification complete"
+        fi
+
         # Step 4.8: Verify OrderBook Authorizations and Oracle Configuration
         print_step "Step 4.8: Verifying OrderBook Authorizations and Oracle Configuration..."
 

@@ -40,9 +40,12 @@ contract DeployPhase1C is Script {
         vm.startBroadcast(deployerPrivateKey);
         
         console.log("Step 1: Deploying OrderBook beacon...");
+        // NOTE: OrderBook imports OrderMatchingLib - library is auto-linked at compile time
+        // No manual library deployment needed; forge handles library linking automatically
         OrderBook orderBookImpl = new OrderBook();
         UpgradeableBeacon orderBookBeacon = new UpgradeableBeacon(address(orderBookImpl), deployer);
         console.log("[OK] OrderBook beacon deployed:", address(orderBookBeacon));
+        console.log("[INFO] OrderMatchingLib automatically linked at compile time");
         
         vm.warp(block.timestamp + 10);
         
