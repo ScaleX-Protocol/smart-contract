@@ -64,6 +64,10 @@ contract MockPoolManager is IPoolManager {
         revert("Not implemented");
     }
 
+    function updatePoolRouter(PoolId, address) external pure override {
+        revert("Not implemented");
+    }
+
     function getAllCurrencies() external pure override returns (Currency[] memory) {
         revert("Not implemented");
     }

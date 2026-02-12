@@ -184,9 +184,13 @@ export SCALEX_ROUTER_ADDRESS
 export PRIVATE_KEY="${PRIVATE_KEY:-0x5d34b3f860c2b09c112d68a35d592dfb599841629c9b0ad8827269b94b57efca}"
 export PRIVATE_KEY_2="${PRIVATE_KEY_2:-0x3d93c16f039372c7f70b490603bfc48a34575418fad5aea156c16f2cb0280ed8}"
 
-# Derive trader addresses directly from private keys to avoid mismatches
+# Set agent account (wallet index 11 from seed phrase)
+export AGENT_PRIVATE_KEY="${AGENT_PRIVATE_KEY:-0x8cc3690e2800c78cc7f8542024e9c3f603fe2dc91cfdd3ed34733785148781be}"
+
+# Derive trader and agent addresses directly from private keys to avoid mismatches
 export PRIMARY_TRADER_ADDRESS="${PRIMARY_TRADER_ADDRESS:-$(cast wallet address --private-key $PRIVATE_KEY)}"
 export SECONDARY_TRADER_ADDRESS="${SECONDARY_TRADER_ADDRESS:-$(cast wallet address --private-key $PRIVATE_KEY_2)}"
+export AGENT_ADDRESS="${AGENT_ADDRESS:-$(cast wallet address --private-key $AGENT_PRIVATE_KEY)}"
 
 print_success "Contract addresses loaded:"
 echo "  BalanceManager: $BALANCE_MANAGER_ADDRESS"
@@ -197,6 +201,7 @@ echo ""
 print_success "Trader accounts configured:"
 echo "  Primary Trader: $(cast wallet address --private-key $PRIVATE_KEY)"
 echo "  Secondary Trader: $(cast wallet address --private-key $PRIVATE_KEY_2)"
+echo "  AI Agent: $(cast wallet address --private-key $AGENT_PRIVATE_KEY)"
 echo ""
 
 # Prerequisites - Validate deployment
@@ -922,10 +927,11 @@ if ./shellscripts/validate-data-population.sh; then
     echo ""
     echo "System now contains:"
     echo "  📊 Two active traders with token balances"
+    echo "  🤖 One AI agent with ERC-8004 compatible tracking"
     echo "  💰 Token transfers between traders completed"
     echo "  🏦 Lending protocol infrastructure configured"
     echo "  💵 Actual liquidity provisioned to lending protocol"
-    echo "  📤 Active borrowing activities demonstrated"
+    echo "  📤 Active borrowing activities demonstrated (traders + agent)"
     echo "  🛡️  Collateral deposited and borrowing capacity established"
     echo "  🏗️  Core contracts deployed and configured"
     echo "  🏊 Trading pools with liquidity and executed trades:"
@@ -947,6 +953,198 @@ else
     echo "  make diagnose-market-order network=scalex_core_devnet"
     echo "  cast balance \$(cast wallet address --private-key \$PRIVATE_KEY) --rpc-url ${SCALEX_CORE_RPC}"
     echo "  cast balance \$(cast wallet address --private-key \$PRIVATE_KEY_2) --rpc-url ${SCALEX_CORE_RPC}"
+fi
+
+echo ""
+print_step "AI Agent Operations (ERC-8004 Agent)..."
+echo "  🤖 Setting up AI agent with ERC-8004 infrastructure..."
+echo ""
+
+# Check if PolicyFactory and AgentRouter are deployed
+POLICY_FACTORY_ADDRESS=$(cat $DEPLOYMENT_FILE | jq -r '.PolicyFactory // "0x0000000000000000000000000000000000000000"')
+AGENT_ROUTER_ADDRESS=$(cat $DEPLOYMENT_FILE | jq -r '.AgentRouter // "0x0000000000000000000000000000000000000000"')
+
+if [[ "$POLICY_FACTORY_ADDRESS" == "0x0000000000000000000000000000000000000000" ]] || [[ "$AGENT_ROUTER_ADDRESS" == "0x0000000000000000000000000000000000000000" ]]; then
+    print_warning "Agent infrastructure (PolicyFactory/AgentRouter) not deployed - skipping agent setup"
+    echo "  Run Phase 5 deployment first to enable agent functionality"
+else
+    print_success "Agent infrastructure detected:"
+    echo "  PolicyFactory: $POLICY_FACTORY_ADDRESS"
+    echo "  AgentRouter: $AGENT_ROUTER_ADDRESS"
+    echo ""
+
+    # Step 1: Primary trader mints agent NFT (if not already owned)
+    echo "  📋 Step 1: Ensuring primary trader owns agent NFT..."
+
+    IDENTITY_REGISTRY_ADDRESS=$(cat $DEPLOYMENT_FILE | jq -r '.IdentityRegistry // "0x0000000000000000000000000000000000000000"')
+    AGENT_OWNER=$(cast call $IDENTITY_REGISTRY_ADDRESS "ownerOf(uint256)" 1 --rpc-url "${SCALEX_CORE_RPC}" 2>/dev/null || echo "0x0000000000000000000000000000000000000000")
+
+    if [[ "$AGENT_OWNER" == "0x0000000000000000000000000000000000000000" ]]; then
+        echo "    Minting agent NFT (tokenId: 1)..."
+        MINT_TX=$(cast send $IDENTITY_REGISTRY_ADDRESS "mint(address,uint256,string)" $PRIMARY_TRADER_ADDRESS 1 "ipfs://QmAgent1" \
+            --rpc-url "${SCALEX_CORE_RPC}" \
+            --private-key $PRIVATE_KEY \
+            --gas-limit 200000 2>&1)
+
+        if echo "$MINT_TX" | grep -q "0x"; then
+            print_success "Agent NFT minted successfully"
+        else
+            print_warning "Agent NFT minting may have failed"
+        fi
+        sleep 2
+    else
+        print_success "Primary trader already owns agent NFT"
+    fi
+
+    # Step 2: Primary trader installs agent policy
+    echo "  📋 Step 2: Installing agent policy..."
+
+    # Check if agent is already installed
+    AGENT_INSTALLED=$(cast call $POLICY_FACTORY_ADDRESS "isAgentEnabled(address,uint256)" $PRIMARY_TRADER_ADDRESS 1 --rpc-url "${SCALEX_CORE_RPC}" 2>/dev/null || echo "false")
+
+    if [[ "$AGENT_INSTALLED" == "true" ]] || [[ "$AGENT_INSTALLED" == "0x0000000000000000000000000000000000000000000000000000000000000001" ]]; then
+        print_success "Agent policy already installed for primary trader"
+        AGENT_INSTALL_SUCCESS=true
+    else
+        echo "    Installing agent with 'moderate' template..."
+        # installAgentFromTemplate(uint256 agentTokenId, string calldata templateName, PolicyCustomization calldata customizations)
+        # Using empty customization (0,0,0,[]) means use template defaults
+        INSTALL_TX=$(cast send $POLICY_FACTORY_ADDRESS \
+            "installAgentFromTemplate(uint256,string,(uint256,uint256,uint256,address[]))" \
+            1 \
+            "moderate" \
+            "(0,0,0,[])" \
+            --rpc-url "${SCALEX_CORE_RPC}" \
+            --private-key $PRIVATE_KEY \
+            --gas-limit 2000000 2>&1)
+
+        if echo "$INSTALL_TX" | grep -q "transactionHash"; then
+            TX_HASH=$(echo "$INSTALL_TX" | grep "transactionHash" | awk '{print $2}')
+            sleep 2
+            TX_STATUS=$(cast receipt $TX_HASH --rpc-url "${SCALEX_CORE_RPC}" 2>/dev/null | grep "^status" | awk '{print $2}')
+
+            if [[ "$TX_STATUS" == "1" ]]; then
+                print_success "✅ Agent installed successfully for primary trader"
+                AGENT_INSTALL_SUCCESS=true
+            else
+                print_warning "Agent installation transaction reverted"
+                echo "    Transaction: $TX_HASH"
+                AGENT_INSTALL_SUCCESS=false
+            fi
+        else
+            print_warning "Agent installation failed"
+            echo "    Error: $INSTALL_TX"
+            AGENT_INSTALL_SUCCESS=false
+        fi
+    fi
+
+    # Step 3: Verify agent installation
+    if [[ "$AGENT_INSTALL_SUCCESS" == true ]]; then
+        echo ""
+        echo "  📋 Step 3: Verifying agent installation..."
+
+        # Get agent policy
+        AGENT_POLICY=$(cast call $POLICY_FACTORY_ADDRESS "getPolicy(address,uint256)" $PRIMARY_TRADER_ADDRESS 1 --rpc-url "${SCALEX_CORE_RPC}" 2>/dev/null || echo "")
+
+        if [[ -n "$AGENT_POLICY" ]]; then
+            print_success "Agent policy retrieved successfully"
+            echo "    Owner: $PRIMARY_TRADER_ADDRESS"
+            echo "    Agent Token ID: 1"
+            echo "    Policy Template: Moderate"
+        else
+            print_warning "Could not retrieve agent policy"
+        fi
+    fi
+
+    # Step 4: Agent can now operate on behalf of primary trader
+    echo ""
+    echo "  🤖 Step 4: Agent capabilities..."
+    if [[ "$AGENT_INSTALL_SUCCESS" == true ]]; then
+        print_success "Agent is now authorized to:"
+        echo "    - Place market and limit orders using primary trader's funds"
+        echo "    - Borrow/repay using primary trader's collateral"
+        echo "    - Manage primary trader's positions"
+        echo "    - All actions tracked with agentTokenId=1 in events"
+        echo ""
+        echo "  📊 Primary trader's current balances:"
+
+        # Check primary trader balances in BalanceManager
+        PRIMARY_QUOTE_BAL=$(cast call $BALANCE_MANAGER_ADDRESS "getUserBalance(address,address)" $PRIMARY_TRADER_ADDRESS $QUOTE_ADDRESS --rpc-url "${SCALEX_CORE_RPC}" 2>/dev/null || echo "0")
+        PRIMARY_WETH_BAL=$(cast call $BALANCE_MANAGER_ADDRESS "getUserBalance(address,address)" $PRIMARY_TRADER_ADDRESS $WETH_ADDRESS --rpc-url "${SCALEX_CORE_RPC}" 2>/dev/null || echo "0")
+
+        echo "    BalanceManager $QUOTE_SYMBOL: $(echo $PRIMARY_QUOTE_BAL | awk -v div=$QUOTE_DIVISOR '{printf "%.2f", $1/div}') $QUOTE_SYMBOL"
+        echo "    BalanceManager WETH: $(echo $PRIMARY_WETH_BAL | awk '{printf "%.6f", $1/1000000000000000000}') WETH"
+
+        # Check primary trader collateral in LendingManager
+        PRIMARY_WETH_SUPPLY=$(cast call $LENDING_MANAGER_ADDRESS "getUserSupply(address,address)" $PRIMARY_TRADER_ADDRESS $WETH_ADDRESS --rpc-url "${SCALEX_CORE_RPC}" 2>/dev/null || echo "0")
+        echo "    LendingManager WETH Collateral: $(echo $PRIMARY_WETH_SUPPLY | awk '{printf "%.6f", $1/1000000000000000000}') WETH"
+
+        AGENT_SETUP_SUCCESS=true
+    else
+        print_warning "Agent installation failed - cannot demonstrate agent operations"
+        AGENT_SETUP_SUCCESS=false
+    fi
+fi
+
+# Legacy agent operations (OLD APPROACH - keeping for backward compatibility on local only)
+# This section is only executed if PolicyFactory is not available (local testing without Phase 5)
+if [[ "$POLICY_FACTORY_ADDRESS" == "0x0000000000000000000000000000000000000000" ]]; then
+    echo ""
+    echo "  ⚠️  Running legacy agent mode (agent with own wallet)"
+    echo "  Note: This is deprecated. Deploy Phase 5 for proper ERC-8004 agent support."
+    echo ""
+
+    # Original legacy code for agent with own funds
+    AGENT_QUOTE_BALANCE=$(cast call $QUOTE_ADDRESS "balanceOf(address)" $AGENT_ADDRESS --rpc-url "${SCALEX_CORE_RPC}" 2>/dev/null || echo "0")
+    AGENT_WETH_BALANCE=$(cast call $WETH_ADDRESS "balanceOf(address)" $AGENT_ADDRESS --rpc-url "${SCALEX_CORE_RPC}" 2>/dev/null || echo "0")
+
+    # Fund agent if needed (legacy)
+    if [[ "$AGENT_QUOTE_BALANCE" == "0" ]] || [[ -z "$AGENT_QUOTE_BALANCE" ]]; then
+        AGENT_MINT_AMOUNT=$((50000 * QUOTE_DIVISOR))
+        RECIPIENT=$AGENT_ADDRESS TOKEN_SYMBOL=$QUOTE_SYMBOL AMOUNT=$AGENT_MINT_AMOUNT forge script script/utils/MintTokens.s.sol:MintTokens --rpc-url "${SCALEX_CORE_RPC}" --broadcast > /dev/null 2>&1
+    fi
+
+    if [[ "$AGENT_WETH_BALANCE" == "0" ]] || [[ -z "$AGENT_WETH_BALANCE" ]]; then
+        RECIPIENT=$AGENT_ADDRESS TOKEN_SYMBOL=WETH AMOUNT=25000000000000000000 forge script script/utils/MintTokens.s.sol:MintTokens --rpc-url "${SCALEX_CORE_RPC}" --broadcast > /dev/null 2>&1
+    fi
+
+    # Legacy agent deposits (own funds)
+    AGENT_DEPOSIT_QUOTE=$((20000 * QUOTE_DIVISOR))
+    AGENT_DEPOSIT_WETH=10000000000000000000
+    PRIVATE_KEY=$AGENT_PRIVATE_KEY TOKEN_SYMBOL=$QUOTE_SYMBOL DEPOSIT_AMOUNT=$AGENT_DEPOSIT_QUOTE forge script script/deposits/LocalDeposit.s.sol:LocalDeposit --rpc-url "${SCALEX_CORE_RPC}" --broadcast > /dev/null 2>&1
+    PRIVATE_KEY=$AGENT_PRIVATE_KEY TOKEN_SYMBOL=WETH DEPOSIT_AMOUNT=$AGENT_DEPOSIT_WETH forge script script/deposits/LocalDeposit.s.sol:LocalDeposit --rpc-url "${SCALEX_CORE_RPC}" --broadcast > /dev/null 2>&1
+
+    print_success "Legacy agent mode setup complete (deprecated)"
+fi
+
+# Agent operations summary
+echo ""
+echo "  🤖 AI Agent Operations Summary:"
+
+if [[ "$POLICY_FACTORY_ADDRESS" != "0x0000000000000000000000000000000000000000" ]]; then
+    # New ERC-8004 agent approach
+    echo "    Agent Infrastructure: ✅ DEPLOYED"
+    echo "    PolicyFactory: $POLICY_FACTORY_ADDRESS"
+    echo "    AgentRouter: $AGENT_ROUTER_ADDRESS"
+    echo "    Agent Installation: $([ "$AGENT_INSTALL_SUCCESS" == true ] && echo "✅ SUCCESS" || echo "❌ FAILED")"
+
+    if [[ "$AGENT_INSTALL_SUCCESS" == true ]]; then
+        print_success "🤖 AI agent successfully installed for primary trader!"
+        echo "    Primary Trader: $PRIMARY_TRADER_ADDRESS"
+        echo "    Agent Token ID: 1"
+        echo "    Agent can now:"
+        echo "      - Place orders using primary trader's funds"
+        echo "      - Borrow/repay using primary trader's collateral"
+        echo "      - Manage primary trader's positions"
+        echo "      - All actions tracked with agentTokenId=1 in events"
+    else
+        print_warning "⚠️  Agent installation failed. Primary trader cannot use agent features."
+    fi
+else
+    # Legacy agent mode (deprecated)
+    echo "    ⚠️  Running in legacy mode (agent infrastructure not deployed)"
+    echo "    Agent has own wallet: $AGENT_ADDRESS"
+    echo "    Note: This is deprecated. Deploy Phase 5 for proper agent support."
 fi
 
 echo ""

@@ -118,6 +118,28 @@ contract PoolManager is Initializable, OwnableUpgradeable, PoolManagerStorage, I
         emit TradingRulesUpdated(_poolId, _newRules);
     }
 
+    function updatePoolRouter(PoolId _poolId, address _newRouter) external onlyOwner {
+        if (_newRouter == address(0)) {
+            revert InvalidRouter();
+        }
+
+        Storage storage $ = getStorage();
+
+        require(address($.pools[_poolId].orderBook) != address(0), "Pool does not exist");
+
+        IOrderBook(address($.pools[_poolId].orderBook)).setRouter(_newRouter);
+
+        emit PoolRouterUpdated(_poolId, _newRouter);
+    }
+
+    function setOrderBookRouter(address orderBook, address _newRouter) external onlyOwner {
+        if (_newRouter == address(0)) {
+            revert InvalidRouter();
+        }
+
+        IOrderBook(orderBook).setRouter(_newRouter);
+    }
+
     function validateTradingRules(
         IOrderBook.TradingRules memory _rules
     ) internal pure {

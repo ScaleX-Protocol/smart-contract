@@ -1641,6 +1641,57 @@ ORACLE_ADDRESS=$(cat ./deployments/${CORE_CHAIN_ID}.json | jq -r '.Oracle // "0x
             print_error "AutoBorrowHelper address is zero - deployment failed"
         fi
 
+        # Add delay before Phase 5
+        echo "⏳ Waiting 15 seconds before Phase 5 to prevent rate limiting..."
+        sleep 15
+
+        # Step 3.6: Phase 5 - AI Agent Infrastructure Deployment
+        print_step "Step 3.6: Phase 5 - AI Agent Infrastructure Deployment..."
+
+        echo "  🤖 Deploying Agent Infrastructure (this will show transaction details)..."
+        if [[ -n "$VERIFY_FLAGS" ]]; then
+            if eval "forge script script/deployments/DeployPhase5.s.sol:DeployPhase5 \
+                --rpc-url \"\${SCALEX_CORE_RPC}\" \
+                --broadcast \
+                --private-key \$PRIVATE_KEY \
+                --gas-estimate-multiplier 120 \
+                \$SLOW_FLAG \
+                --legacy \
+                $VERIFY_FLAGS"; then
+                print_success "Phase 5 AI Agent Infrastructure deployment completed successfully"
+            else
+                print_error "Phase 5 AI Agent Infrastructure deployment failed"
+                echo "  Check the forge script output above for error details"
+                return 1
+            fi
+        else
+            if forge script script/deployments/DeployPhase5.s.sol:DeployPhase5 \
+                --rpc-url "${SCALEX_CORE_RPC}" \
+                --broadcast \
+                --private-key $PRIVATE_KEY \
+                --gas-estimate-multiplier 120 \
+                $SLOW_FLAG \
+                --legacy; then
+                print_success "Phase 5 AI Agent Infrastructure deployment completed successfully"
+            else
+                print_error "Phase 5 AI Agent Infrastructure deployment failed"
+                echo "  Check the forge script output above for error details"
+                return 1
+            fi
+        fi
+
+        # Verify Agent Infrastructure was deployed
+        POLICY_FACTORY=$(cat ./deployments/${CORE_CHAIN_ID}.json | jq -r '.PolicyFactory // "0x0000000000000000000000000000000000000000"')
+        AGENT_ROUTER=$(cat ./deployments/${CORE_CHAIN_ID}.json | jq -r '.AgentRouter // "0x0000000000000000000000000000000000000000"')
+
+        if [[ "$POLICY_FACTORY" != "0x0000000000000000000000000000000000000000" ]] && [[ "$AGENT_ROUTER" != "0x0000000000000000000000000000000000000000" ]]; then
+            print_success "Agent Infrastructure deployed:"
+            echo "  PolicyFactory: $POLICY_FACTORY"
+            echo "  AgentRouter: $AGENT_ROUTER"
+        else
+            print_error "Agent Infrastructure deployment failed - addresses are zero"
+        fi
+
         # Step 4.8: Verify OrderBook Authorizations and Oracle Configuration
         print_step "Step 4.8: Verifying OrderBook Authorizations and Oracle Configuration..."
 

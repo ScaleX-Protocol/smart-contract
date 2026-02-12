@@ -14,6 +14,7 @@ interface IPoolManager is IPoolManagerErrors {
     }
 
     event TradingRulesUpdated(PoolId indexed poolId, IOrderBook.TradingRules newRules);
+    event PoolRouterUpdated(PoolId indexed poolId, address newRouter);
     event PoolCreated(PoolId indexed poolId, address orderBook, Currency baseCurrency, Currency quoteCurrency);
     event CurrencyAdded(Currency currency);
     event IntermediaryAdded(Currency currency);
@@ -49,6 +50,8 @@ interface IPoolManager is IPoolManagerErrors {
     function updatePoolLiquidity(PoolKey calldata key, uint256 liquidityScore) external;
 
     function updatePoolTradingRules(PoolId _poolId, IOrderBook.TradingRules memory _newRules) external;
+
+    function updatePoolRouter(PoolId _poolId, address _newRouter) external;
 
     function getAllCurrencies() external view returns (Currency[] memory);
 
