@@ -19,11 +19,13 @@ import {OrderBookStorage} from "./storages/OrderBookStorage.sol";
 import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
 import {RedBlackTreeLib} from "@solady/utils/RedBlackTreeLib.sol";
+import {OrderMatchingLib} from "./libraries/OrderMatchingLib.sol";
 
 
 contract OrderBook is Initializable, OwnableUpgradeable, ReentrancyGuardUpgradeable, IOrderBook, OrderBookStorage {
     using RedBlackTreeLib for RedBlackTreeLib.Tree;
     using EnumerableSet for EnumerableSet.UintSet;
+    using OrderMatchingLib for OrderBookStorage.Storage;
 
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() {
@@ -872,53 +874,7 @@ contract OrderBook is Initializable, OwnableUpgradeable, ReentrancyGuardUpgradea
 
     function _matchOrder(Order memory order, Side side, address user, bool isMarketOrder) private returns (uint128) {
         Storage storage $ = getStorage();
-        Side oppositeSide = side == Side.BUY ? Side.SELL : Side.BUY;
-        MatchState memory s = MatchState({
-            remaining: order.quantity - order.filled,
-            orderPrice: order.price,
-            latestBestPrice: 0,
-            previousRemaining: 0,
-            filled: 0
-        });
-
-        uint256 loopCount = 0;
-        while (s.remaining > 0) {
-            loopCount++;
-            uint128 prevRemaining = s.remaining;
-            
-            uint128 bestPrice = _getBestMatchingPrice(s.orderPrice, oppositeSide, isMarketOrder);
-            if (bestPrice == 0) {
-                break;
-            }
-
-            if (bestPrice == s.latestBestPrice && s.previousRemaining == s.remaining) {
-                bytes32 ptr = $.priceTrees[oppositeSide].find(bestPrice);
-                bestPrice = side == Side.BUY
-                    ? uint128(RedBlackTreeLib.value(RedBlackTreeLib.next(ptr)))
-                    : uint128(RedBlackTreeLib.value(RedBlackTreeLib.prev(ptr)));
-                if (bestPrice == 0) {
-                    break;
-                }
-            }
-
-            s.latestBestPrice = bestPrice;
-            s.previousRemaining = s.remaining;
-            OrderQueue storage queue = $.orderQueues[oppositeSide][bestPrice];
-
-            (s.remaining, s.filled) =
-                _matchAtPriceLevel(order, queue, bestPrice, s.remaining, s.filled, side, user, isMarketOrder);
-            _updatePriceLevel(bestPrice, queue, $.priceTrees[oppositeSide]);
-            
-            if (s.remaining == prevRemaining) {
-                break;
-            }
-            
-            if (loopCount > 10) {
-                break;
-            }
-        }
-
-        return s.filled;
+        return OrderMatchingLib.matchOrder($, order, side, user, isMarketOrder);
     }
 
     function _matchAtPriceLevel(
