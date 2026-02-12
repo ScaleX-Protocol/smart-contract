@@ -9,3 +9,4 @@ halmos-cheatcodes/=lib/openzeppelin-contracts/lib/halmos-cheatcodes/src/
 @scalexagents/=src/ai-agents/
 @scalex/=src/
 @chainlink/contracts/=lib/chainlink-brownie-contracts/contracts/
+@erc8004/=lib/erc-8004-contracts/contracts/

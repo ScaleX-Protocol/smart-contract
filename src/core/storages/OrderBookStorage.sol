@@ -25,6 +25,8 @@ abstract contract OrderBookStorage {
         mapping(IOrderBook.Side => RedBlackTreeLib.Tree) priceTrees;
         mapping(uint48 => IOrderBook.Order) orders;
         mapping(IOrderBook.Side => mapping(uint128 => IOrderBook.OrderQueue)) orderQueues;
+        // Multiple authorized routers (ScaleXRouter, AgentRouter, etc.)
+        mapping(address => bool) authorizedRouters;
     }
 
     function getStorage() internal pure returns (Storage storage $) {

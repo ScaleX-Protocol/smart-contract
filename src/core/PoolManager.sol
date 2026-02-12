@@ -140,6 +140,22 @@ contract PoolManager is Initializable, OwnableUpgradeable, PoolManagerStorage, I
         IOrderBook(orderBook).setRouter(_newRouter);
     }
 
+    function addAuthorizedRouterToOrderBook(address orderBook, address _router) external onlyOwner {
+        if (_router == address(0)) {
+            revert InvalidRouter();
+        }
+
+        (bool success,) = orderBook.call(
+            abi.encodeWithSignature("addAuthorizedRouter(address)", _router)
+        );
+        require(success, "Failed to authorize router");
+    }
+
+    function getOrderBookBeacon() external view returns (address) {
+        Storage storage $ = getStorage();
+        return $.orderBookBeacon;
+    }
+
     function validateTradingRules(
         IOrderBook.TradingRules memory _rules
     ) internal pure {

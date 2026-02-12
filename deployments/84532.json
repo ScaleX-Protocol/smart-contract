@@ -8,11 +8,11 @@
   "ScaleXRouter": "0xc882b5af2B1AFB37CDe4D1f696fb112979cf98EE",
   "SyntheticTokenFactory": "0x5F42e34E976C6655C0545890527B23702ad2fF8d",
   "AutoBorrowHelper": "0xd22C3b2ceF6BcD601f371052208C7a283FCFaA4E",
-  "IdentityRegistry": "0xF96d030bCf6eBBaA2fEaDfA3849d5E690b72974A",
-  "ReputationRegistry": "0xc2Cd249d45d178E97a78a7d35F08F77B0DA14c0F",
-  "ValidationRegistry": "0xB3Afdc20E4984b3CbaD030Fde2bAa926eCB6BB19",
-  "PolicyFactory": "0x5FbA1439888148b944Ca452d675F3384907c24F3",
-  "AgentRouter": "0x1c2Ad1b7043f7E0C9B717F50481625D5A2E7c7C0",
+  "IdentityRegistry": "0x06b409B50FabFF2D452A0479152630786dc600B0",
+  "ReputationRegistry": "0xA0554DFd3143c95eBC7eccf6A1c6f668ff7FcDeE",
+  "ValidationRegistry": "0x050dAB9945033BE8012d688CbdcbD24fe796aBF5",
+  "PolicyFactory": "0x2917ca386aa0842147eAe70aaba415aA78E8d6E2",
+  "AgentRouter": "0x91136624222e2faAfBfdE8E06C412649aB2b90D0",
   "IDRX": "0xe7Cc2615374bbA52FC7bC8aF4aeF0E74f3D2559d",
   "WETH": "0x80C143FE62b45B83b7113c366BE21331Ba080FA8",
   "WBTC": "0x9E63dA9c18d7427dE5D7954A3c1499c21E77A425",
@@ -42,5 +42,8 @@
   "deployer": "0x27dD1eBE7D826197FD163C134E79502402Fd7cB7",
   "timestamp": "1770879168",
   "blockNumber": "37555440",
-  "deploymentComplete": true
+  "deploymentComplete": true,
+  "IdentityRegistryImplementation": "0xD15C0379a5574604Ec57e34Cc5221B2AC85CAa27",
+  "ReputationRegistryImplementation": "0xf432acBe98A3560617581305C602266338d60c09",
+  "ValidationRegistryImplementation": "0xaF0a275e17F059CC26e238D6DA3FcC8254dbdd26"
 }

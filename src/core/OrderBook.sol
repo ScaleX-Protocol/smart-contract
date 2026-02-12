@@ -32,7 +32,7 @@ contract OrderBook is Initializable, OwnableUpgradeable, ReentrancyGuardUpgradea
 
     modifier onlyRouter() {
         Storage storage $ = getStorage();
-        if (msg.sender != $.router && msg.sender != owner() && msg.sender != address(this)) {
+        if (msg.sender != $.router && !$.authorizedRouters[msg.sender] && msg.sender != owner() && msg.sender != address(this)) {
             revert UnauthorizedRouter(msg.sender);
         }
         _;
@@ -75,6 +75,22 @@ contract OrderBook is Initializable, OwnableUpgradeable, ReentrancyGuardUpgradea
     ) external onlyOwner {
         Storage storage $ = getStorage();
         $.router = _router;
+    }
+
+    function addAuthorizedRouter(address _router) external onlyOwner {
+        require(_router != address(0), "Invalid router");
+        Storage storage $ = getStorage();
+        $.authorizedRouters[_router] = true;
+    }
+
+    function removeAuthorizedRouter(address _router) external onlyOwner {
+        Storage storage $ = getStorage();
+        $.authorizedRouters[_router] = false;
+    }
+
+    function isAuthorizedRouter(address _router) external view returns (bool) {
+        Storage storage $ = getStorage();
+        return _router == $.router || $.authorizedRouters[_router] || _router == owner();
     }
 
     function setTradingRules(
