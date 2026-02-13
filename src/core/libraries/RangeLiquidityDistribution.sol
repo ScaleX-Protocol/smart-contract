@@ -14,20 +14,47 @@ library RangeLiquidityDistribution {
         uint256 totalSellBudget;
     }
 
-    /// @notice Calculate tick prices evenly distributed across range
+    /// @notice Calculate tick prices using tick spacing (similar to Uniswap v3)
+    /// @param lowerPrice Lower bound price
+    /// @param upperPrice Upper bound price
+    /// @param tickCount Number of ticks
+    /// @param tickSpacing Spacing between ticks (50 or 200)
+    function calculateTickPrices(
+        uint128 lowerPrice,
+        uint128 upperPrice,
+        uint16 tickCount,
+        uint16 tickSpacing
+    ) internal pure returns (uint128[] memory) {
+        uint128[] memory ticks = new uint128[](tickCount);
+
+        // Calculate price range per tick using tick spacing
+        // tickSpacing determines the granularity of price levels
+        uint128 priceRange = upperPrice - lowerPrice;
+        uint128 step = priceRange / tickCount;
+
+        // Ensure step is aligned to tick spacing for consistency
+        // This creates evenly distributed ticks within the range
+        uint128 alignedStep = (step / tickSpacing) * tickSpacing;
+        if (alignedStep == 0) alignedStep = tickSpacing;
+
+        for (uint16 i = 0; i < tickCount; i++) {
+            uint128 tickPrice = lowerPrice + (alignedStep * (i + 1));
+            // Ensure we don't exceed upper price
+            if (tickPrice > upperPrice) tickPrice = upperPrice;
+            ticks[i] = tickPrice;
+        }
+
+        return ticks;
+    }
+
+    /// @notice Calculate tick prices evenly distributed across range (legacy - backward compatibility)
     function calculateTickPrices(
         uint128 lowerPrice,
         uint128 upperPrice,
         uint16 tickCount
     ) internal pure returns (uint128[] memory) {
-        uint128[] memory ticks = new uint128[](tickCount);
-        uint128 step = (upperPrice - lowerPrice) / tickCount;
-
-        for (uint16 i = 0; i < tickCount; i++) {
-            ticks[i] = lowerPrice + (step * (i + 1)); // Start from lowerPrice + step
-        }
-
-        return ticks;
+        // Default to tick spacing of 50 for backward compatibility
+        return calculateTickPrices(lowerPrice, upperPrice, tickCount, 50);
     }
 
     /// @notice Calculate distribution based on strategy

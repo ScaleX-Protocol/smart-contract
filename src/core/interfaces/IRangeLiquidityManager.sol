@@ -25,6 +25,7 @@ interface IRangeLiquidityManager {
         uint128 upperPrice;
         uint128 centerPriceAtCreation;
         uint16 tickCount;
+        uint16 tickSpacing;  // Tick spacing used for this position
 
         // Capital tracking
         uint256 initialDepositAmount;
@@ -33,6 +34,10 @@ interface IRangeLiquidityManager {
         // Order tracking
         uint48[] buyOrderIds;
         uint48[] sellOrderIds;
+
+        // Fee tracking
+        uint256 feesCollectedBase;   // Accumulated fees in base currency
+        uint256 feesCollectedQuote;  // Accumulated fees in quote currency
 
         // Rebalance settings
         bool autoRebalanceEnabled;
@@ -53,6 +58,7 @@ interface IRangeLiquidityManager {
         uint128 lowerPrice;
         uint128 upperPrice;
         uint16 tickCount;
+        uint16 tickSpacing;  // Tick spacing (50 or 200)
         uint256 depositAmount;
         Currency depositCurrency;
         bool autoRebalance;
@@ -66,6 +72,8 @@ interface IRangeLiquidityManager {
         uint256 quoteAmount;
         uint256 lockedInOrders;
         uint256 freeBalance;
+        uint256 feesEarnedBase;   // Total fees earned in base currency
+        uint256 feesEarnedQuote;  // Total fees earned in quote currency
     }
 
     // Events
@@ -76,7 +84,9 @@ interface IRangeLiquidityManager {
         uint128 lowerPrice,
         uint128 upperPrice,
         uint256 totalLiquidity,
-        Strategy strategy
+        Strategy strategy,
+        uint16 tickSpacing,
+        uint24 feeTier
     );
 
     event PositionRebalanced(
@@ -92,7 +102,15 @@ interface IRangeLiquidityManager {
         uint256 indexed positionId,
         address indexed owner,
         uint256 baseReturned,
-        uint256 quoteReturned
+        uint256 quoteReturned,
+        uint256 feesEarnedBase,
+        uint256 feesEarnedQuote
+    );
+
+    event FeesCollected(
+        uint256 indexed positionId,
+        uint256 baseAmount,
+        uint256 quoteAmount
     );
 
     event BotAuthorized(
@@ -111,11 +129,13 @@ interface IRangeLiquidityManager {
     error PositionAlreadyExists(address owner, PoolKey poolKey);
     error InvalidPriceRange(uint128 lowerPrice, uint128 upperPrice);
     error InvalidTickCount(uint16 tickCount);
+    error InvalidTickSpacing(uint16 tickSpacing);
     error InvalidDepositAmount(uint256 amount);
     error InvalidRebalanceThreshold(uint16 threshold);
     error NotAuthorizedToRebalance(uint256 positionId, address caller);
     error RebalanceThresholdNotMet(uint256 positionId, uint256 currentDrift, uint256 threshold);
     error InvalidStrategy(Strategy strategy);
+    error InvalidFeeTier(uint24 feeTier);
 
     // Core functions
     function createPosition(PositionParams calldata params) external returns (uint256 positionId);
@@ -123,6 +143,8 @@ interface IRangeLiquidityManager {
     function closePosition(uint256 positionId) external;
 
     function rebalancePosition(uint256 positionId) external;
+
+    function collectFees(uint256 positionId) external;
 
     function setAuthorizedBot(uint256 positionId, address bot) external;
 
@@ -138,4 +160,6 @@ interface IRangeLiquidityManager {
     function canRebalance(uint256 positionId) external view returns (bool canReb, uint256 currentDriftBps);
 
     function totalPositions() external view returns (uint256);
+
+    function getFeeTierForPool(PoolKey calldata poolKey) external view returns (uint24);
 }

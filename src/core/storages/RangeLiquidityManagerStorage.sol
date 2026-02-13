@@ -22,6 +22,12 @@ contract RangeLiquidityManagerStorage {
 
         // Position balance tracking (free balances from filled orders)
         mapping(uint256 => mapping(address => uint256)) positionBalances; // positionId => token => amount
+
+        // Fee tracking per position
+        mapping(uint256 => mapping(address => uint256)) accumulatedFees; // positionId => token => fee amount
+
+        // Protocol fee percentage (in basis points, e.g., 10 = 0.1%)
+        uint16 protocolFeeBps;
     }
 
     // keccak256(abi.encode(uint256(keccak256("scalex.storage.RangeLiquidityManager")) - 1)) & ~bytes32(uint256(0xff))

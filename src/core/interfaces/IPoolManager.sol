@@ -11,10 +11,17 @@ interface IPoolManager is IPoolManagerErrors {
         Currency baseCurrency;
         Currency quoteCurrency;
         IOrderBook orderBook;
+        uint24 feeTier;  // Fee tier in basis points (20 = 0.2%, 50 = 0.5%)
     }
 
     event TradingRulesUpdated(PoolId indexed poolId, IOrderBook.TradingRules newRules);
-    event PoolCreated(PoolId indexed poolId, address orderBook, Currency baseCurrency, Currency quoteCurrency);
+    event PoolCreated(
+        PoolId indexed poolId,
+        address orderBook,
+        Currency baseCurrency,
+        Currency quoteCurrency,
+        uint24 feeTier
+    );
     event CurrencyAdded(Currency currency);
     event IntermediaryAdded(Currency currency);
     event IntermediaryRemoved(Currency currency);
@@ -35,7 +42,8 @@ interface IPoolManager is IPoolManagerErrors {
     function createPool(
         Currency _baseCurrency,
         Currency _quoteCurrency,
-        IOrderBook.TradingRules memory _tradingRules
+        IOrderBook.TradingRules memory _tradingRules,
+        uint24 _feeTier
     ) external returns (PoolId);
 
     function addCommonIntermediary(

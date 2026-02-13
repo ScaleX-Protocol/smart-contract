@@ -45,6 +45,7 @@ contract RangeLiquidityManager is
         $.balanceManager = _balanceManager;
         $.router = _router;
         $.nextPositionId = 1;
+        $.protocolFeeBps = 10; // Default 0.1% protocol fee
     }
 
     /// @notice Create a new range liquidity position
@@ -84,11 +85,12 @@ contract RangeLiquidityManager is
             address(this)
         );
 
-        // Calculate tick prices
+        // Calculate tick prices with tick spacing
         uint128[] memory tickPrices = RangeLiquidityDistribution.calculateTickPrices(
             params.lowerPrice,
             params.upperPrice,
-            params.tickCount
+            params.tickCount,
+            params.tickSpacing
         );
 
         // Determine if deposit is in base or quote currency
@@ -126,10 +128,13 @@ contract RangeLiquidityManager is
         position.upperPrice = params.upperPrice;
         position.centerPriceAtCreation = currentPrice;
         position.tickCount = params.tickCount;
+        position.tickSpacing = params.tickSpacing;
         position.initialDepositAmount = params.depositAmount;
         position.initialDepositCurrency = params.depositCurrency;
         position.buyOrderIds = buyOrderIds;
         position.sellOrderIds = sellOrderIds;
+        position.feesCollectedBase = 0;
+        position.feesCollectedQuote = 0;
         position.autoRebalanceEnabled = params.autoRebalance;
         position.rebalanceThresholdBps = params.rebalanceThresholdBps;
         position.authorizedBot = address(0);
@@ -149,7 +154,9 @@ contract RangeLiquidityManager is
             params.lowerPrice,
             params.upperPrice,
             params.depositAmount,
-            params.strategy
+            params.strategy,
+            params.tickSpacing,
+            params.poolKey.feeTier
         );
     }
 
@@ -210,7 +217,14 @@ contract RangeLiquidityManager is
         bytes32 poolId = keccak256(abi.encode(position.poolKey));
         delete $.userPoolPosition[msg.sender][poolId];
 
-        emit PositionClosed(positionId, msg.sender, baseBalance, quoteBalance);
+        emit PositionClosed(
+            positionId,
+            msg.sender,
+            baseBalance,
+            quoteBalance,
+            position.feesCollectedBase,
+            position.feesCollectedQuote
+        );
     }
 
     /// @notice Rebalance position around current price
@@ -272,11 +286,12 @@ contract RangeLiquidityManager is
             currentPrice
         );
 
-        // Recalculate tick prices
+        // Recalculate tick prices with tick spacing
         uint128[] memory newTickPrices = RangeLiquidityDistribution.calculateTickPrices(
             newLowerPrice,
             newUpperPrice,
-            position.tickCount
+            position.tickCount,
+            position.tickSpacing
         );
 
         // Redistribute liquidity (always rebalance in quote currency)
@@ -380,6 +395,8 @@ contract RangeLiquidityManager is
         value.quoteAmount = quoteAmount;
         value.lockedInOrders = _calculateLockedInOrders(position, pool.orderBook);
         value.freeBalance = totalValueInQuote - value.lockedInOrders;
+        value.feesEarnedBase = position.feesCollectedBase;
+        value.feesEarnedQuote = position.feesCollectedQuote;
     }
 
     /// @notice Get all positions for a user
@@ -416,6 +433,84 @@ contract RangeLiquidityManager is
         return getStorage().nextPositionId - 1;
     }
 
+    /// @notice Collect accumulated fees for a position
+    function collectFees(uint256 positionId) external nonReentrant {
+        Storage storage $ = getStorage();
+        RangePosition storage position = $.positions[positionId];
+
+        // Validate ownership
+        if (position.owner != msg.sender) {
+            revert NotPositionOwner(positionId, msg.sender);
+        }
+        if (!position.isActive) {
+            revert PositionNotActive(positionId);
+        }
+
+        // Get accumulated fees
+        uint256 baseFees = $.accumulatedFees[positionId][Currency.unwrap(position.poolKey.baseCurrency)];
+        uint256 quoteFees = $.accumulatedFees[positionId][Currency.unwrap(position.poolKey.quoteCurrency)];
+
+        // Update position fee tracking
+        position.feesCollectedBase += baseFees;
+        position.feesCollectedQuote += quoteFees;
+
+        // Transfer fees to owner
+        if (baseFees > 0) {
+            IBalanceManager($.balanceManager).withdraw(
+                position.poolKey.baseCurrency,
+                baseFees,
+                msg.sender
+            );
+            $.accumulatedFees[positionId][Currency.unwrap(position.poolKey.baseCurrency)] = 0;
+        }
+
+        if (quoteFees > 0) {
+            IBalanceManager($.balanceManager).withdraw(
+                position.poolKey.quoteCurrency,
+                quoteFees,
+                msg.sender
+            );
+            $.accumulatedFees[positionId][Currency.unwrap(position.poolKey.quoteCurrency)] = 0;
+        }
+
+        emit FeesCollected(positionId, baseFees, quoteFees);
+    }
+
+    /// @notice Get fee tier for a pool
+    function getFeeTierForPool(PoolKey calldata poolKey) external pure returns (uint24) {
+        return poolKey.feeTier;
+    }
+
+    /// @notice Set protocol fee percentage (only owner)
+    /// @param newProtocolFeeBps New protocol fee in basis points (e.g., 10 = 0.1%)
+    function setProtocolFee(uint16 newProtocolFeeBps) external onlyOwner {
+        if (newProtocolFeeBps > 1000) {
+            revert("Protocol fee too high");
+        }
+        getStorage().protocolFeeBps = newProtocolFeeBps;
+    }
+
+    /// @notice Get protocol fee percentage
+    function getProtocolFee() external view returns (uint16) {
+        return getStorage().protocolFeeBps;
+    }
+
+    /// @notice Calculate LP yield from fee tier
+    /// @dev LP yield = fee tier - protocol fee
+    /// @param positionId Position ID
+    /// @return lpYieldBps LP yield in basis points
+    function getLPYield(uint256 positionId) external view returns (uint24 lpYieldBps) {
+        Storage storage $ = getStorage();
+        RangePosition storage position = $.positions[positionId];
+
+        uint24 feeTier = position.poolKey.feeTier;
+        uint16 protocolFee = $.protocolFeeBps;
+
+        // LP yield is the spread between fee tier and protocol fee
+        // For example: 0.5% fee tier - 0.1% protocol fee = 0.4% for LP
+        lpYieldBps = feeTier - protocolFee;
+    }
+
     // ========== Internal Functions ==========
 
     function _validatePositionParams(PositionParams calldata params) internal pure {
@@ -424,6 +519,10 @@ contract RangeLiquidityManager is
         }
         if (params.tickCount == 0 || params.tickCount > 100) {
             revert InvalidTickCount(params.tickCount);
+        }
+        // Validate tick spacing (must be 50 or 200 as per requirements)
+        if (params.tickSpacing != 50 && params.tickSpacing != 200) {
+            revert InvalidTickSpacing(params.tickSpacing);
         }
         if (params.depositAmount == 0) {
             revert InvalidDepositAmount(params.depositAmount);
@@ -437,6 +536,10 @@ contract RangeLiquidityManager is
             params.strategy != Strategy.ASK_HEAVY
         ) {
             revert InvalidStrategy(params.strategy);
+        }
+        // Validate fee tier (0.2% = 20bps or 0.5% = 50bps)
+        if (params.poolKey.feeTier != 20 && params.poolKey.feeTier != 50) {
+            revert InvalidFeeTier(params.poolKey.feeTier);
         }
     }
 
