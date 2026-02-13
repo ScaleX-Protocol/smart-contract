@@ -37,3 +37,7 @@ population.log
 # AI agent integration docs (design phase)
 docs/ai-agent-integration/
 .DS_Store
+
+# CRE - Moved to separate repository (https://github.com/ScaleX-Protocol/cre)
+cre/
+cre-liquidity-calculator/
