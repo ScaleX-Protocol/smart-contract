@@ -232,7 +232,9 @@ contract AgentRouter {
             side,
             owner,
             autoRepay,
-            autoBorrow
+            autoBorrow,
+            agentTokenId,
+            msg.sender
         );
 
         // 8. Update tracking
@@ -319,7 +321,9 @@ contract AgentRouter {
             owner,
             timeInForce,
             autoRepay,
-            autoBorrow
+            autoBorrow,
+            agentTokenId,
+            msg.sender
         );
 
         // Update tracking
@@ -365,7 +369,7 @@ contract AgentRouter {
         IOrderBook orderBook = pool.orderBook;
 
         // Cancel order
-        orderBook.cancelOrder(orderId, owner);
+        orderBook.cancelOrder(orderId, owner, agentTokenId, msg.sender);
 
         emit AgentOrderCancelled(
             owner,

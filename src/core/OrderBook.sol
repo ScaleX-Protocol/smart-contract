@@ -232,7 +232,9 @@ contract OrderBook is Initializable, OwnableUpgradeable, ReentrancyGuardUpgradea
         address user,
         TimeInForce timeInForce,
         bool autoRepay,
-        bool autoBorrow
+        bool autoBorrow,
+        uint256 agentTokenId,
+        address executor
     ) external onlyRouter returns (uint48 orderId) {
         Storage storage $ = getStorage();
         validateOrder(price, quantity, side, OrderType.LIMIT, timeInForce);
@@ -257,7 +259,9 @@ contract OrderBook is Initializable, OwnableUpgradeable, ReentrancyGuardUpgradea
             orderType: OrderType.LIMIT,
             side: side,
             autoRepay: autoRepay,
-            autoBorrow: autoBorrow
+            autoBorrow: autoBorrow,
+            agentTokenId: agentTokenId,
+            executor: executor
         });
 
         // Validate balance before locking (supports autoBorrow)
@@ -282,7 +286,7 @@ contract OrderBook is Initializable, OwnableUpgradeable, ReentrancyGuardUpgradea
 
         _addOrderToQueue(newOrder);
 
-        emit OrderPlaced(orderId, user, side, price, quantity, newOrder.expiry, false, Status.OPEN, autoRepay, autoBorrow, timeInForce, 0, msg.sender);
+        emit OrderPlaced(orderId, user, side, price, quantity, newOrder.expiry, false, Status.OPEN, autoRepay, autoBorrow, timeInForce, agentTokenId, executor);
 
         _handleTimeInForce(newOrder, side, user, timeInForce);
 
@@ -416,7 +420,9 @@ contract OrderBook is Initializable, OwnableUpgradeable, ReentrancyGuardUpgradea
         Side side,
         address user,
         bool autoRepay,
-        bool autoBorrow
+        bool autoBorrow,
+        uint256 agentTokenId,
+        address executor
     ) external onlyRouter nonReentrant returns (uint48 orderId, uint128 receivedAmount) {
         Storage storage $ = getStorage();
         Side oppositeSide = side == Side.BUY ? Side.SELL : Side.BUY;
@@ -429,7 +435,7 @@ contract OrderBook is Initializable, OwnableUpgradeable, ReentrancyGuardUpgradea
         }
         
         if (side == Side.BUY) {
-            return _placeMarketOrderWithQuoteAmount(quantity, side, user, autoRepay, autoBorrow);
+            return _placeMarketOrderWithQuoteAmount(quantity, side, user, autoRepay, autoBorrow, agentTokenId, executor);
         }
 
         validateBasicOrderParameters(0, quantity, OrderType.MARKET);
@@ -456,10 +462,12 @@ contract OrderBook is Initializable, OwnableUpgradeable, ReentrancyGuardUpgradea
             orderType: OrderType.MARKET,
             side: side,
             autoRepay: autoRepay,
-            autoBorrow: autoBorrow
+            autoBorrow: autoBorrow,
+            agentTokenId: agentTokenId,
+            executor: executor
         });
 
-        emit OrderPlaced(orderId, user, side, 0, quantity, marketOrder.expiry, true, Status.OPEN, autoRepay, autoBorrow, TimeInForce.IOC, 0, msg.sender);
+        emit OrderPlaced(orderId, user, side, 0, quantity, marketOrder.expiry, true, Status.OPEN, autoRepay, autoBorrow, TimeInForce.IOC, agentTokenId, executor);
 
         uint128 filled = _matchOrder(marketOrder, side, user, true);
 
@@ -489,7 +497,9 @@ contract OrderBook is Initializable, OwnableUpgradeable, ReentrancyGuardUpgradea
         Side side,
         address user,
         bool autoRepay,
-        bool autoBorrow
+        bool autoBorrow,
+        uint256 agentTokenId,
+        address executor
     ) private returns (uint48 orderId, uint128 receivedAmount) {
         Storage storage $ = getStorage();
 
@@ -523,10 +533,12 @@ contract OrderBook is Initializable, OwnableUpgradeable, ReentrancyGuardUpgradea
             orderType: OrderType.MARKET,
             side: side,
             autoRepay: autoRepay,
-            autoBorrow: autoBorrow
+            autoBorrow: autoBorrow,
+            agentTokenId: agentTokenId,
+            executor: executor
         });
 
-        emit OrderPlaced(orderId, user, side, 0, quoteAmount, marketOrder.expiry, true, Status.OPEN, autoRepay, autoBorrow, TimeInForce.IOC, 0, msg.sender);
+        emit OrderPlaced(orderId, user, side, 0, quoteAmount, marketOrder.expiry, true, Status.OPEN, autoRepay, autoBorrow, TimeInForce.IOC, agentTokenId, executor);
 
         uint128 baseAmountFilled = _matchOrderWithQuoteAmount(marketOrder, side, user, quoteAmount);
 
@@ -687,8 +699,8 @@ contract OrderBook is Initializable, OwnableUpgradeable, ReentrancyGuardUpgradea
         return ctx;
     }
 
-    function cancelOrder(uint48 orderId, address user) external onlyRouter {
-        _cancelOrder(orderId, user, 0, msg.sender);
+    function cancelOrder(uint48 orderId, address user, uint256 agentTokenId, address executor) external onlyRouter {
+        _cancelOrder(orderId, user, agentTokenId, executor);
     }
 
     function _cancelOrder(uint48 orderId, address user, uint256 agentTokenId, address executor) private {
@@ -1109,6 +1121,8 @@ contract OrderBook is Initializable, OwnableUpgradeable, ReentrancyGuardUpgradea
         order.side = _order.side;
         order.autoRepay = _order.autoRepay;
         order.autoBorrow = _order.autoBorrow;
+        order.agentTokenId = _order.agentTokenId;
+        order.executor = _order.executor;
 
         if (queue.head == 0) {
             queue.head = _order.id;

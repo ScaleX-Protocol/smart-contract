@@ -97,7 +97,7 @@ contract ScaleXRouter is IScaleXRouter, ScaleXRouterStorage, Initializable, Owna
             balanceManager.deposit(depositCurrency, depositAmount, msg.sender, msg.sender);
         }
         
-        orderId = pool.orderBook.placeOrder(_price, _quantity, _side, msg.sender, _timeInForce, autoRepay, autoBorrow);
+        orderId = pool.orderBook.placeOrder(_price, _quantity, _side, msg.sender, _timeInForce, autoRepay, autoBorrow, 0, msg.sender);
     }
 
     function placeMarketOrder(
@@ -154,7 +154,7 @@ contract ScaleXRouter is IScaleXRouter, ScaleXRouterStorage, Initializable, Owna
         SlippageContext memory ctx =
             _makeSlippageContext(balanceManager, msg.sender, pool.baseCurrency, pool.quoteCurrency, _side, minOutAmount);
 
-        (orderId, filled) = pool.orderBook.placeMarketOrder(_quantity, _side, msg.sender, autoRepay, autoBorrow);
+        (orderId, filled) = pool.orderBook.placeMarketOrder(_quantity, _side, msg.sender, autoRepay, autoBorrow, 0, msg.sender);
 
         if (_side == IOrderBook.Side.SELL) {
             uint256 userBalance = balanceManager.getBalance(msg.sender, depositCurrency);
@@ -224,7 +224,7 @@ contract ScaleXRouter is IScaleXRouter, ScaleXRouterStorage, Initializable, Owna
     }
 
     function cancelOrder(IPoolManager.Pool memory pool, uint48 orderId) external {
-        pool.orderBook.cancelOrder(orderId, msg.sender);
+        pool.orderBook.cancelOrder(orderId, msg.sender, 0, msg.sender);
     }
 
     function withdraw(Currency, uint256) external {}
@@ -877,7 +877,7 @@ contract ScaleXRouter is IScaleXRouter, ScaleXRouterStorage, Initializable, Owna
         SlippageContext memory ctx =
             _makeSlippageContext(balanceManager, user, pool.baseCurrency, pool.quoteCurrency, side, minOutAmount);
 
-        (orderId, filled) = pool.orderBook.placeMarketOrder(uint128(quantity), side, user, false, false);
+        (orderId, filled) = pool.orderBook.placeMarketOrder(uint128(quantity), side, user, false, false, 0, user);
 
         // Handle post-order balance unlocking for SELL orders
         if (side == IOrderBook.Side.SELL) {

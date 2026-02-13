@@ -47,7 +47,10 @@ interface IOrderBook is IOrderBookErrors {
         OrderType orderType;
         Side side;
         bool autoRepay;
-        bool autoBorrow; 
+        bool autoBorrow;
+        // Slot 4 - Agent tracking
+        uint256 agentTokenId;  // ERC-8004 agent token ID (0 if not agent order)
+        address executor;       // Executor wallet that placed the order
     }
 
     struct MatchContext {
@@ -195,16 +198,18 @@ interface IOrderBook is IOrderBookErrors {
         address user,
         TimeInForce timeInForce,
         bool autoRepay,
-        bool autoBorrow
+        bool autoBorrow,
+        uint256 agentTokenId,
+        address executor
     ) external returns (uint48 orderId);
 
     function getOrder(
         uint48 orderId
     ) external view returns (Order memory order);
 
-    function placeMarketOrder(uint128 quantity, Side side, address user, bool autoRepay, bool autoBorrow) external returns (uint48, uint128);
+    function placeMarketOrder(uint128 quantity, Side side, address user, bool autoRepay, bool autoBorrow, uint256 agentTokenId, address executor) external returns (uint48, uint128);
 
-    function cancelOrder(uint48 orderId, address user) external;
+    function cancelOrder(uint48 orderId, address user, uint256 agentTokenId, address executor) external;
 
     function getOrderQueue(Side side, uint128 price) external view returns (uint48 orderCount, uint256 totalVolume);
 
