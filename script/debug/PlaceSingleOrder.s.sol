@@ -54,7 +54,8 @@ contract PlaceSingleOrder is Script, DeployHelpers {
         IPoolManager.Pool memory pool = IPoolManager.Pool({
             baseCurrency: Currency.wrap(sxWETHAddr),
             quoteCurrency: Currency.wrap(sxUSDCAddr),
-            orderBook: IOrderBook(poolAddr)
+            orderBook: IOrderBook(poolAddr),
+            feeTier: 20
         });
 
         try router.placeLimitOrder(

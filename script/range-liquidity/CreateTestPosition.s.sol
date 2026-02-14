@@ -64,12 +64,14 @@ contract CreateTestPosition is Script {
         IRangeLiquidityManager.PositionParams memory params = IRangeLiquidityManager.PositionParams({
             poolKey: PoolKey({
                 baseCurrency: Currency.wrap(baseToken),
-                quoteCurrency: Currency.wrap(quoteToken)
+                quoteCurrency: Currency.wrap(quoteToken),
+                feeTier: 20
             }),
             strategy: IRangeLiquidityManager.Strategy.UNIFORM,
             lowerPrice: lowerPrice,
             upperPrice: upperPrice,
             tickCount: tickCount,
+            tickSpacing: 50,
             depositAmount: depositAmount,
             depositCurrency: Currency.wrap(quoteToken),
             autoRebalance: true,

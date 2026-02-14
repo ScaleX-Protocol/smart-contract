@@ -74,7 +74,7 @@ contract MarketOrderQuantityValidationTest is Test {
         quoteCurrency = Currency.wrap(quoteTokenAddress);
 
         PoolKey memory key =
-            PoolKey({baseCurrency: Currency.wrap(baseTokenAddress), quoteCurrency: Currency.wrap(quoteTokenAddress)});
+            PoolKey({baseCurrency: Currency.wrap(baseTokenAddress), quoteCurrency: Currency.wrap(quoteTokenAddress), feeTier: 20});
 
         BeaconDeployer beaconDeployer = new BeaconDeployer();
 
@@ -164,7 +164,7 @@ contract MarketOrderQuantityValidationTest is Test {
         MockToken(quoteTokenAddress).approve(address(balanceManager), type(uint256).max);
         vm.stopPrank();
 
-        poolManager.createPool(baseCurrency, quoteCurrency, rules);
+        poolManager.createPool(baseCurrency, quoteCurrency, rules, 20);
 
         key = poolManager.createPoolKey(baseCurrency, quoteCurrency);
 

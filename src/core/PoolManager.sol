@@ -55,7 +55,8 @@ contract PoolManager is Initializable, OwnableUpgradeable, PoolManagerStorage, I
     function createPool(
         Currency _baseCurrency,
         Currency _quoteCurrency,
-        IOrderBook.TradingRules memory _tradingRules
+        IOrderBook.TradingRules memory _tradingRules,
+        uint24 _feeTier
     ) external returns (PoolId) {
         Storage storage $ = getStorage();
         if ($.router == address(0)) {
@@ -64,7 +65,7 @@ contract PoolManager is Initializable, OwnableUpgradeable, PoolManagerStorage, I
 
         validateTradingRules(_tradingRules);
 
-        PoolKey memory key = createPoolKey(_baseCurrency, _quoteCurrency);
+        PoolKey memory key = createPoolKey(_baseCurrency, _quoteCurrency, _feeTier);
         PoolId id = key.toId();
 
         if (address($.pools[id].orderBook) != address(0)) {
@@ -77,12 +78,12 @@ contract PoolManager is Initializable, OwnableUpgradeable, PoolManagerStorage, I
         BeaconProxy orderBookProxy = new BeaconProxy($.orderBookBeacon, initData);
         IOrderBook orderbook = IOrderBook(address(orderBookProxy));
 
-        IPoolManager.Pool memory pool =
-            Pool({orderBook: orderbook, baseCurrency: key.baseCurrency, quoteCurrency: key.quoteCurrency});
-
-        $.pools[id] = pool;
-
-        $.pools[id] = Pool({orderBook: orderbook, baseCurrency: key.baseCurrency, quoteCurrency: key.quoteCurrency});
+        $.pools[id] = Pool({
+            orderBook: orderbook,
+            baseCurrency: key.baseCurrency,
+            quoteCurrency: key.quoteCurrency,
+            feeTier: _feeTier
+        });
 
         if (!$.registeredCurrencies[key.baseCurrency]) {
             $.registeredCurrencies[key.baseCurrency] = true;
@@ -101,7 +102,7 @@ contract PoolManager is Initializable, OwnableUpgradeable, PoolManagerStorage, I
         orderbook.setRouter($.router);
         IBalanceManager($.balanceManager).setAuthorizedOperator(address(orderBookProxy), true);
 
-        emit PoolCreated(id, address(orderBookProxy), key.baseCurrency, key.quoteCurrency);
+        emit PoolCreated(id, address(orderBookProxy), key.baseCurrency, key.quoteCurrency, _feeTier);
 
         return id;
     }
@@ -177,16 +178,26 @@ contract PoolManager is Initializable, OwnableUpgradeable, PoolManagerStorage, I
     }
 
     function poolExists(Currency currency1, Currency currency2) public view returns (bool) {
-        PoolKey memory key = createPoolKey(currency1, currency2);
-        return address(getStorage().pools[key.toId()].orderBook) != address(0);
+        // Check all fee tiers for existence
+        PoolKey memory keyLow = createPoolKey(currency1, currency2, 20);
+        PoolKey memory keyMed = createPoolKey(currency1, currency2, 50);
+        return address(getStorage().pools[keyLow.toId()].orderBook) != address(0)
+            || address(getStorage().pools[keyMed.toId()].orderBook) != address(0);
     }
 
     function getPoolLiquidityScore(Currency currency1, Currency currency2) external view returns (uint256) {
-        PoolKey memory key = createPoolKey(currency1, currency2);
-        return getStorage().poolLiquidity[key.toId()];
+        PoolKey memory keyLow = createPoolKey(currency1, currency2, 20);
+        PoolKey memory keyMed = createPoolKey(currency1, currency2, 50);
+        uint256 scoreLow = getStorage().poolLiquidity[keyLow.toId()];
+        uint256 scoreMed = getStorage().poolLiquidity[keyMed.toId()];
+        return scoreLow > scoreMed ? scoreLow : scoreMed;
     }
 
     function createPoolKey(Currency currency1, Currency currency2) public pure returns (PoolKey memory) {
-        return PoolKey({baseCurrency: currency1, quoteCurrency: currency2});
+        return PoolKey({baseCurrency: currency1, quoteCurrency: currency2, feeTier: 20});
+    }
+
+    function createPoolKey(Currency currency1, Currency currency2, uint24 feeTier) public pure returns (PoolKey memory) {
+        return PoolKey({baseCurrency: currency1, quoteCurrency: currency2, feeTier: feeTier});
     }
 }

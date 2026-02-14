@@ -122,6 +122,18 @@ contract BalanceManager is
         Storage storage $ = getStorage();
         $.feeMaker = _feeMaker;
         $.feeTaker = _feeTaker;
+        if ($.feeProtocol > _feeTaker || $.feeProtocol > _feeMaker) {
+            $.feeProtocol = _feeTaker < _feeMaker ? _feeTaker : _feeMaker;
+        }
+    }
+
+    function setFeeProtocol(uint256 _feeProtocol) external onlyOwner {
+        Storage storage $ = getStorage();
+        require(_feeProtocol <= $.feeTaker, "feeProtocol > feeTaker");
+        if ($.feeMaker > 0) {
+            require(_feeProtocol <= $.feeMaker, "feeProtocol > feeMaker");
+        }
+        $.feeProtocol = _feeProtocol;
     }
 
     /// @notice Resolve currency to use synthetic token's ID if available
@@ -466,24 +478,23 @@ contract BalanceManager is
             );
         }
 
-        // Determine fee based on the role (maker/taker)
+        // Calculate total taker fee and split between protocol and maker
         uint256 feeAmount = amount * $.feeTaker / _feeUnit();
         if (feeAmount > amount) {
             revert FeeExceedsTransferAmount(feeAmount, amount);
         }
+        uint256 protocolFee = amount * $.feeProtocol / _feeUnit();
+        uint256 makerReward = feeAmount - protocolFee;
 
         // Deduct fee and update balances
         $.lockedBalanceOf[sender][msg.sender][currencyId] -= amount;
-        uint256 amountAfterFee = amount - feeAmount;
-        $.balanceOf[receiver][currencyId] += amountAfterFee;
+        $.balanceOf[receiver][currencyId] += (amount - feeAmount);
 
-        // Transfer the fee to the feeReceiver
-        $.balanceOf[$.feeReceiver][currencyId] += feeAmount;
+        // Split fee: protocol gets fixed portion, maker gets the rest
+        $.balanceOf[$.feeReceiver][currencyId] += protocolFee;
+        $.balanceOf[sender][currencyId] += makerReward;
 
-        // Note: LendingManager supply tracking is no longer needed here.
-        // Supply ownership is determined by sxToken balance directly.
-
-        emit TransferLockedFrom(msg.sender, sender, receiver, currencyId, amount, feeAmount);
+        emit TransferLockedFrom(msg.sender, sender, receiver, currencyId, amount, feeAmount, protocolFee, makerReward);
     }
 
     function transferFrom(address sender, address receiver, Currency currency, uint256 amount) external {
@@ -497,24 +508,22 @@ contract BalanceManager is
             revert InsufficientBalance(sender, currencyId, amount, $.balanceOf[sender][currencyId]);
         }
 
-        // Determine fee based on the role (maker/taker)
+        // Calculate total maker fee and split between protocol and maker
         uint256 feeAmount = amount * $.feeMaker / _feeUnit();
         if (feeAmount > amount) {
             revert FeeExceedsTransferAmount(feeAmount, amount);
         }
+        uint256 protocolFee = amount * $.feeProtocol / _feeUnit();
+        uint256 makerReward = feeAmount - protocolFee;
 
         // Deduct fee and update balances
         $.balanceOf[sender][currencyId] -= amount;
-        uint256 amountAfterFee = amount - feeAmount;
-        $.balanceOf[receiver][currencyId] += amountAfterFee;
+        $.balanceOf[receiver][currencyId] += (amount - protocolFee);
 
-        // Transfer the fee to the feeReceiver
-        $.balanceOf[$.feeReceiver][currencyId] += feeAmount;
+        // Protocol gets fixed portion
+        $.balanceOf[$.feeReceiver][currencyId] += protocolFee;
 
-        // Note: LendingManager supply tracking is no longer needed here.
-        // Supply ownership is determined by sxToken balance directly.
-
-        emit TransferFrom(msg.sender, sender, receiver, currencyId, amount, feeAmount);
+        emit TransferFrom(msg.sender, sender, receiver, currencyId, amount, feeAmount, protocolFee, makerReward);
     }
 
     // Add public getters for fees and feeReceiver
@@ -524,6 +533,10 @@ contract BalanceManager is
 
     function feeTaker() external view returns (uint256) {
         return getStorage().feeTaker;
+    }
+
+    function feeProtocol() external view returns (uint256) {
+        return getStorage().feeProtocol;
     }
 
     function feeReceiver() external view returns (address) {

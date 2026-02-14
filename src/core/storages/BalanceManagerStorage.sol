@@ -13,6 +13,7 @@ abstract contract BalanceManagerStorage {
         address feeReceiver;
         uint256 feeMaker;
         uint256 feeTaker;
+        uint256 feeProtocol;
         uint256 feeUnit;
         
         // Cross-chain fields (following example folder pattern)

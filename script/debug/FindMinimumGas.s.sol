@@ -28,7 +28,8 @@ contract FindMinimumGas is Script {
         IPoolManager.Pool memory poolForOrder = IPoolManager.Pool({
             baseCurrency: Currency.wrap(sxWETH),
             quoteCurrency: Currency.wrap(sxUSDC),
-            orderBook: IOrderBook(pool)
+            orderBook: IOrderBook(pool),
+            feeTier: 20
         });
         
         vm.startPrank(USER);

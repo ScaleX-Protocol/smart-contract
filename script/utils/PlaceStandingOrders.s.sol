@@ -38,7 +38,7 @@ contract PlaceStandingOrders is Script {
         IERC20(usdc).approve(scaleXRouter, type(uint256).max);
 
         // Get pool from PoolManager using PoolKey
-        PoolKey memory poolKey = PoolKey(Currency.wrap(sxWETH), Currency.wrap(sxUSDC));
+        PoolKey memory poolKey = PoolKey(Currency.wrap(sxWETH), Currency.wrap(sxUSDC), 20);
         IPoolManager.Pool memory pool = IPoolManager(poolManager).getPool(poolKey);
 
         // Place buy order for WETH at $1900 (below market)

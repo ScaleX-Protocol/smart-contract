@@ -165,14 +165,16 @@ contract AutoRepayTest is Test, IPriceOracle {
         
         PoolKey memory poolKey = PoolKey({
             baseCurrency: Currency.wrap(address(usdc)),
-            quoteCurrency: Currency.wrap(address(weth))
+            quoteCurrency: Currency.wrap(address(weth)),
+            feeTier: 20
         });
         
         // Create the pool
         PoolId poolId = poolManager.createPool(
             Currency.wrap(address(usdc)),
             Currency.wrap(address(weth)),
-            tradingRules
+            tradingRules,
+            20
         );
         
         // Get the OrderBook from the pool
@@ -227,7 +229,8 @@ contract AutoRepayTest is Test, IPriceOracle {
         // Get the pool for ScaleXRouter
         PoolKey memory poolKey = PoolKey({
             baseCurrency: Currency.wrap(address(usdc)),
-            quoteCurrency: Currency.wrap(address(weth))
+            quoteCurrency: Currency.wrap(address(weth)),
+            feeTier: 20
         });
         IPoolManager.Pool memory pool = poolManager.getPool(poolKey);
         
@@ -269,7 +272,8 @@ contract AutoRepayTest is Test, IPriceOracle {
         // Get the pool for ScaleXRouter
         PoolKey memory poolKey = PoolKey({
             baseCurrency: Currency.wrap(address(usdc)),
-            quoteCurrency: Currency.wrap(address(weth))
+            quoteCurrency: Currency.wrap(address(weth)),
+            feeTier: 20
         });
         IPoolManager.Pool memory pool = poolManager.getPool(poolKey);
         
@@ -300,7 +304,8 @@ contract AutoRepayTest is Test, IPriceOracle {
         // Get the pool for ScaleXRouter
         PoolKey memory poolKey = PoolKey({
             baseCurrency: Currency.wrap(address(usdc)),
-            quoteCurrency: Currency.wrap(address(weth))
+            quoteCurrency: Currency.wrap(address(weth)),
+            feeTier: 20
         });
         IPoolManager.Pool memory pool = poolManager.getPool(poolKey);
         
@@ -353,7 +358,8 @@ contract AutoRepayTest is Test, IPriceOracle {
         // Try to place a sell order for USDC with autoBorrow (sell USDC that we don't have)
         PoolKey memory poolKey = PoolKey({
             baseCurrency: Currency.wrap(address(usdc)),
-            quoteCurrency: Currency.wrap(address(weth))
+            quoteCurrency: Currency.wrap(address(weth)),
+            feeTier: 20
         });
         IPoolManager.Pool memory pool = poolManager.getPool(poolKey);
         
@@ -409,7 +415,8 @@ contract AutoRepayTest is Test, IPriceOracle {
         
         PoolKey memory poolKey = PoolKey({
             baseCurrency: Currency.wrap(address(usdc)),
-            quoteCurrency: Currency.wrap(address(weth))
+            quoteCurrency: Currency.wrap(address(weth)),
+            feeTier: 20
         });
         IPoolManager.Pool memory pool = poolManager.getPool(poolKey);
         
@@ -452,7 +459,8 @@ contract AutoRepayTest is Test, IPriceOracle {
         
         PoolKey memory poolKey = PoolKey({
             baseCurrency: Currency.wrap(address(usdc)),
-            quoteCurrency: Currency.wrap(address(weth))
+            quoteCurrency: Currency.wrap(address(weth)),
+            feeTier: 20
         });
         IPoolManager.Pool memory pool = poolManager.getPool(poolKey);
         

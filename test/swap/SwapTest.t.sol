@@ -158,7 +158,7 @@ contract SwapTest is Test {
 
         // Create pool
         vm.startPrank(owner);
-        poolManager.createPool(Currency.wrap(address(weth)), Currency.wrap(address(usdc)), rules);
+        poolManager.createPool(Currency.wrap(address(weth)), Currency.wrap(address(usdc)), rules, 20);
         vm.stopPrank();
     }
 

@@ -67,4 +67,6 @@ interface IPoolManager is IPoolManagerErrors {
     function getPoolLiquidityScore(Currency currency1, Currency currency2) external view returns (uint256);
 
     function createPoolKey(Currency currency1, Currency currency2) external pure returns (PoolKey memory);
+
+    function createPoolKey(Currency currency1, Currency currency2, uint24 feeTier) external pure returns (PoolKey memory);
 }

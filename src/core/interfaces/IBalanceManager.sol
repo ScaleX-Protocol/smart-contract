@@ -87,6 +87,7 @@ interface IBalanceManager {
     function getSyntheticToken(address realToken) external view returns (address);
     function feeMaker() external view returns (uint256);
     function feeTaker() external view returns (uint256);
+    function feeProtocol() external view returns (uint256);
     function feeReceiver() external view returns (address);
     function getFeeUnit() external pure returns (uint256);
     function transferOut(address from, address to, Currency currency, uint256 amount) external;
@@ -102,6 +103,7 @@ interface IBalanceManager {
     function setPoolManager(address poolManager) external;
     function setAuthorizedOperator(address operator, bool authorized) external;
     function setFees(uint256 feeMaker, uint256 feeTaker) external;
+    function setFeeProtocol(uint256 feeProtocol) external;
     function setLendingManager(address lendingManager) external;
     function setTokenFactory(address tokenFactory) external;
     function setTokenRegistry(address tokenRegistry) external;
@@ -166,8 +168,8 @@ interface IBalanceManager {
     event TokenFactorySet(address indexed tokenFactory);
 
     // Standard balance manager events
-    event TransferLockedFrom(address indexed operator, address indexed from, address indexed to, uint256 currencyId, uint256 amount, uint256 fee);
-    event TransferFrom(address indexed operator, address indexed from, address indexed to, uint256 currencyId, uint256 amount, uint256 fee);
+    event TransferLockedFrom(address indexed operator, address indexed from, address indexed to, uint256 currencyId, uint256 amount, uint256 fee, uint256 protocolFee, uint256 makerReward);
+    event TransferFrom(address indexed operator, address indexed from, address indexed to, uint256 currencyId, uint256 amount, uint256 fee, uint256 protocolFee, uint256 makerReward);
 
     // Local deposit event
     event LocalDeposit(

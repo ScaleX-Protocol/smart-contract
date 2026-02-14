@@ -259,19 +259,7 @@ contract OrderBook is Initializable, OwnableUpgradeable, ReentrancyGuardUpgradea
             );
         }
 
-        // Inline lock amount to save bytecode
-        {
-            uint256 amountToLock;
-            Currency currencyToLock;
-            if (side == Side.BUY) {
-                amountToLock = PoolIdLibrary.baseToQuote(quantity, price, $.poolKey.baseCurrency.decimals());
-                currencyToLock = $.poolKey.quoteCurrency;
-            } else {
-                amountToLock = quantity;
-                currencyToLock = $.poolKey.baseCurrency;
-            }
-            IBalanceManager($.balanceManager).lock(user, currencyToLock, amountToLock);
-        }
+        IBalanceManager($.balanceManager).lock(user, currencyToLock, amountToLock);
 
         _addOrderToQueue(newOrder);
 
@@ -450,13 +438,7 @@ contract OrderBook is Initializable, OwnableUpgradeable, ReentrancyGuardUpgradea
 
         emit UpdateOrder(orderId, uint48(block.timestamp), filled, finalStatus);
 
-        IBalanceManager bm = IBalanceManager($.balanceManager);
-        uint256 feeTaker = bm.feeTaker();
-        uint256 feeUnit = bm.getFeeUnit();
-        // address feeReceiver = bm.feeReceiver();
-
-        uint128 feeAmount = uint128(uint256(filled) * feeTaker / feeUnit);
-        receivedAmount = filled > feeAmount ? filled - feeAmount : 0;
+        receivedAmount = _deductTakerFee(filled);
 
         unchecked {
             $.nextOrderId++;
@@ -516,12 +498,7 @@ contract OrderBook is Initializable, OwnableUpgradeable, ReentrancyGuardUpgradea
 
         emit UpdateOrder(orderId, uint48(block.timestamp), baseAmountFilled, finalStatus);
 
-        IBalanceManager bm = IBalanceManager($.balanceManager);
-        uint256 feeTaker = bm.feeTaker();
-        uint256 feeUnit = bm.getFeeUnit();
-
-        uint128 feeAmount = uint128(uint256(baseAmountFilled) * feeTaker / feeUnit);
-        receivedAmount = baseAmountFilled > feeAmount ? baseAmountFilled - feeAmount : 0;
+        receivedAmount = _deductTakerFee(baseAmountFilled);
 
         unchecked {
             $.nextOrderId++;
@@ -1347,14 +1324,12 @@ contract OrderBook is Initializable, OwnableUpgradeable, ReentrancyGuardUpgradea
         }
     }
 
-    // Auto-repay helper removed - simplified approach
+    function _deductTakerFee(uint128 filled) private view returns (uint128) {
+        IBalanceManager bm = IBalanceManager(getStorage().balanceManager);
+        uint128 feeAmount = uint128(uint256(filled) * bm.feeTaker() / bm.getFeeUnit());
+        return filled > feeAmount ? filled - feeAmount : 0;
+    }
 
-    // Auto-repay errors
     error NoDebtToRepay();
-    
-    // Auto-borrow errors  
-    error NoCollateralToBorrow();
-    error AutoBorrowOnlyForSellOrders();
-    
     error NotAuthorized();
 }

@@ -72,8 +72,10 @@ contract ViewPosition is Script {
         console.log("");
 
         console.log("=== TIMESTAMPS ===");
-        console.log("Created At:", position.createdAt, "(", _timestampToDate(position.createdAt), ")");
-        console.log("Last Rebalanced:", position.lastRebalancedAt, "(", _timestampToDate(position.lastRebalancedAt), ")");
+        console.log("Created At:", position.createdAt);
+        console.log("  Formatted:", _timestampToDate(position.createdAt));
+        console.log("Last Rebalanced:", position.lastRebalancedAt);
+        console.log("  Formatted:", _timestampToDate(position.lastRebalancedAt));
         console.log("Rebalance Count:", position.rebalanceCount);
         console.log("");
 
@@ -93,15 +95,15 @@ contract ViewPosition is Script {
 
         console.log("=== REBALANCE STATUS ===");
         console.log("Can Rebalance:", canReb);
-        console.log("Current Price Drift:", drift, "bps (", _bpsToPercent(drift), "%)");
-        console.log("Threshold:", position.rebalanceThresholdBps, "bps (", _bpsToPercent(position.rebalanceThresholdBps), "%)");
+        console.log("Current Price Drift:", drift, string.concat("bps (", _bpsToPercent(drift), "%)"));
+        console.log("Threshold:", position.rebalanceThresholdBps, string.concat("bps (", _bpsToPercent(position.rebalanceThresholdBps), "%)"));
 
         if (canReb) {
             console.log("");
             console.log("[!] Position is ready for rebalancing");
         } else if (position.autoRebalanceEnabled) {
             uint256 remaining = position.rebalanceThresholdBps > drift ? position.rebalanceThresholdBps - drift : 0;
-            console.log("Drift needed for rebalance:", remaining, "bps (", _bpsToPercent(remaining), "%)");
+            console.log("Drift needed for rebalance:", remaining, string.concat("bps (", _bpsToPercent(remaining), "%)"));
         }
 
         console.log("");

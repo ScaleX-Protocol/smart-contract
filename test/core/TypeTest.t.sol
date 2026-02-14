@@ -10,8 +10,8 @@ contract TypeTest is Test {
         // Arrange
         Currency baseCurrency = Currency.wrap(address(0x1));
         Currency quoteCurrency = Currency.wrap(address(0x2));
-        PoolKey memory poolKey1 = PoolKey(baseCurrency, quoteCurrency);
-        PoolKey memory poolKey2 = PoolKey(baseCurrency, quoteCurrency);
+        PoolKey memory poolKey1 = PoolKey(baseCurrency, quoteCurrency, 20);
+        PoolKey memory poolKey2 = PoolKey(baseCurrency, quoteCurrency, 20);
 
         // Act
         PoolId id1 = poolKey1.toId();
@@ -27,11 +27,11 @@ contract TypeTest is Test {
         // Arrange
         Currency baseCurrency1 = Currency.wrap(address(0x1));
         Currency quoteCurrency1 = Currency.wrap(address(0x2));
-        PoolKey memory poolKey1 = PoolKey(baseCurrency1, quoteCurrency1);
+        PoolKey memory poolKey1 = PoolKey(baseCurrency1, quoteCurrency1, 20);
 
         Currency baseCurrency2 = Currency.wrap(address(0x3));
         Currency quoteCurrency2 = Currency.wrap(address(0x4));
-        PoolKey memory poolKey2 = PoolKey(baseCurrency2, quoteCurrency2);
+        PoolKey memory poolKey2 = PoolKey(baseCurrency2, quoteCurrency2, 20);
 
         // Act
         PoolId id1 = poolKey1.toId();

@@ -81,7 +81,8 @@ contract OrderMatchingTest is Test {
 
         PoolKey memory key = PoolKey({
             baseCurrency: Currency.wrap(baseTokenAddress),
-            quoteCurrency: Currency.wrap(quoteTokenAddress)
+            quoteCurrency: Currency.wrap(quoteTokenAddress),
+            feeTier: 20
         });
 
         BeaconDeployer beaconDeployer = new BeaconDeployer();
@@ -224,7 +225,7 @@ contract OrderMatchingTest is Test {
         );
         vm.stopPrank();
 
-        poolManager.createPool(baseCurrency, quoteCurrency, rules);
+        poolManager.createPool(baseCurrency, quoteCurrency, rules, 20);
 
         key = poolManager.createPoolKey(baseCurrency, quoteCurrency);
 

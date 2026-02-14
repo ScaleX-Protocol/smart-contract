@@ -160,7 +160,7 @@ contract ScaleXRouterBasicTest is Test {
             minPriceMovement: 1e4 // 0.01 USDC with 6 decimals
         });
         
-        poolManager.createPool(weth, usdc, defaultTradingRules);
+        poolManager.createPool(weth, usdc, defaultTradingRules, 20);
         vm.stopPrank();
     }
 

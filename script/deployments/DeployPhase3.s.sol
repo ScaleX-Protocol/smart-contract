@@ -432,12 +432,13 @@ contract DeployPhase3 is Script {
                 PoolId wethQuotePoolId = pm.createPool(
                     Currency.wrap(sxWETH),      // base currency (WETH)
                     Currency.wrap(sxQuote),     // quote currency (dynamic)
-                    tradingRules
+                    tradingRules,
+                    20
                 );
 
                 // Get the OrderBook address from the newly created pool
                 wethQuotePool = pm.getPool(
-                    pm.createPoolKey(Currency.wrap(sxWETH), Currency.wrap(sxQuote))
+                    PoolKey({baseCurrency: Currency.wrap(sxWETH), quoteCurrency: Currency.wrap(sxQuote), feeTier: 20})
                 );
                 wethQuoteOrderBook = address(wethQuotePool.orderBook);
 
@@ -462,12 +463,13 @@ contract DeployPhase3 is Script {
                 PoolId wbtcQuotePoolId = pm.createPool(
                     Currency.wrap(sxWBTC),      // base currency (WBTC)
                     Currency.wrap(sxQuote),     // quote currency (dynamic)
-                    tradingRules
+                    tradingRules,
+                    20
                 );
 
                 // Get the OrderBook address from the newly created pool
                 wbtcQuotePool = pm.getPool(
-                    pm.createPoolKey(Currency.wrap(sxWBTC), Currency.wrap(sxQuote))
+                    PoolKey({baseCurrency: Currency.wrap(sxWBTC), quoteCurrency: Currency.wrap(sxQuote), feeTier: 20})
                 );
                 wbtcQuoteOrderBook = address(wbtcQuotePool.orderBook);
 
@@ -492,9 +494,10 @@ contract DeployPhase3 is Script {
                 PoolId goldQuotePoolId = pm.createPool(
                     Currency.wrap(sxGOLD),
                     Currency.wrap(sxQuote),
-                    tradingRules
+                    tradingRules,
+                    20
                 );
-                goldQuotePool = pm.getPool(pm.createPoolKey(Currency.wrap(sxGOLD), Currency.wrap(sxQuote)));
+                goldQuotePool = pm.getPool(PoolKey({baseCurrency: Currency.wrap(sxGOLD), quoteCurrency: Currency.wrap(sxQuote), feeTier: 20}));
                 goldQuoteOrderBook = address(goldQuotePool.orderBook);
                 console.log(string.concat("[OK] GOLD/", quoteSymbol, " pool created with OrderBook:"), goldQuoteOrderBook);
                 BalanceManager(balanceManager).setAuthorizedOperator(goldQuoteOrderBook, true);
@@ -511,9 +514,10 @@ contract DeployPhase3 is Script {
                 PoolId silverQuotePoolId = pm.createPool(
                     Currency.wrap(sxSILVER),
                     Currency.wrap(sxQuote),
-                    tradingRules
+                    tradingRules,
+                    20
                 );
-                silverQuotePool = pm.getPool(pm.createPoolKey(Currency.wrap(sxSILVER), Currency.wrap(sxQuote)));
+                silverQuotePool = pm.getPool(PoolKey({baseCurrency: Currency.wrap(sxSILVER), quoteCurrency: Currency.wrap(sxQuote), feeTier: 20}));
                 silverQuoteOrderBook = address(silverQuotePool.orderBook);
                 console.log(string.concat("[OK] SILVER/", quoteSymbol, " pool created with OrderBook:"), silverQuoteOrderBook);
                 BalanceManager(balanceManager).setAuthorizedOperator(silverQuoteOrderBook, true);
@@ -530,9 +534,10 @@ contract DeployPhase3 is Script {
                 PoolId googleQuotePoolId = pm.createPool(
                     Currency.wrap(sxGOOGLE),
                     Currency.wrap(sxQuote),
-                    tradingRules
+                    tradingRules,
+                    20
                 );
-                googleQuotePool = pm.getPool(pm.createPoolKey(Currency.wrap(sxGOOGLE), Currency.wrap(sxQuote)));
+                googleQuotePool = pm.getPool(PoolKey({baseCurrency: Currency.wrap(sxGOOGLE), quoteCurrency: Currency.wrap(sxQuote), feeTier: 20}));
                 googleQuoteOrderBook = address(googleQuotePool.orderBook);
                 console.log(string.concat("[OK] GOOGLE/", quoteSymbol, " pool created with OrderBook:"), googleQuoteOrderBook);
                 BalanceManager(balanceManager).setAuthorizedOperator(googleQuoteOrderBook, true);
@@ -549,9 +554,10 @@ contract DeployPhase3 is Script {
                 PoolId nvidiaQuotePoolId = pm.createPool(
                     Currency.wrap(sxNVIDIA),
                     Currency.wrap(sxQuote),
-                    tradingRules
+                    tradingRules,
+                    20
                 );
-                nvidiaQuotePool = pm.getPool(pm.createPoolKey(Currency.wrap(sxNVIDIA), Currency.wrap(sxQuote)));
+                nvidiaQuotePool = pm.getPool(PoolKey({baseCurrency: Currency.wrap(sxNVIDIA), quoteCurrency: Currency.wrap(sxQuote), feeTier: 20}));
                 nvidiaQuoteOrderBook = address(nvidiaQuotePool.orderBook);
                 console.log(string.concat("[OK] NVIDIA/", quoteSymbol, " pool created with OrderBook:"), nvidiaQuoteOrderBook);
                 BalanceManager(balanceManager).setAuthorizedOperator(nvidiaQuoteOrderBook, true);
@@ -568,9 +574,10 @@ contract DeployPhase3 is Script {
                 PoolId mntQuotePoolId = pm.createPool(
                     Currency.wrap(sxMNT),
                     Currency.wrap(sxQuote),
-                    tradingRules
+                    tradingRules,
+                    20
                 );
-                mntQuotePool = pm.getPool(pm.createPoolKey(Currency.wrap(sxMNT), Currency.wrap(sxQuote)));
+                mntQuotePool = pm.getPool(PoolKey({baseCurrency: Currency.wrap(sxMNT), quoteCurrency: Currency.wrap(sxQuote), feeTier: 20}));
                 mntQuoteOrderBook = address(mntQuotePool.orderBook);
                 console.log(string.concat("[OK] MNT/", quoteSymbol, " pool created with OrderBook:"), mntQuoteOrderBook);
                 BalanceManager(balanceManager).setAuthorizedOperator(mntQuoteOrderBook, true);
@@ -587,9 +594,10 @@ contract DeployPhase3 is Script {
                 PoolId appleQuotePoolId = pm.createPool(
                     Currency.wrap(sxAPPLE),
                     Currency.wrap(sxQuote),
-                    tradingRules
+                    tradingRules,
+                    20
                 );
-                appleQuotePool = pm.getPool(pm.createPoolKey(Currency.wrap(sxAPPLE), Currency.wrap(sxQuote)));
+                appleQuotePool = pm.getPool(PoolKey({baseCurrency: Currency.wrap(sxAPPLE), quoteCurrency: Currency.wrap(sxQuote), feeTier: 20}));
                 appleQuoteOrderBook = address(appleQuotePool.orderBook);
                 console.log(string.concat("[OK] APPLE/", quoteSymbol, " pool created with OrderBook:"), appleQuoteOrderBook);
                 BalanceManager(balanceManager).setAuthorizedOperator(appleQuoteOrderBook, true);

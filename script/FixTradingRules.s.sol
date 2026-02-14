@@ -22,7 +22,8 @@ contract FixTradingRules is Script {
         // Get pool
         PoolKey memory poolKey = PoolKey({
             baseCurrency: Currency.wrap(sxWETH),
-            quoteCurrency: Currency.wrap(sxIDRX)
+            quoteCurrency: Currency.wrap(sxIDRX),
+            feeTier: 20
         });
 
         IPoolManager.Pool memory pool = IPoolManager(poolManager).getPool(poolKey);

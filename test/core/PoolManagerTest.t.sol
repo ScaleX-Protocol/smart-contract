@@ -104,20 +104,20 @@ contract PoolManagerTest is Test {
     }
 
     function testInitializePoolRevertsIfRouterNotSet() public {
-        PoolKey memory key = PoolKey(weth, usdc);
+        PoolKey memory key = PoolKey(weth, usdc, 20);
 
         vm.expectRevert(abi.encodeWithSignature("InvalidRouter()"));
         vm.startPrank(owner);
-        poolManager.createPool(weth, usdc, defaultTradingRules);
+        poolManager.createPool(weth, usdc, defaultTradingRules, 20);
         vm.stopPrank();
     }
 
     function testInitializePool() public {
-        PoolKey memory key = PoolKey(weth, usdc);
+        PoolKey memory key = PoolKey(weth, usdc, 20);
 
         vm.startPrank(owner);
         poolManager.setRouter(operator);
-        poolManager.createPool(weth, usdc, defaultTradingRules);
+        poolManager.createPool(weth, usdc, defaultTradingRules, 20);
         vm.stopPrank();
 
         IPoolManager.Pool memory pool = poolManager.getPool(key);
@@ -126,7 +126,7 @@ contract PoolManagerTest is Test {
     }
 
     function testGetPoolId() public view {
-        PoolKey memory key = PoolKey(weth, usdc);
+        PoolKey memory key = PoolKey(weth, usdc, 20);
 
         PoolId expectedId = key.toId();
         PoolId actualId = poolManager.getPoolId(key);
@@ -140,7 +140,7 @@ contract PoolManagerTest is Test {
     }
 
     function testCreatePoolWithInvalidTradingRules() public {
-        PoolKey memory key = PoolKey(weth, usdc);
+        PoolKey memory key = PoolKey(weth, usdc, 20);
 
         IOrderBook.TradingRules memory invalidRules =
             IOrderBook.TradingRules({minTradeAmount: 0, minAmountMovement: 0, minOrderSize: 0, minPriceMovement: 0});
@@ -148,12 +148,12 @@ contract PoolManagerTest is Test {
         vm.startPrank(owner);
         poolManager.setRouter(operator);
         vm.expectRevert();
-        poolManager.createPool(weth, usdc, invalidRules);
+        poolManager.createPool(weth, usdc, invalidRules, 20);
         vm.stopPrank();
     }
 
     function testOverrideTradingRules() public {
-        PoolKey memory key = PoolKey(weth, usdc);
+        PoolKey memory key = PoolKey(weth, usdc, 20);
 
         IOrderBook.TradingRules memory customRules = IOrderBook.TradingRules({
             minTradeAmount: 2e14,
@@ -164,7 +164,7 @@ contract PoolManagerTest is Test {
 
         vm.startPrank(owner);
         poolManager.setRouter(operator);
-        poolManager.createPool(weth, usdc, customRules);
+        poolManager.createPool(weth, usdc, customRules, 20);
         vm.stopPrank();
 
         IPoolManager.Pool memory pool = poolManager.getPool(key);

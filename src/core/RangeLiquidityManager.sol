@@ -520,8 +520,17 @@ contract RangeLiquidityManager is
         if (params.tickCount == 0 || params.tickCount > 100) {
             revert InvalidTickCount(params.tickCount);
         }
-        // Validate tick spacing (must be 50 or 200 as per requirements)
-        if (params.tickSpacing != 50 && params.tickSpacing != 200) {
+        // Validate fee tier first (0.2% = 20bps or 0.5% = 50bps)
+        if (params.poolKey.feeTier != 20 && params.poolKey.feeTier != 50) {
+            revert InvalidFeeTier(params.poolKey.feeTier);
+        }
+        // Validate tick spacing must match fee tier:
+        //   feeTier 20 (0.2%) → tickSpacing 50
+        //   feeTier 50 (0.5%) → tickSpacing 200
+        if (params.poolKey.feeTier == 20 && params.tickSpacing != 50) {
+            revert InvalidTickSpacing(params.tickSpacing);
+        }
+        if (params.poolKey.feeTier == 50 && params.tickSpacing != 200) {
             revert InvalidTickSpacing(params.tickSpacing);
         }
         if (params.depositAmount == 0) {
@@ -536,10 +545,6 @@ contract RangeLiquidityManager is
             params.strategy != Strategy.ASK_HEAVY
         ) {
             revert InvalidStrategy(params.strategy);
-        }
-        // Validate fee tier (0.2% = 20bps or 0.5% = 50bps)
-        if (params.poolKey.feeTier != 20 && params.poolKey.feeTier != 50) {
-            revert InvalidFeeTier(params.poolKey.feeTier);
         }
     }
 

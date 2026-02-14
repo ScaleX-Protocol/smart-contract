@@ -144,7 +144,7 @@ contract CalculateMinOutAmountTest is Test {
         balanceManager.setAuthorizedOperator(address(routerProxy), true);
         poolManager.setRouter(address(scalexRouter));
         poolManager.addCommonIntermediary(usdc);
-        poolManager.createPool(weth, usdc, defaultTradingRules);
+        poolManager.createPool(weth, usdc, defaultTradingRules, 20);
         vm.stopPrank();
     }
 
