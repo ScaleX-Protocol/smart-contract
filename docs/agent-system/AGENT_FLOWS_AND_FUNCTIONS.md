@@ -15,6 +15,22 @@ Complete guide to AI agent workflows and the smart contract functions used at ea
 
 ## 1. Agent Lifecycle Flow
 
+### Prerequisites Table
+
+| Action | Requires Agent NFT | Requires Policy | Requires Executor Auth |
+|--------|-------------------|-----------------|----------------------|
+| `registerAgent()` | ❌ Creates it | ❌ | ❌ |
+| `installAgent()` | ✅ | ❌ Creates it | ❌ |
+| `authorizeExecutor()` | ✅ | ❌ | ❌ |
+| `placeLimitOrder()` | ✅ | ✅ | ✅ |
+| `executeSwap()` | ✅ | ✅ | ✅ |
+| `executeBorrow()` | ✅ | ✅ | ✅ |
+| `cancelOrder()` | ✅ | ✅ | ✅ |
+
+**Key Insight:** You can authorize an executor before installing a policy, but the executor cannot trade until the policy is installed.
+
+---
+
 ### 1.1 Agent Registration Flow
 
 ```
@@ -82,7 +98,7 @@ Owner → AgentRouter.authorizeExecutor()
   ↓
 Executor Address Added
   ↓
-Executor Can Trade on Behalf of Agent
+Executor Authorized (but needs policy to trade)
 ```
 
 **Smart Contract Functions:**
@@ -95,9 +111,27 @@ function authorizeExecutor(
 ```
 
 **What Happens:**
-- Verifies caller owns the agent
+- Verifies caller owns the agent (via IdentityRegistry)
 - Authorizes executor address
-- Executor can now call agent trading functions
+- Stores authorization in mapping
+
+**Important Notes:**
+- ✅ **Policy NOT required** to authorize executor
+- ⚠️ **Policy IS required** for executor to actually trade
+- 💡 **Best practice:** Install policy first, then authorize executor
+
+**Valid Order Options:**
+```
+Option A (Recommended):
+1. Register Agent
+2. Install Policy
+3. Authorize Executor → Can trade immediately
+
+Option B (Also Valid):
+1. Register Agent
+2. Authorize Executor → Authorized but cannot trade yet
+3. Install Policy → Now can trade
+```
 
 ---
 
@@ -147,14 +181,28 @@ function placeLimitOrder(
 **Flow Details:**
 1. **Executor calls** `AgentRouter.placeLimitOrder()`
 2. **AgentRouter validates:**
-   - Executor is authorized for this agent
-   - Agent policy allows this trade
-   - Order within policy limits
+   - ✅ Executor is authorized for this agent (checks authorization mapping)
+   - ✅ Policy is installed (reverts if not installed)
+   - ✅ Agent policy allows this trade (calls policy validation)
+   - ✅ Order within policy limits (price, quantity, asset restrictions)
 3. **AgentRouter calls** `OrderBook.placeLimitOrder()` with agent tracking
 4. **OrderBook:**
    - Records order with `agentTokenId` and `executor`
    - Emits `OrderPlaced` event
 5. **AgentRouter emits** `AgentLimitOrderPlaced` event
+
+**Validation Order:**
+```solidity
+// 1. Check executor authorization
+require(isAuthorizedExecutor(agentTokenId, msg.sender), "Not authorized");
+
+// 2. Get and verify policy exists
+IAgentPolicy policy = policyFactory.getAgentPolicy(agentTokenId);
+require(address(policy) != address(0), "No policy installed");
+
+// 3. Validate trade against policy
+policy.validateTrade(baseToken, quoteToken, price, quantity, isBuy);
+```
 
 ---
 
