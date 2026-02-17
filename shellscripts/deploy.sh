@@ -24,7 +24,7 @@
 # - TENDERLY_ACCESS_KEY: Tenderly access key (optional, for private projects)
 #
 # USAGE EXAMPLES:
-# # Basic usage (uses defaults):
+# # Basic usage (deploys upgradeable agent infrastructure):
 # bash shellscripts/deploy.sh
 #
 # # With custom RPC:
@@ -1648,7 +1648,8 @@ ORACLE_ADDRESS=$(cat ./deployments/${CORE_CHAIN_ID}.json | jq -r '.Oracle // "0x
         # Step 3.6: Phase 5 - AI Agent Infrastructure Deployment
         print_step "Step 3.6: Phase 5 - AI Agent Infrastructure Deployment..."
 
-        echo "  🤖 Deploying Agent Infrastructure (this will show transaction details)..."
+        echo "  🤖 Deploying Agent Infrastructure (Upgradeable ERC-8004)..."
+
         if [[ -n "$VERIFY_FLAGS" ]]; then
             if eval "forge script script/deployments/DeployPhase5.s.sol:DeployPhase5 \
                 --rpc-url \"\${SCALEX_CORE_RPC}\" \
@@ -1683,13 +1684,24 @@ ORACLE_ADDRESS=$(cat ./deployments/${CORE_CHAIN_ID}.json | jq -r '.Oracle // "0x
         # Verify Agent Infrastructure was deployed
         POLICY_FACTORY=$(cat ./deployments/${CORE_CHAIN_ID}.json | jq -r '.PolicyFactory // "0x0000000000000000000000000000000000000000"')
         AGENT_ROUTER=$(cat ./deployments/${CORE_CHAIN_ID}.json | jq -r '.AgentRouter // "0x0000000000000000000000000000000000000000"')
+        IDENTITY_REGISTRY=$(cat ./deployments/${CORE_CHAIN_ID}.json | jq -r '.IdentityRegistry // "0x0000000000000000000000000000000000000000"')
+        REPUTATION_REGISTRY=$(cat ./deployments/${CORE_CHAIN_ID}.json | jq -r '.ReputationRegistry // "0x0000000000000000000000000000000000000000"')
+        VALIDATION_REGISTRY=$(cat ./deployments/${CORE_CHAIN_ID}.json | jq -r '.ValidationRegistry // "0x0000000000000000000000000000000000000000"')
 
         if [[ "$POLICY_FACTORY" != "0x0000000000000000000000000000000000000000" ]] && [[ "$AGENT_ROUTER" != "0x0000000000000000000000000000000000000000" ]]; then
-            print_success "Agent Infrastructure deployed:"
-            echo "  PolicyFactory: $POLICY_FACTORY"
-            echo "  AgentRouter: $AGENT_ROUTER"
+            print_success "Agent Infrastructure deployed successfully:"
+            echo "  📋 Core Contracts:"
+            echo "    - PolicyFactory: $POLICY_FACTORY"
+            echo "    - AgentRouter: $AGENT_ROUTER"
+
+            if [[ "$IDENTITY_REGISTRY" != "0x0000000000000000000000000000000000000000" ]]; then
+                echo "  🔐 ERC-8004 Registries (Upgradeable):"
+                echo "    - IdentityRegistry: $IDENTITY_REGISTRY"
+                echo "    - ReputationRegistry: $REPUTATION_REGISTRY"
+                echo "    - ValidationRegistry: $VALIDATION_REGISTRY"
+            fi
         else
-            print_error "Agent Infrastructure deployment failed - addresses are zero"
+            print_error "Agent Infrastructure deployment failed - core addresses are zero"
         fi
 
         # Add delay before Oracle Token Configuration
