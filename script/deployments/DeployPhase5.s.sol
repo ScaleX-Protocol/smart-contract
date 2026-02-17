@@ -4,22 +4,31 @@ pragma solidity ^0.8.26;
 import "forge-std/Script.sol";
 import {PolicyFactory} from "@scalexagents/PolicyFactory.sol";
 import {AgentRouter} from "@scalexagents/AgentRouter.sol";
-import {MockERC8004Identity} from "@scalexagents/mocks/MockERC8004Identity.sol";
-import {MockERC8004Reputation} from "@scalexagents/mocks/MockERC8004Reputation.sol";
-import {MockERC8004Validation} from "@scalexagents/mocks/MockERC8004Validation.sol";
+import {IdentityRegistryUpgradeable} from "@scalexagents/registries/IdentityRegistryUpgradeable.sol";
+import {ReputationRegistryUpgradeable} from "@scalexagents/registries/ReputationRegistryUpgradeable.sol";
+import {ValidationRegistryUpgradeable} from "@scalexagents/registries/ValidationRegistryUpgradeable.sol";
+import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import {BalanceManager} from "@scalexcore/BalanceManager.sol";
 import {LendingManager} from "@scalex/yield/LendingManager.sol";
+import {IPoolManager} from "@scalexcore/interfaces/IPoolManager.sol";
+import {PoolManager} from "@scalexcore/PoolManager.sol";
+import {IOracle} from "@scalexcore/interfaces/IOracle.sol";
+import {Oracle} from "@scalexcore/Oracle.sol";
 
 /**
  * @title DeployPhase5
- * @notice Deploys and configures AI Agent Infrastructure (ERC-8004 system)
- * @dev Executes after Phase 4 to add agent capabilities
+ * @notice Deploys and configures AI Agent Infrastructure using ERC-8004 contracts
+ * @dev Uses upgradeable ERC-8004 registries with UUPS proxy pattern
+ *      Includes all necessary authorizations to prevent deployment issues
  */
 contract DeployPhase5 is Script {
     struct Phase5Deployment {
         address identityRegistry;
+        address identityImplementation;
         address reputationRegistry;
+        address reputationImplementation;
         address validationRegistry;
+        address validationImplementation;
         address policyFactory;
         address agentRouter;
         address deployer;
@@ -28,7 +37,7 @@ contract DeployPhase5 is Script {
     }
 
     function run() external returns (Phase5Deployment memory deployment) {
-        console.log("=== PHASE 5: AI AGENT INFRASTRUCTURE DEPLOYMENT ===");
+        console.log("=== PHASE 5: AI AGENT INFRASTRUCTURE DEPLOYMENT (ERC-8004 UPGRADEABLE) ===");
         console.log("");
 
         uint256 deployerPrivateKey = vm.envUint("PRIVATE_KEY");
@@ -50,41 +59,91 @@ contract DeployPhase5 is Script {
         address poolManager = _extractAddress(json, "PoolManager");
         address balanceManager = _extractAddress(json, "BalanceManager");
         address lendingManager = _extractAddress(json, "LendingManager");
+        address oracle = _extractAddress(json, "Oracle");
+        address IDRX = _extractAddress(json, "IDRX");
+        address sxIDRX = _extractAddress(json, "sxIDRX");
 
         console.log("Loaded addresses:");
         console.log("  PoolManager:", poolManager);
         console.log("  BalanceManager:", balanceManager);
         console.log("  LendingManager:", lendingManager);
+        console.log("  Oracle:", oracle);
+        console.log("  IDRX:", IDRX);
+        console.log("  sxIDRX:", sxIDRX);
         console.log("");
 
         // Validate addresses
         require(poolManager != address(0), "PoolManager address is zero");
         require(balanceManager != address(0), "BalanceManager address is zero");
         require(lendingManager != address(0), "LendingManager address is zero");
+        require(oracle != address(0), "Oracle address is zero");
+        require(IDRX != address(0), "IDRX address is zero");
+        require(sxIDRX != address(0), "sxIDRX address is zero");
 
         vm.startBroadcast(deployerPrivateKey);
 
-        // Step 1: Deploy ERC-8004 Mock Registries
-        console.log("Step 1: Deploying ERC-8004 Mock Registries...");
+        // Step 1: Deploy IdentityRegistry (Upgradeable)
+        console.log("Step 1: Deploying IdentityRegistry (ERC-8004 Upgradeable)...");
 
-        MockERC8004Identity identityRegistry = new MockERC8004Identity();
-        console.log("[OK] MockERC8004Identity deployed:", address(identityRegistry));
+        IdentityRegistryUpgradeable identityImpl = new IdentityRegistryUpgradeable();
+        console.log("[OK] IdentityRegistry Implementation:", address(identityImpl));
 
-        MockERC8004Reputation reputationRegistry = new MockERC8004Reputation();
-        console.log("[OK] MockERC8004Reputation deployed:", address(reputationRegistry));
+        // Deploy proxy WITHOUT initialization (initialize manually after)
+        ERC1967Proxy identityProxy = new ERC1967Proxy(
+            address(identityImpl),
+            ""  // Empty init data
+        );
+        console.log("[OK] IdentityRegistry Proxy:", address(identityProxy));
 
-        MockERC8004Validation validationRegistry = new MockERC8004Validation();
-        console.log("[OK] MockERC8004Validation deployed:", address(validationRegistry));
+        IdentityRegistryUpgradeable identityRegistry = IdentityRegistryUpgradeable(address(identityProxy));
+
+        // Initialize through the proxy
+        identityRegistry.initialize();
+        console.log("[OK] IdentityRegistry initialized");
         console.log("");
 
-        // Step 2: Deploy PolicyFactory
-        console.log("Step 2: Deploying PolicyFactory...");
+        // Step 2: Deploy ReputationRegistry (Upgradeable)
+        console.log("Step 2: Deploying ReputationRegistry (ERC-8004 Upgradeable)...");
+
+        ReputationRegistryUpgradeable reputationImpl = new ReputationRegistryUpgradeable();
+        console.log("[OK] ReputationRegistry Implementation:", address(reputationImpl));
+
+        ERC1967Proxy reputationProxy = new ERC1967Proxy(
+            address(reputationImpl),
+            ""  // Empty init data
+        );
+        console.log("[OK] ReputationRegistry Proxy:", address(reputationProxy));
+
+        ReputationRegistryUpgradeable reputationRegistry = ReputationRegistryUpgradeable(address(reputationProxy));
+        reputationRegistry.initialize(address(identityRegistry));
+        console.log("[OK] ReputationRegistry initialized");
+        console.log("");
+
+        // Step 3: Deploy ValidationRegistry (Upgradeable)
+        console.log("Step 3: Deploying ValidationRegistry (ERC-8004 Upgradeable)...");
+
+        ValidationRegistryUpgradeable validationImpl = new ValidationRegistryUpgradeable();
+        console.log("[OK] ValidationRegistry Implementation:", address(validationImpl));
+
+        ERC1967Proxy validationProxy = new ERC1967Proxy(
+            address(validationImpl),
+            ""  // Empty init data
+        );
+        console.log("[OK] ValidationRegistry Proxy:", address(validationProxy));
+
+        ValidationRegistryUpgradeable validationRegistry = ValidationRegistryUpgradeable(address(validationProxy));
+        validationRegistry.initialize(address(identityRegistry));
+        console.log("[OK] ValidationRegistry initialized");
+        console.log("");
+
+        // Step 4: Deploy PolicyFactory
+        console.log("Step 4: Deploying PolicyFactory...");
         PolicyFactory policyFactory = new PolicyFactory(address(identityRegistry));
         console.log("[OK] PolicyFactory deployed:", address(policyFactory));
         console.log("");
 
-        // Step 3: Deploy AgentRouter
-        console.log("Step 3: Deploying AgentRouter...");
+        // Step 5: Deploy AgentRouter
+        console.log("Step 5: Deploying AgentRouter...");
         AgentRouter agentRouter = new AgentRouter(
             address(identityRegistry),
             address(reputationRegistry),
@@ -97,46 +156,100 @@ contract DeployPhase5 is Script {
         console.log("[OK] AgentRouter deployed:", address(agentRouter));
         console.log("");
 
-        // Step 4: Authorize AgentRouter in PolicyFactory
-        console.log("Step 4: Authorizing AgentRouter in PolicyFactory...");
+        // Step 6: Authorize AgentRouter in PolicyFactory
+        console.log("Step 6: Authorizing AgentRouter in PolicyFactory...");
         policyFactory.setAuthorizedRouter(address(agentRouter), true);
         console.log("[OK] AgentRouter authorized in PolicyFactory");
         console.log("");
 
-        // Step 5: Authorize AgentRouter in BalanceManager
-        console.log("Step 5: Authorizing AgentRouter in BalanceManager...");
+        // Step 7: Authorize AgentRouter in BalanceManager
+        console.log("Step 7: Authorizing AgentRouter in BalanceManager...");
         BalanceManager(balanceManager).addAuthorizedOperator(address(agentRouter));
         console.log("[OK] AgentRouter authorized in BalanceManager");
         console.log("");
 
-        vm.stopBroadcast();
-
-        // Step 6: Update deployment file
-        console.log("Step 6: Updating deployment file...");
-        _updateDeploymentFile(
-            deploymentPath,
-            address(identityRegistry),
-            address(reputationRegistry),
-            address(validationRegistry),
-            address(policyFactory),
-            address(agentRouter)
-        );
-        console.log("[OK] Deployment file updated");
+        // Step 8: Authorize AgentRouter in all OrderBooks (via PoolManager.addAuthorizedRouterToOrderBook)
+        console.log("Step 8: Authorizing AgentRouter in all OrderBooks...");
+        {
+            string[8] memory poolKeys = ["WETH_IDRX_Pool", "WBTC_IDRX_Pool", "GOLD_IDRX_Pool", "SILVER_IDRX_Pool", "GOOGLE_IDRX_Pool", "NVIDIA_IDRX_Pool", "MNT_IDRX_Pool", "APPLE_IDRX_Pool"];
+            for (uint256 i = 0; i < poolKeys.length; i++) {
+                address orderBook = _extractAddress(json, poolKeys[i]);
+                if (orderBook != address(0)) {
+                    PoolManager(poolManager).addAuthorizedRouterToOrderBook(orderBook, address(agentRouter));
+                    console.log("[OK] AgentRouter authorized in OrderBook:", orderBook);
+                }
+            }
+        }
+        console.log("[OK] AgentRouter authorized in all OrderBooks");
         console.log("");
 
-        console.log("[SUCCESS] Phase 5 completed!");
+        // Step 9: Configure Oracle prices for IDRX and sxIDRX
+        console.log("Step 10: Configuring Oracle prices for IDRX and sxIDRX...");
+
+        // Register IDRX and sxIDRX in Oracle if not already added (priceId=0 for manual/fixed price)
+        try Oracle(oracle).addToken(IDRX, 0) {
+            console.log("[OK] IDRX registered in Oracle");
+        } catch {
+            console.log("[SKIP] IDRX already registered in Oracle");
+        }
+        try Oracle(oracle).addToken(sxIDRX, 0) {
+            console.log("[OK] sxIDRX registered in Oracle");
+        } catch {
+            console.log("[SKIP] sxIDRX already registered in Oracle");
+        }
+
+        // IDRX: $1 -> 1e2 = 100 (IDRX has 2 decimals, so 1e2 represents $1)
+        Oracle(oracle).setPrice(IDRX, 1e2);
+        console.log("[OK] Set IDRX price: 100 (raw) = $1.00");
+
+        // sxIDRX: $1 -> 1e2 = 100 (same as IDRX, 1:1 peg)
+        Oracle(oracle).setPrice(sxIDRX, 1e2);
+        console.log("[OK] Set sxIDRX price: 100 (raw) = $1.00");
+        console.log("");
+
+        // Verify oracle prices
+        uint256 idrxPrice = IOracle(oracle).getSpotPrice(IDRX);
+        uint256 sxIdrxPrice = IOracle(oracle).getSpotPrice(sxIDRX);
+        console.log("Verified oracle prices:");
+        console.log("  IDRX raw price:", idrxPrice, "= $", idrxPrice / 100);
+        console.log("  sxIDRX raw price:", sxIdrxPrice, "= $", sxIdrxPrice / 100);
+        console.log("");
+
+        vm.stopBroadcast();
+
+        console.log("");
+
+        console.log("[SUCCESS] Phase 5 completed with official ERC-8004 contracts!");
+        console.log("");
         console.log("Agent Infrastructure addresses:");
-        console.log("  IdentityRegistry:", address(identityRegistry));
-        console.log("  ReputationRegistry:", address(reputationRegistry));
-        console.log("  ValidationRegistry:", address(validationRegistry));
+        console.log("  IdentityRegistry (Proxy):", address(identityRegistry));
+        console.log("  IdentityRegistry (Impl):", address(identityImpl));
+        console.log("  ReputationRegistry (Proxy):", address(reputationRegistry));
+        console.log("  ReputationRegistry (Impl):", address(reputationImpl));
+        console.log("  ValidationRegistry (Proxy):", address(validationRegistry));
+        console.log("  ValidationRegistry (Impl):", address(validationImpl));
         console.log("  PolicyFactory:", address(policyFactory));
         console.log("  AgentRouter:", address(agentRouter));
+        console.log("");
+        console.log("Authorizations completed:");
+        console.log("  [OK] AgentRouter authorized in PolicyFactory");
+        console.log("  [OK] AgentRouter authorized in BalanceManager");
+        console.log("  [OK] AgentRouter authorized in PoolManager");
+        console.log("");
+        console.log("Oracle configuration completed:");
+        console.log("  [OK] IDRX price set to $1.00");
+        console.log("  [OK] sxIDRX price set to $1.00");
+        console.log("");
+        console.log("Ready for marketplace deployment!");
 
         // Return deployment info
         deployment = Phase5Deployment({
             identityRegistry: address(identityRegistry),
+            identityImplementation: address(identityImpl),
             reputationRegistry: address(reputationRegistry),
+            reputationImplementation: address(reputationImpl),
             validationRegistry: address(validationRegistry),
+            validationImplementation: address(validationImpl),
             policyFactory: address(policyFactory),
             agentRouter: address(agentRouter),
             deployer: deployer,
@@ -213,8 +326,11 @@ contract DeployPhase5 is Script {
     function _updateDeploymentFile(
         string memory deploymentPath,
         address identityRegistry,
+        address identityImplementation,
         address reputationRegistry,
+        address reputationImplementation,
         address validationRegistry,
+        address validationImplementation,
         address policyFactory,
         address agentRouter
     ) internal {
@@ -287,8 +403,11 @@ contract DeployPhase5 is Script {
             '  "SyntheticTokenFactory": "', vm.toString(syntheticTokenFactory), '",\n',
             '  "AutoBorrowHelper": "', vm.toString(autoBorrowHelper), '",\n',
             '  "IdentityRegistry": "', vm.toString(identityRegistry), '",\n',
+            '  "IdentityRegistryImplementation": "', vm.toString(identityImplementation), '",\n',
             '  "ReputationRegistry": "', vm.toString(reputationRegistry), '",\n',
+            '  "ReputationRegistryImplementation": "', vm.toString(reputationImplementation), '",\n',
             '  "ValidationRegistry": "', vm.toString(validationRegistry), '",\n',
+            '  "ValidationRegistryImplementation": "', vm.toString(validationImplementation), '",\n',
             '  "PolicyFactory": "', vm.toString(policyFactory), '",\n',
             '  "AgentRouter": "', vm.toString(agentRouter), '",\n',
             '  "', quoteSymbol, '": "', vm.toString(quoteToken), '",\n',

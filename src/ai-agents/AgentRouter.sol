@@ -11,6 +11,7 @@ import "../core/interfaces/IBalanceManager.sol";
 import "../core/interfaces/ILendingManager.sol";
 import "../core/interfaces/IPoolManager.sol";
 import {Currency} from "../core/libraries/Currency.sol";
+import {IERC20} from "../../lib/openzeppelin-contracts/contracts/token/ERC20/IERC20.sol";
 
 /**
  * @title AgentRouter
@@ -37,8 +38,11 @@ contract AgentRouter {
     mapping(uint256 => uint256) public lastTradeTime;  // agentTokenId => timestamp
     mapping(uint256 => mapping(uint256 => uint256)) public dailyVolumes;  // agentTokenId => day => volume
 
-    // Agent delegation - maps agentTokenId => executor address => authorized
-    mapping(uint256 => mapping(address => bool)) public authorizedExecutors;
+    // Maps strategy agent ID => executor wallet
+    mapping(uint256 => address) public agentExecutors;
+
+    // Maps user address => strategy agent ID => authorized
+    mapping(address => mapping(uint256 => bool)) public authorizedStrategyAgents;
 
     // ============ Events ============
 
@@ -128,17 +132,24 @@ contract AgentRouter {
         uint256 timestamp
     );
 
-    event ExecutorAuthorized(
-        address indexed owner,
-        uint256 indexed agentTokenId,
+    event AgentExecutorRegistered(
+        uint256 indexed strategyAgentId,
         address indexed executor,
+        address indexed owner,
         uint256 timestamp
     );
 
-    event ExecutorRevoked(
-        address indexed owner,
-        uint256 indexed agentTokenId,
-        address indexed executor,
+    event StrategyAgentAuthorized(
+        address indexed user,
+        uint256 indexed userAgentId,
+        uint256 indexed strategyAgentId,
+        uint256 timestamp
+    );
+
+    event StrategyAgentRevoked(
+        address indexed user,
+        uint256 indexed userAgentId,
+        uint256 indexed strategyAgentId,
         uint256 timestamp
     );
 
@@ -174,8 +185,9 @@ contract AgentRouter {
     // ============ Trading Functions ============
 
     /**
-     * @notice Execute a market order (swap) on behalf of an agent
-     * @param agentTokenId ERC-8004 agent token ID
+     * @notice Execute a market order (swap) using agent-based authorization
+     * @param userAgentId User's personal agent ID (e.g., Bob's Agent #101)
+     * @param strategyAgentId Strategy agent ID being used (e.g., Alice's Agent #500)
      * @param pool Pool to trade in
      * @param side BUY or SELL
      * @param quantity Amount to trade
@@ -186,7 +198,8 @@ contract AgentRouter {
      * @return filled Amount filled
      */
     function executeMarketOrder(
-        uint256 agentTokenId,
+        uint256 userAgentId,
+        uint256 strategyAgentId,
         IPoolManager.Pool calldata pool,
         IOrderBook.Side side,
         uint128 quantity,
@@ -194,28 +207,30 @@ contract AgentRouter {
         bool autoRepay,
         bool autoBorrow
     ) external returns (uint48 orderId, uint128 filled) {
-        // 1. Get owner and policy
-        address owner = identityRegistry.ownerOf(agentTokenId);
-        PolicyFactory.Policy memory policy = policyFactory.getPolicy(owner, agentTokenId);
+        // 1. Get user (owner of personal agent)
+        address user = identityRegistry.ownerOf(userAgentId);
 
-        // 2. Verify agent is enabled
+        // 2. Verify executor authorization via strategy agent
+        address strategyExecutor = agentExecutors[strategyAgentId];
+        require(strategyExecutor != address(0), "Strategy agent has no executor");
+        require(msg.sender == strategyExecutor, "Not strategy executor");
+        require(authorizedStrategyAgents[user][strategyAgentId], "Strategy agent not authorized");
+
+        // 3. Get user's policy (enforced on user's personal agent)
+        PolicyFactory.Policy memory policy = policyFactory.getPolicy(user, userAgentId);
+
+        // 4. Verify agent is enabled
         require(policy.enabled, "Agent disabled");
         require(block.timestamp < policy.expiryTimestamp, "Agent expired");
 
-        // 3. Verify executor is authorized
-        require(
-            msg.sender == owner || _isAuthorizedExecutor(agentTokenId, owner, msg.sender),
-            "Not authorized executor"
-        );
-
-        // 4. Check if requires Chainlink (complex permissions)
+        // 5. Check if requires Chainlink (complex permissions)
         require(!policy.requiresChainlinkFunctions, "Use executeMarketOrderWithMetrics");
 
-        // 5. Enforce simple permissions
+        // 6. Enforce simple permissions
         _enforceMarketOrderPermissions(
             policy,
-            owner,
-            agentTokenId,
+            user,
+            userAgentId,
             pool,
             side,
             quantity,
@@ -223,32 +238,32 @@ contract AgentRouter {
             autoBorrow
         );
 
-        // 6. Get OrderBook for this pool
+        // 7. Get OrderBook for this pool
         IOrderBook orderBook = pool.orderBook;
 
-        // 7. Execute market order
+        // 8. Execute market order
         (orderId, filled) = orderBook.placeMarketOrder(
             quantity,
             side,
-            owner,
+            user,
             autoRepay,
             autoBorrow,
-            agentTokenId,
+            userAgentId,
             msg.sender
         );
 
-        // 8. Update tracking
-        _updateTracking(owner, agentTokenId, quantity);
+        // 9. Update tracking
+        _updateTracking(user, userAgentId, quantity);
 
-        // 9. Check circuit breaker
-        _checkCircuitBreaker(owner, agentTokenId, policy);
+        // 10. Check circuit breaker
+        _checkCircuitBreaker(user, userAgentId, policy);
 
-        // 10. Record to reputation registry
-        _recordTradeToReputation(agentTokenId, Currency.unwrap(pool.baseCurrency), Currency.unwrap(pool.quoteCurrency), quantity, filled);
+        // 11. Record to reputation registry (track on STRATEGY agent)
+        _recordTradeToReputation(strategyAgentId, Currency.unwrap(pool.baseCurrency), Currency.unwrap(pool.quoteCurrency), quantity, filled);
 
         emit AgentSwapExecuted(
-            owner,
-            agentTokenId,
+            user,
+            userAgentId,
             msg.sender,
             Currency.unwrap(pool.baseCurrency),
             Currency.unwrap(pool.quoteCurrency),
@@ -259,8 +274,9 @@ contract AgentRouter {
     }
 
     /**
-     * @notice Place a limit order on behalf of an agent
-     * @param agentTokenId ERC-8004 agent token ID
+     * @notice Place a limit order using agent-based authorization
+     * @param userAgentId User's personal agent ID (e.g., Bob's Agent #101)
+     * @param strategyAgentId Strategy agent ID being used (e.g., Alice's Agent #500)
      * @param pool Pool to trade in
      * @param price Limit price
      * @param quantity Amount to trade
@@ -271,7 +287,8 @@ contract AgentRouter {
      * @return orderId Order ID
      */
     function executeLimitOrder(
-        uint256 agentTokenId,
+        uint256 userAgentId,
+        uint256 strategyAgentId,
         IPoolManager.Pool calldata pool,
         uint128 price,
         uint128 quantity,
@@ -280,29 +297,31 @@ contract AgentRouter {
         bool autoRepay,
         bool autoBorrow
     ) external returns (uint48 orderId) {
-        // Get owner and policy
-        address owner = identityRegistry.ownerOf(agentTokenId);
-        PolicyFactory.Policy memory policy = policyFactory.getPolicy(owner, agentTokenId);
+        // 1. Get user (owner of personal agent)
+        address user = identityRegistry.ownerOf(userAgentId);
 
-        // Verify agent is enabled
+        // 2. Verify executor authorization via strategy agent
+        address strategyExecutor = agentExecutors[strategyAgentId];
+        require(strategyExecutor != address(0), "Strategy agent has no executor");
+        require(msg.sender == strategyExecutor, "Not strategy executor");
+        require(authorizedStrategyAgents[user][strategyAgentId], "Strategy agent not authorized");
+
+        // 3. Get user's policy (enforced on user's personal agent)
+        PolicyFactory.Policy memory policy = policyFactory.getPolicy(user, userAgentId);
+
+        // 4. Verify agent is enabled
         require(policy.enabled, "Agent disabled");
         require(block.timestamp < policy.expiryTimestamp, "Agent expired");
 
-        // Verify executor is authorized
-        require(
-            msg.sender == owner || _isAuthorizedExecutor(agentTokenId, owner, msg.sender),
-            "Not authorized executor"
-        );
-
-        // Check permissions
+        // 5. Check permissions
         require(policy.allowLimitOrders, "Limit orders not allowed");
         require(policy.allowPlaceLimitOrder, "Placing limit orders not allowed");
 
-        // Enforce simple permissions
+        // 6. Enforce simple permissions
         _enforceLimitOrderPermissions(
             policy,
-            owner,
-            agentTokenId,
+            user,
+            userAgentId,
             pool,
             side,
             quantity,
@@ -310,28 +329,28 @@ contract AgentRouter {
             autoBorrow
         );
 
-        // Get OrderBook for this pool
+        // 7. Get OrderBook for this pool
         IOrderBook orderBook = pool.orderBook;
 
-        // Place limit order
+        // 8. Place limit order
         orderId = orderBook.placeOrder(
             price,
             quantity,
             side,
-            owner,
+            user,
             timeInForce,
             autoRepay,
             autoBorrow,
-            agentTokenId,
+            userAgentId,
             msg.sender
         );
 
-        // Update tracking
-        _updateTracking(owner, agentTokenId, quantity);
+        // 9. Update tracking
+        _updateTracking(user, userAgentId, quantity);
 
         emit AgentLimitOrderPlaced(
-            owner,
-            agentTokenId,
+            user,
+            userAgentId,
             msg.sender,
             bytes32(uint256(orderId)),
             Currency.unwrap(pool.baseCurrency),
@@ -344,36 +363,40 @@ contract AgentRouter {
     }
 
     /**
-     * @notice Cancel a limit order on behalf of an agent
-     * @param agentTokenId ERC-8004 agent token ID
+     * @notice Cancel a limit order using agent-based authorization
+     * @param userAgentId User's personal agent ID
+     * @param strategyAgentId Strategy agent ID
      * @param pool Pool where order was placed
      * @param orderId Order ID to cancel
      */
     function cancelOrder(
-        uint256 agentTokenId,
+        uint256 userAgentId,
+        uint256 strategyAgentId,
         IPoolManager.Pool calldata pool,
         uint48 orderId
     ) external {
-        address owner = identityRegistry.ownerOf(agentTokenId);
-        PolicyFactory.Policy memory policy = policyFactory.getPolicy(owner, agentTokenId);
+        address user = identityRegistry.ownerOf(userAgentId);
+
+        // Verify executor authorization via strategy agent
+        address strategyExecutor = agentExecutors[strategyAgentId];
+        require(strategyExecutor != address(0), "Strategy agent has no executor");
+        require(msg.sender == strategyExecutor, "Not strategy executor");
+        require(authorizedStrategyAgents[user][strategyAgentId], "Strategy agent not authorized");
+
+        PolicyFactory.Policy memory policy = policyFactory.getPolicy(user, userAgentId);
 
         require(policy.enabled, "Agent disabled");
         require(policy.allowCancelOrder, "Cancelling orders not allowed");
-
-        require(
-            msg.sender == owner || _isAuthorizedExecutor(agentTokenId, owner, msg.sender),
-            "Not authorized executor"
-        );
 
         // Get OrderBook for this pool
         IOrderBook orderBook = pool.orderBook;
 
         // Cancel order
-        orderBook.cancelOrder(orderId, owner, agentTokenId, msg.sender);
+        orderBook.cancelOrder(orderId, user, userAgentId, msg.sender);
 
         emit AgentOrderCancelled(
-            owner,
-            agentTokenId,
+            user,
+            userAgentId,
             msg.sender,
             bytes32(uint256(orderId)),
             block.timestamp
@@ -383,51 +406,55 @@ contract AgentRouter {
     // ============ Lending Functions ============
 
     /**
-     * @notice Borrow tokens on behalf of an agent
-     * @param agentTokenId ERC-8004 agent token ID
+     * @notice Borrow tokens using agent-based authorization
+     * @param userAgentId User's personal agent ID
+     * @param strategyAgentId Strategy agent ID
      * @param token Token to borrow
      * @param amount Amount to borrow
      */
     function executeBorrow(
-        uint256 agentTokenId,
+        uint256 userAgentId,
+        uint256 strategyAgentId,
         address token,
         uint256 amount
     ) external {
-        address owner = identityRegistry.ownerOf(agentTokenId);
-        PolicyFactory.Policy memory policy = policyFactory.getPolicy(owner, agentTokenId);
+        address user = identityRegistry.ownerOf(userAgentId);
+
+        // Verify executor authorization via strategy agent
+        address strategyExecutor = agentExecutors[strategyAgentId];
+        require(strategyExecutor != address(0), "Strategy agent has no executor");
+        require(msg.sender == strategyExecutor, "Not strategy executor");
+        require(authorizedStrategyAgents[user][strategyAgentId], "Strategy agent not authorized");
+
+        PolicyFactory.Policy memory policy = policyFactory.getPolicy(user, userAgentId);
 
         require(policy.enabled, "Agent disabled");
         require(block.timestamp < policy.expiryTimestamp, "Agent expired");
-
-        require(
-            msg.sender == owner || _isAuthorizedExecutor(agentTokenId, owner, msg.sender),
-            "Not authorized executor"
-        );
 
         // Check permissions
         require(policy.allowBorrow, "Borrowing not allowed");
         require(amount <= policy.maxAutoBorrowAmount, "Borrow amount exceeds limit");
 
         // Check token is allowed
-        require(policyFactory.isTokenAllowed(owner, agentTokenId, token), "Token not allowed");
+        require(policyFactory.isTokenAllowed(user, userAgentId, token), "Token not allowed");
 
         // Check health factor before borrow
-        uint256 currentHF = lendingManager.getHealthFactor(owner);
+        uint256 currentHF = lendingManager.getHealthFactor(user);
         require(currentHF >= policy.minHealthFactor, "Health factor too low");
 
-        // Execute borrow for user
-        lendingManager.borrowForUser(owner, token, amount);
+        // Execute borrow for user (through BalanceManager which delegates to LendingManager)
+        balanceManager.borrowForUser(user, token, amount);
 
         // Check health factor after borrow
-        uint256 newHF = lendingManager.getHealthFactor(owner);
+        uint256 newHF = lendingManager.getHealthFactor(user);
         require(newHF >= policy.minHealthFactor, "Borrow would harm health factor");
 
-        // Record to reputation
-        _recordBorrowToReputation(agentTokenId, token, amount);
+        // Record to reputation (on strategy agent)
+        _recordBorrowToReputation(strategyAgentId, token, amount);
 
         emit AgentBorrowExecuted(
-            owner,
-            agentTokenId,
+            user,
+            userAgentId,
             msg.sender,
             token,
             amount,
@@ -437,38 +464,42 @@ contract AgentRouter {
     }
 
     /**
-     * @notice Repay borrowed tokens on behalf of an agent
-     * @param agentTokenId ERC-8004 agent token ID
+     * @notice Repay borrowed tokens using agent-based authorization
+     * @param userAgentId User's personal agent ID
+     * @param strategyAgentId Strategy agent ID
      * @param token Token to repay
      * @param amount Amount to repay
      */
     function executeRepay(
-        uint256 agentTokenId,
+        uint256 userAgentId,
+        uint256 strategyAgentId,
         address token,
         uint256 amount
     ) external {
-        address owner = identityRegistry.ownerOf(agentTokenId);
-        PolicyFactory.Policy memory policy = policyFactory.getPolicy(owner, agentTokenId);
+        address user = identityRegistry.ownerOf(userAgentId);
+
+        // Verify executor authorization via strategy agent
+        address strategyExecutor = agentExecutors[strategyAgentId];
+        require(strategyExecutor != address(0), "Strategy agent has no executor");
+        require(msg.sender == strategyExecutor, "Not strategy executor");
+        require(authorizedStrategyAgents[user][strategyAgentId], "Strategy agent not authorized");
+
+        PolicyFactory.Policy memory policy = policyFactory.getPolicy(user, userAgentId);
 
         require(policy.enabled, "Agent disabled");
         require(policy.allowRepay, "Repaying not allowed");
 
-        require(
-            msg.sender == owner || _isAuthorizedExecutor(agentTokenId, owner, msg.sender),
-            "Not authorized executor"
-        );
-
         // Execute repay for user
-        lendingManager.repayForUser(owner, token, amount);
+        balanceManager.repayForUser(user, token, amount);
 
-        uint256 newHF = lendingManager.getHealthFactor(owner);
+        uint256 newHF = lendingManager.getHealthFactor(user);
 
-        // Record to reputation (repayment is good!)
-        _recordRepayToReputation(agentTokenId, token, amount);
+        // Record to reputation (on strategy agent)
+        _recordRepayToReputation(strategyAgentId, token, amount);
 
         emit AgentRepayExecuted(
-            owner,
-            agentTokenId,
+            user,
+            userAgentId,
             msg.sender,
             token,
             amount,
@@ -478,36 +509,42 @@ contract AgentRouter {
     }
 
     /**
-     * @notice Supply collateral (deposit liquidity) on behalf of an agent
-     * @param agentTokenId ERC-8004 agent token ID
+     * @notice Supply collateral using agent-based authorization
+     * @param userAgentId User's personal agent ID
+     * @param strategyAgentId Strategy agent ID
      * @param token Token to supply
      * @param amount Amount to supply
      */
     function executeSupplyCollateral(
-        uint256 agentTokenId,
+        uint256 userAgentId,
+        uint256 strategyAgentId,
         address token,
         uint256 amount
     ) external {
-        address owner = identityRegistry.ownerOf(agentTokenId);
-        PolicyFactory.Policy memory policy = policyFactory.getPolicy(owner, agentTokenId);
+        address user = identityRegistry.ownerOf(userAgentId);
+
+        // Verify executor authorization via strategy agent
+        address strategyExecutor = agentExecutors[strategyAgentId];
+        require(strategyExecutor != address(0), "Strategy agent has no executor");
+        require(msg.sender == strategyExecutor, "Not strategy executor");
+        require(authorizedStrategyAgents[user][strategyAgentId], "Strategy agent not authorized");
+
+        PolicyFactory.Policy memory policy = policyFactory.getPolicy(user, userAgentId);
 
         require(policy.enabled, "Agent disabled");
         require(policy.allowSupplyCollateral, "Supplying collateral not allowed");
 
-        require(
-            msg.sender == owner || _isAuthorizedExecutor(agentTokenId, owner, msg.sender),
-            "Not authorized executor"
-        );
-
         // Check token is allowed
-        require(policyFactory.isTokenAllowed(owner, agentTokenId, token), "Token not allowed");
+        require(policyFactory.isTokenAllowed(user, userAgentId, token), "Token not allowed");
 
-        // Execute supply for user (deposit liquidity)
-        lendingManager.depositLiquidity(token, amount, owner);
+        // Execute supply for user: pull tokens from user, then supply via BalanceManager
+        IERC20(token).transferFrom(user, address(this), amount);
+        IERC20(token).approve(address(balanceManager), amount);
+        balanceManager.depositLocal(token, amount, user);
 
         emit AgentCollateralSupplied(
-            owner,
-            agentTokenId,
+            user,
+            userAgentId,
             msg.sender,
             token,
             amount,
@@ -516,41 +553,45 @@ contract AgentRouter {
     }
 
     /**
-     * @notice Withdraw collateral (withdraw liquidity) on behalf of an agent
-     * @param agentTokenId ERC-8004 agent token ID
+     * @notice Withdraw collateral using agent-based authorization
+     * @param userAgentId User's personal agent ID
+     * @param strategyAgentId Strategy agent ID
      * @param token Token to withdraw
      * @param amount Amount to withdraw
      */
     function executeWithdrawCollateral(
-        uint256 agentTokenId,
+        uint256 userAgentId,
+        uint256 strategyAgentId,
         address token,
         uint256 amount
     ) external {
-        address owner = identityRegistry.ownerOf(agentTokenId);
-        PolicyFactory.Policy memory policy = policyFactory.getPolicy(owner, agentTokenId);
+        address user = identityRegistry.ownerOf(userAgentId);
+
+        // Verify executor authorization via strategy agent
+        address strategyExecutor = agentExecutors[strategyAgentId];
+        require(strategyExecutor != address(0), "Strategy agent has no executor");
+        require(msg.sender == strategyExecutor, "Not strategy executor");
+        require(authorizedStrategyAgents[user][strategyAgentId], "Strategy agent not authorized");
+
+        PolicyFactory.Policy memory policy = policyFactory.getPolicy(user, userAgentId);
 
         require(policy.enabled, "Agent disabled");
         require(policy.allowWithdrawCollateral, "Withdrawing collateral not allowed");
 
-        require(
-            msg.sender == owner || _isAuthorizedExecutor(agentTokenId, owner, msg.sender),
-            "Not authorized executor"
-        );
-
         // Check health factor before withdrawal
-        uint256 currentHF = lendingManager.getHealthFactor(owner);
+        uint256 currentHF = lendingManager.getHealthFactor(user);
         require(currentHF >= policy.minHealthFactor, "Health factor too low");
 
-        // Execute withdrawal (withdraw liquidity)
-        lendingManager.withdrawLiquidity(token, amount, owner);
+        // Execute withdrawal via BalanceManager (AgentRouter is authorized operator)
+        balanceManager.withdraw(Currency.wrap(token), amount, user);
 
         // Check health factor after withdrawal
-        uint256 newHF = lendingManager.getHealthFactor(owner);
+        uint256 newHF = lendingManager.getHealthFactor(user);
         require(newHF >= policy.minHealthFactor, "Withdrawal would harm health factor");
 
         emit AgentCollateralWithdrawn(
-            owner,
-            agentTokenId,
+            user,
+            userAgentId,
             msg.sender,
             token,
             amount,
@@ -832,71 +873,62 @@ contract AgentRouter {
         );
     }
 
-    // ============ Delegation Management ============
+    // ============ Agent-Based Authorization ============
 
     /**
-     * @notice Authorize an executor (agent wallet) to act on behalf of the owner
-     * @param agentTokenId The agent token ID
-     * @param executor The address to authorize (agent's dedicated wallet)
-     * @dev Only the owner of the agent NFT can authorize executors
+     * @notice Register executor wallet for a strategy agent (Model B)
+     * @param strategyAgentId The strategy agent's token ID
+     * @param executor The wallet address that will execute trades for this strategy
+     * @dev Only the strategy agent owner can register/update executor
      */
-    function authorizeExecutor(uint256 agentTokenId, address executor) external {
-        address owner = identityRegistry.ownerOf(agentTokenId);
-        require(msg.sender == owner, "Only agent owner can authorize");
-        require(executor != address(0), "Invalid executor address");
-        require(!authorizedExecutors[agentTokenId][executor], "Already authorized");
+    function registerAgentExecutor(uint256 strategyAgentId, address executor) external {
+        address owner = identityRegistry.ownerOf(strategyAgentId);
+        require(msg.sender == owner, "Not agent owner");
+        require(executor != address(0), "Invalid executor");
 
-        authorizedExecutors[agentTokenId][executor] = true;
-        emit ExecutorAuthorized(owner, agentTokenId, executor, block.timestamp);
+        agentExecutors[strategyAgentId] = executor;
+        emit AgentExecutorRegistered(strategyAgentId, executor, owner, block.timestamp);
     }
 
     /**
-     * @notice Revoke authorization for an executor
-     * @param agentTokenId The agent token ID
-     * @param executor The address to revoke
-     * @dev Only the owner of the agent NFT can revoke executors
+     * @notice User authorizes a strategy agent (Model B - Simple!)
+     * @param strategyAgentId Developer's strategy agent ID to authorize (e.g., Agent #500)
+     * @dev User (msg.sender) authorizes the STRATEGY agent
+     *      Policy restrictions come from user's personal agent during execution
      */
-    function revokeExecutor(uint256 agentTokenId, address executor) external {
-        address owner = identityRegistry.ownerOf(agentTokenId);
-        require(msg.sender == owner, "Only agent owner can revoke");
-        require(authorizedExecutors[agentTokenId][executor], "Not authorized");
+    function authorize(uint256 strategyAgentId) external {
+        require(agentExecutors[strategyAgentId] != address(0), "Strategy agent has no executor");
 
-        authorizedExecutors[agentTokenId][executor] = false;
-        emit ExecutorRevoked(owner, agentTokenId, executor, block.timestamp);
-    }
-
-    // ============ Authorization Checks ============
-
-    /**
-     * @notice Check if an address is authorized to execute for this agent
-     * @dev Checks if executor is owner, agent wallet, or explicitly authorized
-     */
-    function _isAuthorizedExecutor(
-        uint256 agentTokenId,
-        address owner,
-        address executor
-    ) internal view returns (bool) {
-        // Owner can always execute
-        if (executor == owner) return true;
-
-        // Check if executor is the agent's registered wallet (from ERC-8004)
-        address agentWallet = _getAgentWallet(agentTokenId);
-        if (agentWallet != address(0) && executor == agentWallet) return true;
-
-        // Check if executor is explicitly authorized (fallback/additional authorization)
-        return authorizedExecutors[agentTokenId][executor];
+        authorizedStrategyAgents[msg.sender][strategyAgentId] = true;
+        emit StrategyAgentAuthorized(msg.sender, 0, strategyAgentId, block.timestamp);
     }
 
     /**
-     * @notice Get the agent wallet address from IdentityRegistry
-     * @dev Internal helper to safely get agent wallet
+     * @notice User revokes authorization for a strategy agent (Model B)
+     * @param strategyAgentId Strategy agent ID to revoke
      */
-    function _getAgentWallet(uint256 agentTokenId) internal view returns (address) {
-        try identityRegistry.getAgentWallet(agentTokenId) returns (address wallet) {
-            return wallet;
-        } catch {
-            return address(0);
-        }
+    function revoke(uint256 strategyAgentId) external {
+        authorizedStrategyAgents[msg.sender][strategyAgentId] = false;
+        emit StrategyAgentRevoked(msg.sender, 0, strategyAgentId, block.timestamp);
+    }
+
+    /**
+     * @notice Check if a strategy agent is authorized by a user (Model B)
+     * @param user User's address
+     * @param strategyAgentId Strategy agent ID
+     * @return bool True if authorized
+     */
+    function isAuthorized(address user, uint256 strategyAgentId) external view returns (bool) {
+        return authorizedStrategyAgents[user][strategyAgentId];
+    }
+
+    /**
+     * @notice Get executor wallet for a strategy agent
+     * @param strategyAgentId The strategy agent's token ID
+     * @return executor The registered executor wallet
+     */
+    function getStrategyExecutor(uint256 strategyAgentId) external view returns (address) {
+        return agentExecutors[strategyAgentId];
     }
 
     // ============ View Functions ============
@@ -924,23 +956,4 @@ contract AgentRouter {
         return dayStartValues[owner][today];
     }
 
-    /**
-     * @notice Check if an executor is authorized for an agent
-     * @param agentTokenId The agent token ID
-     * @param executor The address to check
-     * @return bool True if authorized
-     */
-    function isExecutorAuthorized(uint256 agentTokenId, address executor) external view returns (bool) {
-        address owner = identityRegistry.ownerOf(agentTokenId);
-        return _isAuthorizedExecutor(agentTokenId, owner, executor);
-    }
-
-    /**
-     * @notice Get the agent wallet address for a token
-     * @param agentTokenId The agent token ID
-     * @return The wallet address controlled by the agent (from ERC-8004 registry)
-     */
-    function getAgentWallet(uint256 agentTokenId) external view returns (address) {
-        return _getAgentWallet(agentTokenId);
-    }
 }
