@@ -208,10 +208,61 @@ declare -A CHAIN_ID_TO_NAME=(
 3. Create corresponding `.env` files in indexer and mm-bot projects
 4. Test the update script with the new chain ID
 
+## Post-Deployment Verification Workflow
+
+After running `update-env.sh`, verify the full deployment is working:
+
+```bash
+# 1. Deploy contracts
+bash shellscripts/deploy.sh | tee deploy.log
+
+# 2. Update all environment files with new addresses
+bash shellscripts/update-env.sh 84532 deploy.log
+
+# 3. Populate test data (orders + trades for indexer to index)
+bash shellscripts/populate-data.sh
+
+# 4. Verify deployment end-to-end
+bash shellscripts/verify-deployment.sh 84532
+```
+
+### verify-deployment.sh
+
+Orchestrates all verification checks:
+- Contract addresses present in `deployments/<chain-id>.json`
+- RPC connectivity
+- Indexer synced and data indexed (pools, orders, trades)
+
+```bash
+# Verify Base Sepolia deployment
+bash shellscripts/verify-deployment.sh 84532
+
+# Verify local deployment
+bash shellscripts/verify-deployment.sh 31337
+```
+
+### verify-indexer.sh
+
+Verifies ponder indexer data specifically:
+- Restarts ponder via pm2 (if configured)
+- Waits for GraphQL to be ready
+- Checks: pools exist, orders > 1, trades >= 1, sync status
+
+```bash
+bash shellscripts/verify-indexer.sh base-sepolia
+bash shellscripts/verify-indexer.sh local
+```
+
+If indexer checks fail:
+1. Make sure `populate-data.sh` ran successfully (creates orders/trades)
+2. Check pm2 logs: `pm2 logs ponder-base-sepolia`
+3. Verify addresses with `update-env.sh`
+
 ## Related Scripts
 
 - `deploy.sh` - Main deployment script
-- `validate-deployment.sh` - Validates deployed contracts
+- `verify-deployment.sh` - Verifies full deployment end-to-end
+- `verify-indexer.sh` - Verifies ponder indexer data
 - `populate-data.sh` - Populates initial data after deployment
 
 ## Maintenance
