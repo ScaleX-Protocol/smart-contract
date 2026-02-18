@@ -1,327 +1,276 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.20;
+pragma solidity ^0.8.28;
 
 import "forge-std/Test.sol";
-import "../../src/ai-agents/registries/IdentityRegistryUpgradeable.sol";
-import "../../src/ai-agents/PolicyFactory.sol";
 import "../../src/ai-agents/AgentRouter.sol";
-import "../../src/core/BalanceManager.sol";
-import "../../src/core/OrderBook.sol";
-import "../../src/core/PoolManager.sol";
-import "../../src/test/mocks/MockERC20.sol";
+import "../../src/ai-agents/PolicyFactory.sol";
+import "../../src/ai-agents/mocks/MockERC8004Identity.sol";
+import "../../src/ai-agents/mocks/MockERC8004Reputation.sol";
+import "../../src/ai-agents/mocks/MockERC8004Validation.sol";
+import "../ai-agents/mocks/MockPoolManager.sol";
+import "../ai-agents/mocks/MockOrderBook.sol";
+import "../ai-agents/mocks/MockLendingManager.sol";
+import "../ai-agents/mocks/MockBalanceManager.sol";
+import {Currency} from "../../src/core/libraries/Currency.sol";
 
 /**
- * @title AgentMarketplace Test
- * @notice Verifies that the marketplace model works:
- *         - Developer has a strategy agent (identity only, no policy)
- *         - User subscribes by registering agent, installing policy, authorizing executor
- *         - Developer's executor can trade for user using user's policy and funds
+ * @title AgentMarketplaceTest
+ * @notice Tests the "AI agent marketplace" flow under the simplified ERC-8004 auth model.
+ *
+ * NEW marketplace model (post-refactor):
+ *   1. Developer registers a strategy agent NFT (developerAgentId) via IdentityRegistry
+ *   2. Each user calls agentRouter.authorize(developerAgentId, policy) to grant
+ *      the developer's agent permission to trade their funds, with their own policy limits
+ *   3. The developer's wallet (which owns the developerAgentId NFT) calls
+ *      agentRouter.execute*(userAddress, developerAgentId, ...) to trade for each user
+ *   4. The same NFT can serve multiple users — each user sets their own policy
+ *
+ * NOTE: The previous "userAgentId + authorizeExecutor" flow was removed in the ERC-8004
+ * simplification. Users no longer need their own NFT.
  */
 contract AgentMarketplaceTest is Test {
-    // Contracts
-    IdentityRegistryUpgradeable public identityRegistry;
-    PolicyFactory public policyFactory;
     AgentRouter public agentRouter;
-    BalanceManager public balanceManager;
-    PoolManager public poolManager;
-    OrderBook public orderBook;
+    PolicyFactory public policyFactory;
 
-    // Tokens
-    MockERC20 public IDRX;
-    MockERC20 public WETH;
+    MockERC8004Identity public identityRegistry;
+    MockERC8004Reputation public reputationRegistry;
+    MockERC8004Validation public validationRegistry;
 
-    // Actors
+    MockPoolManager public poolManager;
+    MockOrderBook public orderBook;
+    MockLendingManager public lendingManager;
+    MockBalanceManager public balanceManager;
+
     address public developer = makeAddr("developer");
-    address public executorWallet = makeAddr("executorWallet");
-    address public user = makeAddr("user");
+    address public alice = makeAddr("alice");
+    address public bob = makeAddr("bob");
 
-    // Agent IDs
     uint256 public developerAgentId;
-    uint256 public userAgentId;
 
-    // Pool
+    address public IDRX = address(0x1);
+    address public WETH = address(0x2);
+
     IPoolManager.Pool public wethIdrxPool;
 
     function setUp() public {
-        // Deploy tokens
-        IDRX = new MockERC20("IDRX", "IDRX", 6);
-        WETH = new MockERC20("WETH", "WETH", 18);
+        // Deploy registries
+        identityRegistry = new MockERC8004Identity();
+        reputationRegistry = new MockERC8004Reputation();
+        validationRegistry = new MockERC8004Validation();
 
-        // Deploy core contracts (simplified - in real deployment use deployment script)
-        // For this test, we'll use mock contracts or assume they're deployed
+        // Deploy PolicyFactory
+        policyFactory = new PolicyFactory(address(identityRegistry));
 
-        // TODO: Deploy IdentityRegistry, PolicyFactory, AgentRouter, BalanceManager, etc.
-        // For now, this is the structure
+        // Deploy mocks
+        poolManager = new MockPoolManager();
+        balanceManager = new MockBalanceManager();
+        lendingManager = new MockLendingManager();
+        orderBook = new MockOrderBook();
 
-        console.log("Setup complete");
-        console.log("Developer:", developer);
-        console.log("Executor:", executorWallet);
-        console.log("User:", user);
-    }
-
-    function testMarketplaceFlow() public {
-        console.log("\n=== Testing Marketplace Flow ===\n");
-
-        // ============================================
-        // STEP 1: Developer Setup (One-Time)
-        // ============================================
-        console.log("STEP 1: Developer registers strategy agent");
-
-        vm.startPrank(developer);
-
-        // Developer registers agent (identity only, no policy)
-        developerAgentId = identityRegistry.register();
-        console.log("  Developer Agent ID:", developerAgentId);
-        console.log("  Owner:", identityRegistry.ownerOf(developerAgentId));
-
-        // Verify developer owns the agent
-        assertEq(identityRegistry.ownerOf(developerAgentId), developer);
-
-        // NOTE: Developer does NOT install policy on this agent
-        // This agent is just for identity/reputation tracking
-
-        vm.stopPrank();
-
-        // ============================================
-        // STEP 2: User Has No Agent Initially
-        // ============================================
-        console.log("\nSTEP 2: Verify user has no agent initially");
-
-        // User has no agent NFTs
-        // (In ERC721, we'd check balanceOf, but our registry doesn't track this)
-        console.log("  User address:", user);
-        console.log("  User has no agent yet");
-
-        // ============================================
-        // STEP 3: User Subscribes to Strategy
-        // ============================================
-        console.log("\nSTEP 3: User subscribes to developer's strategy");
-
-        vm.startPrank(user);
-
-        // 3a. User registers their own agent
-        console.log("  3a. User registers agent");
-        userAgentId = identityRegistry.register();
-        console.log("    User Agent ID:", userAgentId);
-        console.log("    Owner:", identityRegistry.ownerOf(userAgentId));
-
-        assertEq(identityRegistry.ownerOf(userAgentId), user);
-
-        // 3b. User installs THEIR OWN policy (conservative)
-        console.log("  3b. User installs conservative policy");
-
-        PolicyFactory.PolicyCustomization memory customizations = PolicyFactory.PolicyCustomization({
-            maxOrderSize: 1000e6,        // 1000 IDRX max per order
-            dailyVolumeLimit: 5000e6,    // 5000 IDRX max per day
-            expiryTimestamp: block.timestamp + 365 days,
-            whitelistedTokens: new address[](0)
+        // Setup WETH/IDRX pool
+        wethIdrxPool = IPoolManager.Pool({
+            baseCurrency: Currency.wrap(WETH),
+            quoteCurrency: Currency.wrap(IDRX),
+            orderBook: orderBook
         });
+        poolManager.setPool(wethIdrxPool);
 
-        policyFactory.installAgentFromTemplate(
-            userAgentId,
-            "conservative",
-            customizations
+        // Deploy AgentRouter
+        agentRouter = new AgentRouter(
+            address(identityRegistry),
+            address(reputationRegistry),
+            address(validationRegistry),
+            address(policyFactory),
+            address(poolManager),
+            address(balanceManager),
+            address(lendingManager)
         );
 
-        console.log("    Policy installed: conservative");
-        console.log("    Max order size: 1000 IDRX");
-        console.log("    Daily volume limit: 5000 IDRX");
+        policyFactory.setAuthorizedRouter(address(agentRouter), true);
+        reputationRegistry.setAuthorizedSubmitter(address(agentRouter), true);
 
-        // Verify policy is installed
-        PolicyFactory.Policy memory policy = policyFactory.getPolicy(user, userAgentId);
-        assertTrue(policy.enabled);
-        assertEq(policy.maxOrderSize, 1000e6);
-
-        // 3c. User authorizes developer's executor
-        console.log("  3c. User authorizes developer's executor");
-
-        agentRouter.authorizeExecutor(userAgentId, executorWallet);
-
-        console.log("    Executor authorized:", executorWallet);
-
-        // Verify executor is authorized
-        assertTrue(agentRouter.authorizedExecutors(userAgentId, executorWallet));
-
-        // 3d. User deposits funds to BalanceManager
-        console.log("  3d. User deposits funds");
-
-        uint256 depositAmount = 10000e6; // 10,000 IDRX
-        IDRX.mint(user, depositAmount);
-        IDRX.approve(address(balanceManager), depositAmount);
-        balanceManager.deposit(address(IDRX), depositAmount);
-
-        console.log("    Deposited: 10,000 IDRX");
-
-        vm.stopPrank();
-
-        // ============================================
-        // STEP 4: Developer's Executor Places Order
-        // ============================================
-        console.log("\nSTEP 4: Developer's executor places order for user");
-
-        vm.startPrank(executorWallet);
-
-        // Executor tries to place a 2000 IDRX order
-        // Should be REJECTED or CAPPED because user's policy allows max 1000 IDRX
-
-        console.log("  Attempting to place 2000 IDRX order (exceeds user's 1000 limit)");
-
-        uint128 attemptedQuantity = 2000e6; // 2000 IDRX
-
-        // This should either:
-        // 1. Revert with policy violation error, OR
-        // 2. Cap the order at 1000 IDRX
-
-        // Let's test what actually happens
-        vm.expectRevert(); // Expecting revert due to policy violation
-
-        uint48 orderId = agentRouter.executeLimitOrder(
-            userAgentId,
-            wethIdrxPool,
-            300000,              // price
-            attemptedQuantity,   // 2000 IDRX - exceeds limit!
-            IOrderBook.Side.BUY,
-            IOrderBook.TimeInForce.GTC,
-            false,              // autoRepay
-            false               // autoBorrow
-        );
-
-        console.log("    Order rejected due to policy violation [OK]");
-
-        // Now try with amount within policy limit
-        console.log("  Placing order within policy limit (1000 IDRX)");
-
-        uint128 allowedQuantity = 1000e6; // 1000 IDRX
-
-        orderId = agentRouter.executeLimitOrder(
-            userAgentId,
-            wethIdrxPool,
-            300000,              // price
-            allowedQuantity,     // 1000 IDRX - within limit
-            IOrderBook.Side.BUY,
-            IOrderBook.TimeInForce.GTC,
-            false,
-            false
-        );
-
-        console.log("    Order placed successfully [OK]");
-        console.log("    Order ID:", orderId);
-
-        vm.stopPrank();
-
-        // ============================================
-        // STEP 5: Verify Order Details
-        // ============================================
-        console.log("\nSTEP 5: Verify order details");
-
-        // Get order from OrderBook
-        // Verify it's tracked with correct agentTokenId
-        // Verify it used user's funds
-
-        console.log("  Agent Token ID:", userAgentId);
-        console.log("  Executor:", executorWallet);
-        console.log("  User (owner):", user);
-        console.log("  Order placed using user's funds [OK]");
-
-        console.log("\n=== Test Passed [OK] ===\n");
-    }
-
-    function testMultipleUsersWithDifferentPolicies() public {
-        console.log("\n=== Testing Multiple Users with Different Policies ===\n");
-
-        // Setup developer
+        // Developer registers their strategy agent NFT
         vm.prank(developer);
-        developerAgentId = identityRegistry.register();
+        developerAgentId = identityRegistry.mintAuto(developer, "ipfs://strategy-agent");
 
-        // User 1: Alice (Conservative - max 1000 IDRX)
-        address alice = makeAddr("alice");
-        uint256 aliceAgentId;
+        // Setup health factors
+        lendingManager.setHealthFactor(alice, 2e18);
+        lendingManager.setHealthFactor(bob, 2e18);
+    }
 
-        vm.startPrank(alice);
-        aliceAgentId = identityRegistry.register();
+    /**
+     * @notice Core marketplace flow: developer's agent serves multiple users,
+     *         each user sets their own policy limits.
+     */
+    function test_MarketplaceFlow_MultipleUsersOneAgent() public {
+        console.log("\n=== MARKETPLACE FLOW: Multiple users, one strategy agent ===\n");
 
-        PolicyFactory.PolicyCustomization memory alicePolicy = PolicyFactory.PolicyCustomization({
-            maxOrderSize: 1000e6,
-            dailyVolumeLimit: 5000e6,
-            expiryTimestamp: block.timestamp + 365 days,
-            whitelistedTokens: new address[](0)
-        });
+        // -- Alice subscribes: conservative policy, max 1000 IDRX per order --
+        vm.prank(alice);
+        agentRouter.authorize(developerAgentId, _makePolicy(1000e6));
 
-        policyFactory.installAgentFromTemplate(aliceAgentId, "conservative", alicePolicy);
-        agentRouter.authorizeExecutor(aliceAgentId, executorWallet);
+        assertTrue(agentRouter.isAuthorized(alice, developerAgentId));
+        console.log("Alice authorized developer agent with 1000 IDRX limit");
 
-        IDRX.mint(alice, 10000e6);
-        IDRX.approve(address(balanceManager), 10000e6);
-        balanceManager.deposit(address(IDRX), 10000e6);
-        vm.stopPrank();
+        // -- Bob subscribes: aggressive policy, max 10000 IDRX per order --
+        vm.prank(bob);
+        agentRouter.authorize(developerAgentId, _makePolicy(10000e6));
 
-        console.log("Alice setup complete:");
-        console.log("  Agent ID:", aliceAgentId);
-        console.log("  Max order size: 1000 IDRX");
+        assertTrue(agentRouter.isAuthorized(bob, developerAgentId));
+        console.log("Bob authorized developer agent with 10000 IDRX limit");
 
-        // User 2: Bob (Aggressive - max 10000 IDRX)
-        address bob = makeAddr("bob");
-        uint256 bobAgentId;
+        // -- Developer places an order for Alice within her limit --
+        orderBook.setNextOrderId(1);
+        vm.prank(developer);
+        uint48 aliceOrderId = agentRouter.executeLimitOrder(
+            alice, developerAgentId, wethIdrxPool,
+            300000, 1000e6,            // price=300000, quantity=1000 IDRX (within Alice's limit)
+            IOrderBook.Side.BUY,
+            IOrderBook.TimeInForce.GTC,
+            false, false
+        );
+        assertEq(aliceOrderId, 1);
+        assertEq(orderBook.lastOrderOwner(), alice); // Uses Alice's funds
+        console.log("Order placed for Alice using her funds [OK]");
 
-        vm.startPrank(bob);
-        bobAgentId = identityRegistry.register();
-
-        PolicyFactory.PolicyCustomization memory bobPolicy = PolicyFactory.PolicyCustomization({
-            maxOrderSize: 10000e6,    // 10x Alice!
-            dailyVolumeLimit: 100000e6,
-            expiryTimestamp: block.timestamp + 365 days,
-            whitelistedTokens: new address[](0)
-        });
-
-        policyFactory.installAgentFromTemplate(bobAgentId, "aggressive", bobPolicy);
-        agentRouter.authorizeExecutor(bobAgentId, executorWallet);
-
-        IDRX.mint(bob, 50000e6);
-        IDRX.approve(address(balanceManager), 50000e6);
-        balanceManager.deposit(address(IDRX), 50000e6);
-        vm.stopPrank();
-
-        console.log("\nBob setup complete:");
-        console.log("  Agent ID:", bobAgentId);
-        console.log("  Max order size: 10000 IDRX");
-
-        // Executor tries to place 5000 IDRX order for both
-        vm.startPrank(executorWallet);
-
-        uint128 orderSize = 5000e6;
-
-        // For Alice: Should FAIL (exceeds 1000 limit)
-        console.log("\nPlacing 5000 IDRX order for Alice (limit: 1000)...");
-        vm.expectRevert();
+        // -- Developer tries to exceed Alice's limit — should fail --
+        vm.prank(developer);
+        vm.expectRevert("Order too large");
         agentRouter.executeLimitOrder(
-            aliceAgentId,
-            wethIdrxPool,
-            300000,
-            orderSize,
+            alice, developerAgentId, wethIdrxPool,
+            300000, 5000e6,            // 5000 IDRX — exceeds Alice's 1000 limit
             IOrderBook.Side.BUY,
             IOrderBook.TimeInForce.GTC,
-            false,
-            false
+            false, false
         );
-        console.log("  [OK] Alice's order rejected (exceeds policy)");
+        console.log("Alice's policy enforced: 5000 IDRX order rejected [OK]");
 
-        // For Bob: Should SUCCEED (within 10000 limit)
-        console.log("\nPlacing 5000 IDRX order for Bob (limit: 10000)...");
+        // -- Developer places 5000 IDRX for Bob (within his 10000 limit) --
+        orderBook.setNextOrderId(2);
+        vm.prank(developer);
         uint48 bobOrderId = agentRouter.executeLimitOrder(
-            bobAgentId,
-            wethIdrxPool,
-            300000,
-            orderSize,
+            bob, developerAgentId, wethIdrxPool,
+            300000, 5000e6,
             IOrderBook.Side.BUY,
             IOrderBook.TimeInForce.GTC,
-            false,
-            false
+            false, false
         );
-        console.log("  [OK] Bob's order succeeded (Order ID:", bobOrderId, ")");
+        assertEq(bobOrderId, 2);
+        assertEq(orderBook.lastOrderOwner(), bob); // Uses Bob's funds
+        console.log("Bob's 5000 IDRX order placed successfully [OK]");
 
-        vm.stopPrank();
+        console.log("\n=== Marketplace test passed [OK] ===");
+    }
 
-        console.log("\n=== Multiple Users Test Passed [OK] ===");
-        console.log("Same executor, different policies enforced correctly!");
+    /**
+     * @notice Non-owner of the strategy agent NFT cannot execute orders.
+     */
+    function test_RevertNonOwnerCannotExecute() public {
+        // Alice authorizes developer's agent
+        vm.prank(alice);
+        agentRouter.authorize(developerAgentId, _makePolicy(1000e6));
+
+        // An attacker (not the NFT owner) tries to execute with the developer's agent
+        address attacker = makeAddr("attacker");
+        vm.prank(attacker);
+        vm.expectRevert("Not strategy agent owner");
+        agentRouter.executeLimitOrder(
+            alice, developerAgentId, wethIdrxPool,
+            300000, 500e6,
+            IOrderBook.Side.BUY,
+            IOrderBook.TimeInForce.GTC,
+            false, false
+        );
+    }
+
+    /**
+     * @notice Developer cannot trade for a user who hasn't authorized the agent.
+     */
+    function test_RevertUnauthorizedUser() public {
+        // Alice has NOT authorized developer's agent
+        vm.prank(developer);
+        vm.expectRevert("Strategy agent not authorized");
+        agentRouter.executeLimitOrder(
+            alice, developerAgentId, wethIdrxPool,
+            300000, 500e6,
+            IOrderBook.Side.BUY,
+            IOrderBook.TimeInForce.GTC,
+            false, false
+        );
+    }
+
+    /**
+     * @notice User can revoke authorization at any time.
+     */
+    function test_UserCanRevoke() public {
+        vm.prank(alice);
+        agentRouter.authorize(developerAgentId, _makePolicy(1000e6));
+        assertTrue(agentRouter.isAuthorized(alice, developerAgentId));
+
+        // Alice revokes
+        vm.prank(alice);
+        agentRouter.revoke(developerAgentId);
+        assertFalse(agentRouter.isAuthorized(alice, developerAgentId));
+
+        // Developer can no longer trade for Alice
+        vm.prank(developer);
+        vm.expectRevert("Strategy agent not authorized");
+        agentRouter.executeLimitOrder(
+            alice, developerAgentId, wethIdrxPool,
+            300000, 500e6,
+            IOrderBook.Side.BUY,
+            IOrderBook.TimeInForce.GTC,
+            false, false
+        );
+    }
+
+    // ============ Helpers ============
+
+    function _makePolicy(uint256 maxOrderSize) internal view returns (PolicyFactory.Policy memory) {
+        address[] memory empty = new address[](0);
+        return PolicyFactory.Policy({
+            enabled: true,
+            installedAt: 0,
+            expiryTimestamp: block.timestamp + 365 days,
+            maxOrderSize: maxOrderSize,
+            minOrderSize: 0,
+            whitelistedTokens: empty,
+            blacklistedTokens: empty,
+            allowMarketOrders: true,
+            allowLimitOrders: true,
+            allowSwap: true,
+            allowBorrow: true,
+            allowRepay: true,
+            allowSupplyCollateral: true,
+            allowWithdrawCollateral: true,
+            allowPlaceLimitOrder: true,
+            allowCancelOrder: true,
+            allowBuy: true,
+            allowSell: true,
+            allowAutoBorrow: true,
+            maxAutoBorrowAmount: 10000e6,
+            allowAutoRepay: true,
+            minDebtToRepay: 0,
+            minHealthFactor: 1e18, // 100%
+            maxSlippageBps: 500,
+            minTimeBetweenTrades: 0,
+            emergencyRecipient: address(0),
+            dailyVolumeLimit: 0,
+            weeklyVolumeLimit: 0,
+            maxDailyDrawdown: 0,
+            maxWeeklyDrawdown: 0,
+            maxTradeVsTVLBps: 0,
+            minWinRateBps: 0,
+            minSharpeRatio: 0,
+            maxPositionConcentrationBps: 0,
+            maxCorrelationBps: 0,
+            maxTradesPerDay: 0,
+            maxTradesPerHour: 0,
+            tradingStartHour: 0,
+            tradingEndHour: 0,
+            minReputationScore: 0,
+            useReputationMultiplier: false,
+            requiresChainlinkFunctions: false
+        });
     }
 }
