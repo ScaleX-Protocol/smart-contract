@@ -15,6 +15,12 @@ import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
  * @dev Each wallet = separate BalanceManager account = isolated funds
  */
 contract CreateMultipleAgents is Script {
+    /// @dev Cached agentRouter address — stored in slot so it is NOT a live Yul stack variable
+    ///      during the authorize() ABI encoding of the 42-field Policy struct.
+    ///      Loading from storage at the CALL opcode costs 1 SLOAD but saves 1 Yul stack slot,
+    ///      keeping peak depth within the EVM's SWAP16 window.
+    address private _agentRouterCache;
+
     struct AgentSetup {
         address wallet;
         uint256 privateKey;
@@ -150,78 +156,91 @@ contract CreateMultipleAgents is Script {
         vm.stopBroadcast();
     }
 
+    /// @dev Stage 1: cache agentRouter in storage (NOT a live stack slot during ABI encoding),
+    ///      build Policy in an isolated pure frame, then call authorize with only 2 stack params.
     function _createPolicy(address agentRouter, AgentSetup memory agent) internal {
-        // Tune limits per agent type
-        uint256 maxDailyVolume;
-        uint256 maxDrawdownBps;
-        uint256 maxSlippageBps;
-        uint256 minCooldownSeconds;
+        _agentRouterCache = agentRouter;
+        _callAuthorize(agent.agentId, _buildPolicyForAgent(agent.capitalAllocation));
+    }
 
-        if (agent.capitalAllocation == 1000e6) {          // Conservative
-            maxDailyVolume    = 5000e6;
-            maxDrawdownBps    = 1000;
-            maxSlippageBps    = 300;
-            minCooldownSeconds = 120;
-        } else if (agent.capitalAllocation == 5000e6) {   // Aggressive
-            maxDailyVolume    = 50000e6;
-            maxDrawdownBps    = 2500;
-            maxSlippageBps    = 500;
-            minCooldownSeconds = 30;
-        } else {                                           // Test
-            maxDailyVolume    = 2000e6;
-            maxDrawdownBps    = 500;
-            maxSlippageBps    = 200;
-            minCooldownSeconds = 300;
+    /// @dev Stage 2: builds Policy in an isolated pure frame — capitalAllocation is the only
+    ///      live local; it dies at the function boundary before _callAuthorize runs the
+    ///      42-field ABI encoding (~14 internal Yul vars). Named return avoids an extra
+    ///      memory-copy temp on the caller's stack.
+    function _buildPolicyForAgent(uint256 capitalAllocation)
+        private pure returns (PolicyFactory.Policy memory p)
+    {
+        address[] memory empty = new address[](0);
+        p.expiryTimestamp       = type(uint256).max;
+        p.maxOrderSize          = capitalAllocation * 2;
+        p.whitelistedTokens     = empty;
+        p.blacklistedTokens     = empty;
+        p.allowMarketOrders     = true;
+        p.allowLimitOrders      = true;
+        p.allowSwap             = true;
+        p.allowSupplyCollateral = true;
+        p.allowPlaceLimitOrder  = true;
+        p.allowCancelOrder      = true;
+        p.allowBuy              = true;
+        p.allowSell             = true;
+        p.minHealthFactor       = 1e18;
+        if (capitalAllocation == 1000e6) {          // Conservative
+            p.maxSlippageBps        = 300;
+            p.minTimeBetweenTrades  = 120;
+            p.dailyVolumeLimit      = 5000e6;
+            p.maxDailyDrawdown      = 1000;
+        } else if (capitalAllocation == 5000e6) {   // Aggressive
+            p.maxSlippageBps        = 500;
+            p.minTimeBetweenTrades  = 30;
+            p.dailyVolumeLimit      = 50000e6;
+            p.maxDailyDrawdown      = 2500;
+        } else {                                     // Test
+            p.maxSlippageBps        = 200;
+            p.minTimeBetweenTrades  = 300;
+            p.dailyVolumeLimit      = 2000e6;
+            p.maxDailyDrawdown      = 500;
         }
+    }
 
-        address[] memory emptyList = new address[](0);
-        PolicyFactory.Policy memory policy = PolicyFactory.Policy({
-            enabled:                     false,
-            installedAt:                 0,
-            expiryTimestamp:             type(uint256).max,
-            maxOrderSize:                agent.capitalAllocation * 2,
-            minOrderSize:                0,
-            whitelistedTokens:           emptyList,
-            blacklistedTokens:           emptyList,
-            allowMarketOrders:           true,
-            allowLimitOrders:            true,
-            allowSwap:                   true,
-            allowBorrow:                 false,
-            allowRepay:                  false,
-            allowSupplyCollateral:       true,
-            allowWithdrawCollateral:     false,
-            allowPlaceLimitOrder:        true,
-            allowCancelOrder:            true,
-            allowBuy:                    true,
-            allowSell:                   true,
-            allowAutoBorrow:             false,
-            maxAutoBorrowAmount:         0,
-            allowAutoRepay:              false,
-            minDebtToRepay:              0,
-            minHealthFactor:             1e18,
-            maxSlippageBps:              maxSlippageBps,
-            minTimeBetweenTrades:        minCooldownSeconds,
-            emergencyRecipient:          address(0),
-            dailyVolumeLimit:            maxDailyVolume,
-            weeklyVolumeLimit:           0,
-            maxDailyDrawdown:            maxDrawdownBps,
-            maxWeeklyDrawdown:           0,
-            maxTradeVsTVLBps:            0,
-            minWinRateBps:               0,
-            minSharpeRatio:              0,
-            maxPositionConcentrationBps: 0,
-            maxCorrelationBps:           0,
-            maxTradesPerDay:             0,
-            maxTradesPerHour:            0,
-            tradingStartHour:            0,
-            tradingEndHour:              0,
-            minReputationScore:          0,
-            useReputationMultiplier:     false,
-            requiresChainlinkFunctions:  false
-        });
+    /// @dev Assembly ABI encoder for authorize(uint256, Policy).
+    ///      Policy has 42 fields; whitelistedTokens (field 5) and blacklistedTokens (field 6)
+    ///      are the only dynamic types — always empty in scripts, so lengths are hardcoded 0.
+    ///      Calldata layout: 4 (sel) + 32 (id) + 32 (Policy offset=64) + 1344 (42-word head)
+    ///                       + 32 (wTokens len=0) + 32 (bTokens len=0) = 1476 bytes total.
+    ///      Peak named Yul variables: ~8 — well within the 16-slot SWAP16 window.
+    function _callAuthorize(uint256 agentId, PolicyFactory.Policy memory p) private {
+        bytes4 sel = AgentRouter.authorize.selector;
+        assembly {
+            let router   := sload(_agentRouterCache.slot)
+            let cdStart  := mload(0x40)
+            mstore(0x40, add(cdStart, 1476))
 
-        // Agent authorizes itself: installs policy + grants authorization in one tx
-        AgentRouter(agentRouter).authorize(agent.agentId, policy);
+            mstore(cdStart, sel)                    // selector (left-aligned bytes4)
+            mstore(add(cdStart,  4), agentId)      // param 1
+            mstore(add(cdStart, 36), 0x40)         // param 2: offset to Policy tuple = 64
+
+            let base := add(cdStart, 68)           // Policy tuple starts here
+
+            // Copy all 42 head words from struct memory → calldata head
+            for { let i := 0 } lt(i, 42) { i := add(i, 1) } {
+                mstore(add(base, mul(i, 0x20)), mload(add(p, mul(i, 0x20))))
+            }
+
+            // Overwrite field 5 (whitelistedTokens) and field 6 (blacklistedTokens)
+            // with their ABI tail offsets (relative to start of Policy tuple).
+            mstore(add(base, 0xa0), 0x540)  // whitelistedTokens at base+0x540
+            mstore(add(base, 0xc0), 0x560)  // blacklistedTokens at base+0x560
+
+            // Write empty array lengths in the tail
+            mstore(add(base, 0x540), 0)     // whitelistedTokens.length = 0
+            mstore(add(base, 0x560), 0)     // blacklistedTokens.length  = 0
+
+            let ok := call(gas(), router, 0, cdStart, 1476, 0, 0)
+            if iszero(ok) {
+                returndatacopy(0, 0, returndatasize())
+                revert(0, returndatasize())
+            }
+        }
     }
 
     function _depositCapital(

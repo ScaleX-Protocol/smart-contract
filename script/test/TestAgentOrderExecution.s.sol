@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.26;
+pragma solidity ^0.8.28;
 
 import "forge-std/Script.sol";
 import "forge-std/console.sol";
@@ -7,6 +7,7 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {BalanceManager} from "@scalexcore/BalanceManager.sol";
 import {AgentRouter} from "@scalexagents/AgentRouter.sol";
 import {PolicyFactory} from "@scalexagents/PolicyFactory.sol";
+import {MockERC8004Identity} from "@scalexagents/mocks/MockERC8004Identity.sol";
 import {IPoolManager} from "@scalexcore/interfaces/IPoolManager.sol";
 import {IOrderBook} from "@scalexcore/interfaces/IOrderBook.sol";
 import {Currency} from "@scalexcore/libraries/Currency.sol";
@@ -14,6 +15,9 @@ import {Currency} from "@scalexcore/libraries/Currency.sol";
 /**
  * @title TestAgentOrderExecution
  * @notice Tests complete agent order execution flow on basesepolia
+ * @dev Updated to use the simplified ERC-8004 auth model:
+ *      - User calls AgentRouter.authorize(strategyAgentId, policy) in ONE transaction
+ *      - No separate executor delegation needed
  */
 contract TestAgentOrderExecution is Script {
 
@@ -33,20 +37,18 @@ contract TestAgentOrderExecution is Script {
         string memory json = vm.readFile(deploymentPath);
 
         address balanceManager = _extractAddress(json, "BalanceManager");
-        address agentRouter = _extractAddress(json, "AgentRouter");
-        address policyFactory = _extractAddress(json, "PolicyFactory");
-        address idrx = _extractAddress(json, "IDRX");
-        address weth = _extractAddress(json, "WETH");
-        address poolManager = _extractAddress(json, "PoolManager");
-        address wethIDRXPool = _extractAddress(json, "WETH_IDRX_Pool");
+        address agentRouter    = _extractAddress(json, "AgentRouter");
+        address identityReg    = _extractAddress(json, "IdentityRegistry");
+        address idrx           = _extractAddress(json, "IDRX");
+        address weth           = _extractAddress(json, "WETH");
+        address wethIDRXPool   = _extractAddress(json, "WETH_IDRX_Pool");
 
         console.log("Contracts:");
         console.log("  BalanceManager:", balanceManager);
         console.log("  AgentRouter:", agentRouter);
-        console.log("  PolicyFactory:", policyFactory);
+        console.log("  IdentityRegistry:", identityReg);
         console.log("  IDRX:", idrx);
         console.log("  WETH:", weth);
-        console.log("  PoolManager:", poolManager);
         console.log("  WETH/IDRX Pool:", wethIDRXPool);
         console.log("");
 
@@ -56,154 +58,70 @@ contract TestAgentOrderExecution is Script {
         console.log("Step 1: Checking token balances...");
         uint256 idrxBalance = IERC20(idrx).balanceOf(primaryTrader);
         uint256 wethBalance = IERC20(weth).balanceOf(primaryTrader);
-
         console.log("  IDRX balance:", idrxBalance);
         console.log("  WETH balance:", wethBalance);
 
-        if (idrxBalance < 10000000) { // Need at least 100,000 IDRX (assuming 2 decimals)
+        if (idrxBalance < 10000000) {
             console.log("  Minting IDRX...");
-            MockToken(idrx).mint(primaryTrader, 10000000); // 100,000 IDRX
-            console.log("  IDRX minted");
+            MockToken(idrx).mint(primaryTrader, 10000000);
         }
-
         if (wethBalance < 10 ether) {
             console.log("  Minting WETH...");
             MockToken(weth).mint(primaryTrader, 10 ether);
-            console.log("  WETH minted");
         }
         console.log("");
 
-        // Step 2: Deposit to BalanceManager using depositLocal
+        // Step 2: Deposit to BalanceManager
         console.log("Step 2: Depositing to BalanceManager...");
-
         uint256 depositAmount = 5000000; // 50,000 IDRX
-
-        // Approve BalanceManager
-        console.log("  Approving BalanceManager for IDRX...");
         IERC20(idrx).approve(balanceManager, depositAmount);
-
-        // Deposit using depositLocal (address token, uint256 amount, address recipient)
-        console.log("  Depositing", depositAmount, "IDRX...");
-        try BalanceManager(balanceManager).depositLocal(idrx, depositAmount, primaryTrader) {
-            console.log("  Deposit successful!");
-        } catch Error(string memory reason) {
-            console.log("  Deposit failed:", reason);
-            revert(reason);
-        } catch (bytes memory lowLevelData) {
-            console.log("  Deposit failed with low-level error");
-            console.logBytes(lowLevelData);
-            revert("Deposit failed");
-        }
-
-        // Verify balance using Currency.wrap
-        console.log("  Verifying balance in BalanceManager...");
-        // Note: getBalance expects Currency type which is just address wrapped
-        Currency idrxCurrency = Currency.wrap(idrx);
-        uint256 bmBalance = BalanceManager(balanceManager).getBalance(primaryTrader, idrxCurrency);
+        BalanceManager(balanceManager).depositLocal(idrx, depositAmount, primaryTrader);
+        uint256 bmBalance = BalanceManager(balanceManager).getBalance(
+            primaryTrader,
+            Currency.wrap(idrx)
+        );
         console.log("  Balance in BalanceManager:", bmBalance);
-
         require(bmBalance > 0, "Balance is zero after deposit!");
         console.log("");
 
-        // Step 3: Install/verify agent
-        console.log("Step 3: Installing/verifying agent...");
-        uint256 agentTokenId = 1;
-
-        bool agentEnabled = PolicyFactory(policyFactory).isAgentEnabled(primaryTrader, agentTokenId);
-
-        // Uninstall existing agent if needed (to update policy)
-        if (agentEnabled) {
-            console.log("  Agent already enabled, uninstalling to update policy...");
-            PolicyFactory(policyFactory).uninstallAgent(agentTokenId);
-            agentEnabled = false;
-        }
-
-        if (!agentEnabled) {
-            console.log("  Installing agent with updated policy...");
-
-            // PolicyCustomization struct: (maxOrderSize, dailyVolumeLimit, expiryTimestamp, whitelistedTokens)
-            // Override with higher limits suitable for 18-decimal tokens
-            PolicyFactory.PolicyCustomization memory customization = PolicyFactory.PolicyCustomization({
-                maxOrderSize: 10 ether, // 10 WETH max (10e18)
-                dailyVolumeLimit: 100 ether, // 100 WETH daily limit
-                expiryTimestamp: 0,
-                whitelistedTokens: new address[](0)
-            });
-
-            try PolicyFactory(policyFactory).installAgentFromTemplate(
-                agentTokenId,
-                "moderate",
-                customization
-            ) {
-                console.log("  Agent installed successfully!");
-            } catch Error(string memory reason) {
-                console.log("  Failed to install agent:", reason);
-                revert(reason);
-            } catch {
-                console.log("  Failed to install agent (unknown error)");
-                revert("Agent installation failed");
-            }
-        } else {
-            console.log("  Agent already enabled");
-        }
-
-        PolicyFactory.Policy memory policy = PolicyFactory(policyFactory).getPolicy(primaryTrader, agentTokenId);
-        console.log("  Policy installed at:", policy.installedAt);
-        console.log("  Max order size:", policy.maxOrderSize);
+        // Step 3: Register agent NFT
+        console.log("Step 3: Registering agent identity...");
+        uint256 agentTokenId = MockERC8004Identity(identityReg).register();
+        console.log("  Agent Token ID:", agentTokenId);
         console.log("");
 
-        // Step 4: Execute agent order via AgentRouter
-        console.log("Step 4: Executing agent limit order...");
-        console.log("  Order details:");
-        console.log("    Pool: WETH/IDRX");
-        console.log("    Side: BUY");
-        console.log("    Quantity: 0.003 WETH (3e15 wei)");
-        console.log("    Price: 2000 IDRX/WETH");
-        console.log("    Owner:", primaryTrader);
-        console.log("    Agent Token ID:", agentTokenId);
+        // Step 4: Authorize agent with policy (installs policy + grants authorization)
+        console.log("Step 4: Authorizing agent with policy...");
+        _authorizeAgent(agentRouter, agentTokenId);
+        bool isAuthorized = AgentRouter(agentRouter).isAuthorized(primaryTrader, agentTokenId);
+        console.log("  Agent authorized:", isAuthorized);
         console.log("");
 
-        // Construct Pool struct (baseCurrency, quoteCurrency, orderBook)
+        // Step 5: Execute limit order
+        console.log("Step 5: Executing agent limit order...");
+        console.log("  Pool: WETH/IDRX  Side: BUY  Qty: 0.003 WETH  Price: 2000 IDRX");
+
         IPoolManager.Pool memory pool = IPoolManager.Pool({
-            baseCurrency: Currency.wrap(weth),
+            baseCurrency:  Currency.wrap(weth),
             quoteCurrency: Currency.wrap(idrx),
-            orderBook: IOrderBook(wethIDRXPool)
+            orderBook:     IOrderBook(wethIDRXPool)
         });
 
-        // Execute limit order
-        // function executeLimitOrder(
-        //     uint256 agentTokenId,
-        //     IPoolManager.Pool calldata pool,
-        //     uint128 price,
-        //     uint128 quantity,
-        //     IOrderBook.Side side,
-        //     IOrderBook.TimeInForce timeInForce,
-        //     bool autoRepay,
-        //     bool autoBorrow
-        // )
-
-        uint128 price = 200000; // 2000 IDRX (2 decimals)
-        uint128 quantity = 3000000000000000; // 0.003 WETH (3e15 wei) - should meet minTradeAmount (>= 500)
-        IOrderBook.Side side = IOrderBook.Side.BUY;
-        IOrderBook.TimeInForce tif = IOrderBook.TimeInForce.GTC;
-
-        console.log("  Calling AgentRouter.executeLimitOrder...");
+        uint128 price    = 200000; // 2000 IDRX (2 decimals)
+        uint128 quantity = 3000000000000000; // 0.003 WETH
 
         try AgentRouter(agentRouter).executeLimitOrder(
+            primaryTrader,
             agentTokenId,
             pool,
             price,
             quantity,
-            side,
-            tif,
-            false, // autoRepay
-            false  // autoBorrow
+            IOrderBook.Side.BUY,
+            IOrderBook.TimeInForce.GTC,
+            false,
+            false
         ) returns (uint48 orderId) {
-            console.log("  SUCCESS! Order placed via agent");
-            console.log("  Order ID:", orderId);
-            console.log("");
-            console.log("=== AGENT ORDER EXECUTION VERIFIED ===");
-            console.log("Agent can successfully place orders on behalf of owner!");
+            console.log("  SUCCESS! Order ID:", orderId);
         } catch Error(string memory reason) {
             console.log("  FAILED:", reason);
             revert(reason);
@@ -214,42 +132,71 @@ contract TestAgentOrderExecution is Script {
         }
 
         vm.stopBroadcast();
+        console.log("");
+        console.log("[SUCCESS] Agent order execution test complete!");
+    }
+
+    /// @dev Encodes authorize calldata in an isolated pure frame, then makes a raw call.
+    ///      Three-stage split to avoid Yul stack-too-deep (18 slots > SWAP16 limit):
+    ///      Stage 1 (_buildAuthorizeData): build Policy + encode in isolated pure frame.
+    ///      Stage 2 (_encodeAuthorize):  only `agentId` + `p` + RET live during encodeCall.
+    ///      Stage 3 (here):              raw agentRouter.call — agentRouter never shares
+    ///                                   the stack with the 14 ABI-encoding Yul temporaries.
+    function _authorizeAgent(address agentRouter, uint256 agentTokenId) internal {
+        bytes memory data = _buildAuthorizeData(agentTokenId);
+        (bool ok,) = agentRouter.call(data);
+        require(ok, "AgentRouter.authorize failed");
+    }
+
+    /// @dev Builds Policy and encodes the authorize call. `empty` is dead before
+    ///      _encodeAuthorize, keeping peak stack at 17 (agentId + p + RET + ~14 vars).
+    function _buildAuthorizeData(uint256 agentId) private pure returns (bytes memory) {
+        address[] memory empty = new address[](0);
+        PolicyFactory.Policy memory p;
+        p.expiryTimestamp       = type(uint256).max;
+        p.maxOrderSize          = 10 ether;
+        p.whitelistedTokens     = empty;
+        p.blacklistedTokens     = empty;
+        p.allowMarketOrders     = true;
+        p.allowLimitOrders      = true;
+        p.allowSwap             = true;
+        p.allowSupplyCollateral = true;
+        p.allowPlaceLimitOrder  = true;
+        p.allowCancelOrder      = true;
+        p.allowBuy              = true;
+        p.allowSell             = true;
+        p.minHealthFactor       = 1e18;
+        p.maxSlippageBps        = 500;
+        p.dailyVolumeLimit      = 100 ether;
+        p.maxDailyDrawdown      = 2000;
+        return _encodeAuthorize(agentId, p);
+    }
+
+    /// @dev Isolated so only `agentId` and `p` are live during abi.encodeCall.
+    function _encodeAuthorize(uint256 agentId, PolicyFactory.Policy memory p) private pure returns (bytes memory) {
+        return abi.encodeCall(AgentRouter.authorize, (agentId, p));
     }
 
     function _extractAddress(string memory json, string memory key) internal pure returns (address) {
         bytes memory jsonBytes = bytes(json);
         bytes memory keyBytes = bytes(string.concat('"', key, '": "'));
-
         uint256 keyPos = _indexOf(jsonBytes, keyBytes);
-        if (keyPos == type(uint256).max) {
-            return address(0);
-        }
-
+        if (keyPos == type(uint256).max) return address(0);
         uint256 addressStart = keyPos + keyBytes.length;
-        bytes memory addressBytes = new bytes(42);
-        for (uint256 i = 0; i < 42; i++) {
-            addressBytes[i] = jsonBytes[addressStart + i];
-        }
-
-        return _bytesToAddress(addressBytes);
+        bytes memory addrBytes = new bytes(42);
+        for (uint256 i = 0; i < 42; i++) addrBytes[i] = jsonBytes[addressStart + i];
+        return _bytesToAddress(addrBytes);
     }
 
     function _indexOf(bytes memory haystack, bytes memory needle) internal pure returns (uint256) {
-        if (needle.length == 0 || haystack.length < needle.length) {
-            return type(uint256).max;
-        }
-
+        if (needle.length == 0 || haystack.length < needle.length) return type(uint256).max;
         for (uint256 i = 0; i <= haystack.length - needle.length; i++) {
             bool found = true;
             for (uint256 j = 0; j < needle.length; j++) {
-                if (haystack[i + j] != needle[j]) {
-                    found = false;
-                    break;
-                }
+                if (haystack[i + j] != needle[j]) { found = false; break; }
             }
             if (found) return i;
         }
-
         return type(uint256).max;
     }
 
@@ -260,17 +207,12 @@ contract TestAgentOrderExecution is Script {
     function _hexToUint(bytes memory data) internal pure returns (uint256) {
         uint256 result = 0;
         for (uint256 i = 0; i < data.length; i++) {
-            uint8 byteValue = uint8(data[i]);
+            uint8 b = uint8(data[i]);
             uint256 digit;
-            if (byteValue >= 48 && byteValue <= 57) {
-                digit = uint256(byteValue) - 48;
-            } else if (byteValue >= 97 && byteValue <= 102) {
-                digit = uint256(byteValue) - 87;
-            } else if (byteValue >= 65 && byteValue <= 70) {
-                digit = uint256(byteValue) - 55;
-            } else {
-                continue;
-            }
+            if (b >= 48 && b <= 57)       digit = b - 48;
+            else if (b >= 97 && b <= 102) digit = b - 87;
+            else if (b >= 65 && b <= 70)  digit = b - 55;
+            else continue;
             result = result * 16 + digit;
         }
         return result;

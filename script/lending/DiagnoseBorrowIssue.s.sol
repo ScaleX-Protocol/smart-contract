@@ -15,9 +15,9 @@ contract DiagnoseBorrowIssue is Script {
     IScaleXRouter public router;
     ILendingManager public lendingManager;
 
-    address public IDRX_ADDRESS = 0x80Fd9A0F8bcA5255692016d67E0733Bf5262C142;
-    address public WETH_ADDRESS = 0x8b732595A59c9A18ACa0AcA3221a656Eb38158Fc;
-    address public WBTC_ADDRESS = 0x54911080aB22017e1CA55f10Ff06aE707428Fb0D;
+    address public IDRX_ADDRESS = 0x80FD9a0F8BCA5255692016D67E0733bf5262C142;
+    address public WETH_ADDRESS = 0x8b732595a59c9a18acA0Aca3221A656Eb38158fC;
+    address public WBTC_ADDRESS = 0x54911080AB22017e1Ca55F10Ff06AE707428fb0D;
 
     function setUp() public {
         // Load router address from environment
@@ -25,9 +25,9 @@ contract DiagnoseBorrowIssue is Script {
         router = IScaleXRouter(routerAddress);
         lendingManager = ILendingManager(router.lendingManager());
 
-        console.log("=".repeat(80));
+        console.log("================================================================================");
         console.log("LENDING DIAGNOSTICS");
-        console.log("=".repeat(80));
+        console.log("================================================================================");
         console.log("Router:", address(router));
         console.log("LendingManager:", address(lendingManager));
         console.log("");
@@ -52,9 +52,9 @@ contract DiagnoseBorrowIssue is Script {
         _checkAsset("WBTC", WBTC_ADDRESS, user);
 
         // Check borrowing capacity for IDRX
-        console.log("=".repeat(80));
+        console.log("================================================================================");
         console.log("BORROWING CAPACITY FOR IDRX");
-        console.log("=".repeat(80));
+        console.log("================================================================================");
 
         uint256 availableLiquidity = lendingManager.getAvailableLiquidity(IDRX_ADDRESS);
         uint8 decimals = IERC20Metadata(IDRX_ADDRESS).decimals();
@@ -93,9 +93,9 @@ contract DiagnoseBorrowIssue is Script {
         }
 
         // Calculate maximum borrowable amount
-        console.log("=".repeat(80));
+        console.log("================================================================================");
         console.log("MAXIMUM BORROWABLE CALCULATION");
-        console.log("=".repeat(80));
+        console.log("================================================================================");
         _calculateMaxBorrowable(user, IDRX_ADDRESS);
     }
 

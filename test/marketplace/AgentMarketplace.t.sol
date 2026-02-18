@@ -31,9 +31,9 @@ contract AgentMarketplaceTest is Test {
     MockERC20 public WETH;
 
     // Actors
-    address public developer = address(0xDEV);
-    address public executorWallet = address(0xEXEC);
-    address public user = address(0xUSER);
+    address public developer = makeAddr("developer");
+    address public executorWallet = makeAddr("executorWallet");
+    address public user = makeAddr("user");
 
     // Agent IDs
     uint256 public developerAgentId;
@@ -186,7 +186,7 @@ contract AgentMarketplaceTest is Test {
             false               // autoBorrow
         );
 
-        console.log("    Order rejected due to policy violation ✓");
+        console.log("    Order rejected due to policy violation [OK]");
 
         // Now try with amount within policy limit
         console.log("  Placing order within policy limit (1000 IDRX)");
@@ -204,7 +204,7 @@ contract AgentMarketplaceTest is Test {
             false
         );
 
-        console.log("    Order placed successfully ✓");
+        console.log("    Order placed successfully [OK]");
         console.log("    Order ID:", orderId);
 
         vm.stopPrank();
@@ -221,9 +221,9 @@ contract AgentMarketplaceTest is Test {
         console.log("  Agent Token ID:", userAgentId);
         console.log("  Executor:", executorWallet);
         console.log("  User (owner):", user);
-        console.log("  Order placed using user's funds ✓");
+        console.log("  Order placed using user's funds [OK]");
 
-        console.log("\n=== Test Passed ✓ ===\n");
+        console.log("\n=== Test Passed [OK] ===\n");
     }
 
     function testMultipleUsersWithDifferentPolicies() public {
@@ -234,7 +234,7 @@ contract AgentMarketplaceTest is Test {
         developerAgentId = identityRegistry.register();
 
         // User 1: Alice (Conservative - max 1000 IDRX)
-        address alice = address(0xALICE);
+        address alice = makeAddr("alice");
         uint256 aliceAgentId;
 
         vm.startPrank(alice);
@@ -260,7 +260,7 @@ contract AgentMarketplaceTest is Test {
         console.log("  Max order size: 1000 IDRX");
 
         // User 2: Bob (Aggressive - max 10000 IDRX)
-        address bob = address(0xBOB);
+        address bob = makeAddr("bob");
         uint256 bobAgentId;
 
         vm.startPrank(bob);
@@ -303,7 +303,7 @@ contract AgentMarketplaceTest is Test {
             false,
             false
         );
-        console.log("  ✓ Alice's order rejected (exceeds policy)");
+        console.log("  [OK] Alice's order rejected (exceeds policy)");
 
         // For Bob: Should SUCCEED (within 10000 limit)
         console.log("\nPlacing 5000 IDRX order for Bob (limit: 10000)...");
@@ -317,11 +317,11 @@ contract AgentMarketplaceTest is Test {
             false,
             false
         );
-        console.log("  ✓ Bob's order succeeded (Order ID:", bobOrderId, ")");
+        console.log("  [OK] Bob's order succeeded (Order ID:", bobOrderId, ")");
 
         vm.stopPrank();
 
-        console.log("\n=== Multiple Users Test Passed ✓ ===");
+        console.log("\n=== Multiple Users Test Passed [OK] ===");
         console.log("Same executor, different policies enforced correctly!");
     }
 }

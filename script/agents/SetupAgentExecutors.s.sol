@@ -15,6 +15,11 @@ import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
  * @dev Agent wallets can trade using primary wallet's funds but pay their own gas
  */
 contract SetupAgentExecutors is Script {
+    /// @dev Temporary storage for agentRouter so it doesn't occupy a Yul stack slot
+    ///      during authorize() ABI encoding. Loading from storage at the CALL opcode
+    ///      saves 1 stack slot vs passing it as a function parameter.
+    address private _agentRouterCache;
+
     struct ExecutorSetup {
         address executorWallet;
         uint256 executorPrivateKey;
@@ -199,91 +204,91 @@ contract SetupAgentExecutors is Script {
         return agentId;
     }
 
+    /// @dev Two-stage split: cache agentRouter in storage (so it's not a live stack slot
+    ///      during ABI encoding), build Policy in an isolated pure frame, then call
+    ///      authorize with only 2 stack params — the minimum needed for the 42-field struct.
     function _createPolicy(address agentRouter, uint256 agentId) internal {
-        // Create a permissive policy for agent trading
-        address[] memory emptyAddressArray = new address[](0);
+        _agentRouterCache = agentRouter;
+        _callAuthorize(agentId, _buildSetupPolicy());
+    }
 
-        PolicyFactory.Policy memory policy = PolicyFactory.Policy({
-            // Metadata
-            enabled: false,
-            installedAt: 0,
-            expiryTimestamp: type(uint256).max,
+    /// @dev Builds the Policy struct in an isolated pure frame — no outer locals in scope.
+    function _buildSetupPolicy() private pure returns (PolicyFactory.Policy memory policy) {
+        address[] memory empty = new address[](0);
+        policy.expiryTimestamp              = type(uint256).max;
+        policy.maxOrderSize                 = 10000e6;
+        policy.minOrderSize                 = 1e6;
+        policy.whitelistedTokens            = empty;
+        policy.blacklistedTokens            = empty;
+        policy.allowMarketOrders            = true;
+        policy.allowLimitOrders             = true;
+        policy.allowSwap                    = true;
+        policy.allowBorrow                  = true;
+        policy.allowRepay                   = true;
+        policy.allowSupplyCollateral        = true;
+        policy.allowWithdrawCollateral      = true;
+        policy.allowPlaceLimitOrder         = true;
+        policy.allowCancelOrder             = true;
+        policy.allowBuy                     = true;
+        policy.allowSell                    = true;
+        policy.allowAutoBorrow              = true;
+        policy.maxAutoBorrowAmount          = 5000e6;
+        policy.allowAutoRepay               = true;
+        policy.minDebtToRepay               = 100e6;
+        policy.minHealthFactor              = 13e17;
+        policy.maxSlippageBps               = 500;
+        policy.minTimeBetweenTrades         = 60;
+        policy.dailyVolumeLimit             = 100000e6;
+        policy.weeklyVolumeLimit            = 500000e6;
+        policy.maxDailyDrawdown             = 2000;
+        policy.maxWeeklyDrawdown            = 3000;
+        policy.maxTradeVsTVLBps             = 1000;
+        policy.maxPositionConcentrationBps  = 5000;
+        policy.maxCorrelationBps            = 10000;
+        policy.maxTradesPerDay              = 1000;
+        policy.maxTradesPerHour             = 100;
+        policy.tradingEndHour               = 23;
+    }
 
-            // Order Size
-            maxOrderSize: 10000e6,  // 10k max per order
-            minOrderSize: 1e6,      // 1 minimum
+    /// @dev Assembly ABI encoder for authorize(uint256, Policy).
+    ///      Policy has 42 fields; whitelistedTokens (field 5) and blacklistedTokens (field 6)
+    ///      are the only dynamic types — always empty in scripts, so lengths are hardcoded 0.
+    ///      Calldata layout: 4 (sel) + 32 (id) + 32 (Policy offset=64) + 1344 (42-word head)
+    ///                       + 32 (wTokens len=0) + 32 (bTokens len=0) = 1476 bytes total.
+    ///      Peak named Yul variables: ~8 — well within the 16-slot SWAP16 window.
+    function _callAuthorize(uint256 agentId, PolicyFactory.Policy memory policy) private {
+        bytes4 sel = AgentRouter.authorize.selector;
+        assembly {
+            let router   := sload(_agentRouterCache.slot)
+            let cdStart  := mload(0x40)
+            mstore(0x40, add(cdStart, 1476))
 
-            // Allowed Markets
-            whitelistedTokens: emptyAddressArray,  // All tokens allowed
-            blacklistedTokens: emptyAddressArray,  // No tokens blocked
+            mstore(cdStart, sel)                    // selector (left-aligned bytes4)
+            mstore(add(cdStart,  4), agentId)      // param 1
+            mstore(add(cdStart, 36), 0x40)         // param 2: offset to Policy tuple = 64
 
-            // Order Types
-            allowMarketOrders: true,
-            allowLimitOrders: true,
+            let base := add(cdStart, 68)           // Policy tuple starts here
 
-            // Operations
-            allowSwap: true,
-            allowBorrow: true,
-            allowRepay: true,
-            allowSupplyCollateral: true,
-            allowWithdrawCollateral: true,
-            allowPlaceLimitOrder: true,
-            allowCancelOrder: true,
+            // Copy all 42 head words from struct memory → calldata head
+            for { let i := 0 } lt(i, 42) { i := add(i, 1) } {
+                mstore(add(base, mul(i, 0x20)), mload(add(policy, mul(i, 0x20))))
+            }
 
-            // Buy/Sell Direction
-            allowBuy: true,
-            allowSell: true,
+            // Overwrite field 5 (whitelistedTokens) and field 6 (blacklistedTokens)
+            // with their ABI tail offsets (relative to start of Policy tuple).
+            mstore(add(base, 0xa0), 0x540)  // whitelistedTokens at base+0x540
+            mstore(add(base, 0xc0), 0x560)  // blacklistedTokens at base+0x560
 
-            // Auto-Borrow
-            allowAutoBorrow: true,
-            maxAutoBorrowAmount: 5000e6,  // 5k max auto-borrow
+            // Write empty array lengths in the tail
+            mstore(add(base, 0x540), 0)     // whitelistedTokens.length = 0
+            mstore(add(base, 0x560), 0)     // blacklistedTokens.length  = 0
 
-            // Auto-Repay
-            allowAutoRepay: true,
-            minDebtToRepay: 100e6,  // 100 minimum to repay
-
-            // Safety
-            minHealthFactor: 1.3e18,  // 1.3x minimum health
-            maxSlippageBps: 500,      // 5% max slippage
-            minTimeBetweenTrades: 60,  // 1 minute cooldown
-            emergencyRecipient: address(0),
-
-            // Volume Limits (Chainlink required)
-            dailyVolumeLimit: 100000e6,  // 100k daily
-            weeklyVolumeLimit: 500000e6, // 500k weekly
-
-            // Drawdown Limits
-            maxDailyDrawdown: 2000,   // 20% max daily drawdown
-            maxWeeklyDrawdown: 3000,  // 30% max weekly drawdown
-
-            // Market Depth
-            maxTradeVsTVLBps: 1000,  // 10% of TVL max
-
-            // Performance Requirements
-            minWinRateBps: 0,     // No min win rate
-            minSharpeRatio: 0,    // No min Sharpe ratio
-
-            // Position Management
-            maxPositionConcentrationBps: 5000,  // 50% max in one asset
-            maxCorrelationBps: 10000,  // No correlation limit
-
-            // Trade Frequency
-            maxTradesPerDay: 1000,
-            maxTradesPerHour: 100,
-
-            // Trading Hours (UTC)
-            tradingStartHour: 0,   // 24/7 trading
-            tradingEndHour: 23,
-
-            // Reputation
-            minReputationScore: 0,  // No min reputation
-            useReputationMultiplier: false,
-
-            // Optimization Flag
-            requiresChainlinkFunctions: false  // Set by contract
-        });
-
-        AgentRouter(agentRouter).authorize(agentId, policy);
+            let ok := call(gas(), router, 0, cdStart, 1476, 0, 0)
+            if iszero(ok) {
+                returndatacopy(0, 0, returndatasize())
+                revert(0, returndatasize())
+            }
+        }
     }
 
     function _authorizeExecutors(

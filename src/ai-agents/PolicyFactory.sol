@@ -218,15 +218,7 @@ contract PolicyFactory {
         );
 
         _validatePolicy(policy);
-
-        policies[msg.sender][strategyAgentId] = policy;
-        policies[msg.sender][strategyAgentId].installedAt = block.timestamp;
-        policies[msg.sender][strategyAgentId].enabled = true;
-        policies[msg.sender][strategyAgentId].requiresChainlinkFunctions = _requiresChainlink(policy);
-
-        installedAgents[msg.sender].push(strategyAgentId);
-
-        emit PolicyInstalled(msg.sender, strategyAgentId, "custom", block.timestamp);
+        _storeCalldataPolicy(msg.sender, strategyAgentId, policy, "custom");
     }
 
     /**
@@ -244,25 +236,11 @@ contract PolicyFactory {
             "Policy already installed"
         );
 
-        PolicyTemplate memory tmpl = templates[templateName];
+        // Use storage reference to avoid copying PolicyTemplate memory (strings + Policy arrays = 4+ Yul loops)
+        PolicyTemplate storage tmpl = templates[templateName];
         require(tmpl.active, "Template not found or inactive");
 
-        Policy memory policy = tmpl.basePolicy;
-
-        if (customizations.maxOrderSize > 0)        policy.maxOrderSize = customizations.maxOrderSize;
-        if (customizations.dailyVolumeLimit > 0)    policy.dailyVolumeLimit = customizations.dailyVolumeLimit;
-        if (customizations.expiryTimestamp > 0)     policy.expiryTimestamp = customizations.expiryTimestamp;
-        if (customizations.whitelistedTokens.length > 0) policy.whitelistedTokens = customizations.whitelistedTokens;
-
-        _validatePolicy(policy);
-        policies[msg.sender][strategyAgentId] = policy;
-        policies[msg.sender][strategyAgentId].installedAt = block.timestamp;
-        policies[msg.sender][strategyAgentId].enabled = true;
-        policies[msg.sender][strategyAgentId].requiresChainlinkFunctions = _requiresChainlink(policy);
-
-        installedAgents[msg.sender].push(strategyAgentId);
-
-        emit PolicyInstalled(msg.sender, strategyAgentId, templateName, block.timestamp);
+        _installFromTemplate(msg.sender, strategyAgentId, tmpl, customizations, templateName);
     }
 
     /**
@@ -302,15 +280,7 @@ contract PolicyFactory {
         );
 
         _validatePolicy(policy);
-
-        policies[user][strategyAgentId] = policy;
-        policies[user][strategyAgentId].installedAt = block.timestamp;
-        policies[user][strategyAgentId].enabled = true;
-        policies[user][strategyAgentId].requiresChainlinkFunctions = _requiresChainlink(policy);
-
-        installedAgents[user].push(strategyAgentId);
-
-        emit PolicyInstalled(user, strategyAgentId, "custom", block.timestamp);
+        _storeCalldataPolicy(user, strategyAgentId, policy, "custom");
     }
 
     /**
@@ -340,7 +310,14 @@ contract PolicyFactory {
         policy.maxOrderSize = maxOrderSize;
         policy.minOrderSize = minOrderSize;
         policy.dailyVolumeLimit = dailyVolumeLimit;
-        policy.requiresChainlinkFunctions = _requiresChainlink(policy);
+        policy.requiresChainlinkFunctions = (
+            policy.dailyVolumeLimit > 0 || policy.weeklyVolumeLimit > 0 ||
+            policy.maxDailyDrawdown > 0 || policy.maxWeeklyDrawdown > 0 ||
+            policy.maxTradeVsTVLBps > 0 || policy.minWinRateBps > 0 ||
+            policy.minSharpeRatio > 0 || policy.maxPositionConcentrationBps > 0 ||
+            policy.maxTradesPerDay > 0 || policy.maxTradesPerHour > 0 ||
+            policy.tradingStartHour > 0
+        );
         emit PolicyUpdated(msg.sender, strategyAgentId, "tradingLimits", block.timestamp);
     }
 
@@ -365,7 +342,14 @@ contract PolicyFactory {
         require(maxDailyDrawdown <= 10000, "Drawdown must be <= 100%");
         policy.minHealthFactor = minHealthFactor;
         policy.maxDailyDrawdown = maxDailyDrawdown;
-        policy.requiresChainlinkFunctions = _requiresChainlink(policy);
+        policy.requiresChainlinkFunctions = (
+            policy.dailyVolumeLimit > 0 || policy.weeklyVolumeLimit > 0 ||
+            policy.maxDailyDrawdown > 0 || policy.maxWeeklyDrawdown > 0 ||
+            policy.maxTradeVsTVLBps > 0 || policy.minWinRateBps > 0 ||
+            policy.minSharpeRatio > 0 || policy.maxPositionConcentrationBps > 0 ||
+            policy.maxTradesPerDay > 0 || policy.maxTradesPerHour > 0 ||
+            policy.tradingStartHour > 0
+        );
         emit PolicyUpdated(msg.sender, strategyAgentId, "safetyControls", block.timestamp);
     }
 
@@ -417,7 +401,7 @@ contract PolicyFactory {
         address user,
         uint256 strategyAgentId
     ) external view returns (bool) {
-        Policy memory policy = policies[user][strategyAgentId];
+        Policy storage policy = policies[user][strategyAgentId];
         return policy.enabled && block.timestamp < policy.expiryTimestamp;
     }
 
@@ -430,7 +414,8 @@ contract PolicyFactory {
         uint256 strategyAgentId,
         address token
     ) external view returns (bool) {
-        Policy memory policy = policies[user][strategyAgentId];
+        // Use storage ref to avoid copying large struct to memory (prevents Yul stack-too-deep)
+        Policy storage policy = policies[user][strategyAgentId];
 
         for (uint256 i = 0; i < policy.blacklistedTokens.length; i++) {
             if (policy.blacklistedTokens[i] == token) return false;
@@ -438,8 +423,8 @@ contract PolicyFactory {
 
         if (policy.whitelistedTokens.length == 0) return true;
 
-        for (uint256 i = 0; i < policy.whitelistedTokens.length; i++) {
-            if (policy.whitelistedTokens[i] == token) return true;
+        for (uint256 j = 0; j < policy.whitelistedTokens.length; j++) {
+            if (policy.whitelistedTokens[j] == token) return true;
         }
 
         return false;
@@ -490,158 +475,185 @@ contract PolicyFactory {
         }
     }
 
+    /// @dev Extracted to separate function to avoid Yul stack-too-deep during calldata Policy storage write.
+    ///      Copying a struct with two dynamic arrays (whitelistedTokens, blacklistedTokens) from
+    ///      calldata to storage generates two Yul loops; the calling function's live variables push
+    ///      the second loop counter below the 16-slot accessible window.
+    function _storeCalldataPolicy(
+        address user,
+        uint256 agentId,
+        Policy calldata policy,
+        string memory templateName
+    ) internal {
+        policies[user][agentId] = policy;
+        Policy storage s = policies[user][agentId];
+        s.installedAt = block.timestamp;
+        s.enabled = true;
+        s.requiresChainlinkFunctions = (
+            s.dailyVolumeLimit > 0 || s.weeklyVolumeLimit > 0 ||
+            s.maxDailyDrawdown > 0 || s.maxWeeklyDrawdown > 0 ||
+            s.maxTradeVsTVLBps > 0 || s.minWinRateBps > 0 ||
+            s.minSharpeRatio > 0 || s.maxPositionConcentrationBps > 0 ||
+            s.maxTradesPerDay > 0 || s.maxTradesPerHour > 0 ||
+            s.tradingStartHour > 0
+        );
+        installedAgents[user].push(agentId);
+        emit PolicyInstalled(user, agentId, templateName, block.timestamp);
+    }
+
+    /// @dev Handles the memory copy and customization of a template policy in an isolated stack frame.
+    ///      Called by installPolicyFromTemplate after the storage ref to the template is obtained.
+    ///      Isolates Policy memory copy (2 Yul loops) from the template storage-ref setup.
+    function _installFromTemplate(
+        address user,
+        uint256 agentId,
+        PolicyTemplate storage tmpl,
+        PolicyCustomization calldata customizations,
+        string calldata templateName
+    ) private {
+        Policy memory policy = tmpl.basePolicy;
+        if (customizations.maxOrderSize > 0)     policy.maxOrderSize = customizations.maxOrderSize;
+        if (customizations.dailyVolumeLimit > 0) policy.dailyVolumeLimit = customizations.dailyVolumeLimit;
+        if (customizations.expiryTimestamp > 0)  policy.expiryTimestamp = customizations.expiryTimestamp;
+        if (customizations.whitelistedTokens.length > 0) policy.whitelistedTokens = customizations.whitelistedTokens;
+        _validatePolicy(policy);
+        _storeMemoryPolicy(user, agentId, policy, templateName);
+    }
+
+    /// @dev Same as _storeCalldataPolicy but for a memory Policy (used by installPolicyFromTemplate).
+    function _storeMemoryPolicy(
+        address user,
+        uint256 agentId,
+        Policy memory policy,
+        string calldata templateName
+    ) internal {
+        policy.installedAt = block.timestamp;
+        policy.enabled = true;
+        policies[user][agentId] = policy;
+        // Read requiresChainlink from storage after write (avoids holding memory Policy
+        // live simultaneously with the storage slot computation vars)
+        Policy storage s = policies[user][agentId];
+        s.requiresChainlinkFunctions = (
+            s.dailyVolumeLimit > 0 || s.weeklyVolumeLimit > 0 ||
+            s.maxDailyDrawdown > 0 || s.maxWeeklyDrawdown > 0 ||
+            s.maxTradeVsTVLBps > 0 || s.minWinRateBps > 0 ||
+            s.minSharpeRatio > 0 || s.maxPositionConcentrationBps > 0 ||
+            s.maxTradesPerDay > 0 || s.maxTradesPerHour > 0 ||
+            s.tradingStartHour > 0
+        );
+        installedAgents[user].push(agentId);
+        emit PolicyInstalled(user, agentId, templateName, block.timestamp);
+    }
+
     // ============ Templates ============
 
+    // Each template initializer is a separate function to avoid Yul stack-too-deep
+    // from large struct literal construction.
     function _initializeTemplates() internal {
-        templates["conservative"] = PolicyTemplate({
-            name: "Conservative",
-            description: "Low risk, strict limits",
-            active: true,
-            basePolicy: Policy({
-                enabled: true,
-                installedAt: 0,
-                expiryTimestamp: type(uint256).max,
-                maxOrderSize: 1000e6,
-                minOrderSize: 100e6,
-                whitelistedTokens: new address[](0),
-                blacklistedTokens: new address[](0),
-                allowMarketOrders: true,
-                allowLimitOrders: true,
-                allowSwap: true,
-                allowBorrow: false,
-                allowRepay: true,
-                allowSupplyCollateral: true,
-                allowWithdrawCollateral: true,
-                allowPlaceLimitOrder: true,
-                allowCancelOrder: true,
-                allowBuy: true,
-                allowSell: true,
-                allowAutoBorrow: false,
-                maxAutoBorrowAmount: 0,
-                allowAutoRepay: false,
-                minDebtToRepay: 0,
-                minHealthFactor: 2e18,
-                maxSlippageBps: 50,
-                minTimeBetweenTrades: 300,
-                emergencyRecipient: address(0),
-                dailyVolumeLimit: 5000e6,
-                weeklyVolumeLimit: 0,
-                maxDailyDrawdown: 500,
-                maxWeeklyDrawdown: 0,
-                maxTradeVsTVLBps: 0,
-                minWinRateBps: 0,
-                minSharpeRatio: 0,
-                maxPositionConcentrationBps: 0,
-                maxCorrelationBps: 0,
-                maxTradesPerDay: 20,
-                maxTradesPerHour: 0,
-                tradingStartHour: 0,
-                tradingEndHour: 0,
-                minReputationScore: 75,
-                useReputationMultiplier: false,
-                requiresChainlinkFunctions: true
-            })
-        });
+        _initConservativeTemplate();
+        _initModerateTemplate();
+        _initAggressiveTemplate();
+    }
 
-        templates["moderate"] = PolicyTemplate({
-            name: "Moderate",
-            description: "Balanced risk and limits",
-            active: true,
-            basePolicy: Policy({
-                enabled: true,
-                installedAt: 0,
-                expiryTimestamp: type(uint256).max,
-                maxOrderSize: 5000e6,
-                minOrderSize: 100e6,
-                whitelistedTokens: new address[](0),
-                blacklistedTokens: new address[](0),
-                allowMarketOrders: true,
-                allowLimitOrders: true,
-                allowSwap: true,
-                allowBorrow: true,
-                allowRepay: true,
-                allowSupplyCollateral: true,
-                allowWithdrawCollateral: true,
-                allowPlaceLimitOrder: true,
-                allowCancelOrder: true,
-                allowBuy: true,
-                allowSell: true,
-                allowAutoBorrow: true,
-                maxAutoBorrowAmount: 2000e6,
-                allowAutoRepay: true,
-                minDebtToRepay: 100e6,
-                minHealthFactor: 15e17,
-                maxSlippageBps: 100,
-                minTimeBetweenTrades: 60,
-                emergencyRecipient: address(0),
-                dailyVolumeLimit: 20000e6,
-                weeklyVolumeLimit: 0,
-                maxDailyDrawdown: 1000,
-                maxWeeklyDrawdown: 0,
-                maxTradeVsTVLBps: 0,
-                minWinRateBps: 0,
-                minSharpeRatio: 0,
-                maxPositionConcentrationBps: 0,
-                maxCorrelationBps: 0,
-                maxTradesPerDay: 100,
-                maxTradesPerHour: 0,
-                tradingStartHour: 0,
-                tradingEndHour: 0,
-                minReputationScore: 50,
-                useReputationMultiplier: true,
-                requiresChainlinkFunctions: true
-            })
-        });
+    function _initConservativeTemplate() private {
+        PolicyTemplate storage t = templates["conservative"];
+        t.name = "Conservative";
+        t.description = "Low risk, strict limits";
+        t.active = true;
+        Policy storage p = t.basePolicy;
+        p.enabled = true;
+        p.expiryTimestamp = type(uint256).max;
+        p.maxOrderSize = 1000e6;
+        p.minOrderSize = 100e6;
+        p.allowMarketOrders = true;
+        p.allowLimitOrders = true;
+        p.allowSwap = true;
+        p.allowRepay = true;
+        p.allowSupplyCollateral = true;
+        p.allowWithdrawCollateral = true;
+        p.allowPlaceLimitOrder = true;
+        p.allowCancelOrder = true;
+        p.allowBuy = true;
+        p.allowSell = true;
+        p.minHealthFactor = 2e18;
+        p.maxSlippageBps = 50;
+        p.minTimeBetweenTrades = 300;
+        p.dailyVolumeLimit = 5000e6;
+        p.maxDailyDrawdown = 500;
+        p.maxTradesPerDay = 20;
+        p.minReputationScore = 75;
+        p.requiresChainlinkFunctions = true;
+    }
 
-        templates["aggressive"] = PolicyTemplate({
-            name: "Aggressive",
-            description: "High risk, loose limits",
-            active: true,
-            basePolicy: Policy({
-                enabled: true,
-                installedAt: 0,
-                expiryTimestamp: type(uint256).max,
-                maxOrderSize: 50000e6,
-                minOrderSize: 100e6,
-                whitelistedTokens: new address[](0),
-                blacklistedTokens: new address[](0),
-                allowMarketOrders: true,
-                allowLimitOrders: true,
-                allowSwap: true,
-                allowBorrow: true,
-                allowRepay: true,
-                allowSupplyCollateral: true,
-                allowWithdrawCollateral: true,
-                allowPlaceLimitOrder: true,
-                allowCancelOrder: true,
-                allowBuy: true,
-                allowSell: true,
-                allowAutoBorrow: true,
-                maxAutoBorrowAmount: 20000e6,
-                allowAutoRepay: true,
-                minDebtToRepay: 100e6,
-                minHealthFactor: 12e17,
-                maxSlippageBps: 300,
-                minTimeBetweenTrades: 0,
-                emergencyRecipient: address(0),
-                dailyVolumeLimit: 200000e6,
-                weeklyVolumeLimit: 0,
-                maxDailyDrawdown: 2000,
-                maxWeeklyDrawdown: 0,
-                maxTradeVsTVLBps: 0,
-                minWinRateBps: 0,
-                minSharpeRatio: 0,
-                maxPositionConcentrationBps: 0,
-                maxCorrelationBps: 0,
-                maxTradesPerDay: 1000,
-                maxTradesPerHour: 0,
-                tradingStartHour: 0,
-                tradingEndHour: 0,
-                minReputationScore: 25,
-                useReputationMultiplier: true,
-                requiresChainlinkFunctions: true
-            })
-        });
+    function _initModerateTemplate() private {
+        PolicyTemplate storage t = templates["moderate"];
+        t.name = "Moderate";
+        t.description = "Balanced risk and limits";
+        t.active = true;
+        Policy storage p = t.basePolicy;
+        p.enabled = true;
+        p.expiryTimestamp = type(uint256).max;
+        p.maxOrderSize = 5000e6;
+        p.minOrderSize = 100e6;
+        p.allowMarketOrders = true;
+        p.allowLimitOrders = true;
+        p.allowSwap = true;
+        p.allowBorrow = true;
+        p.allowRepay = true;
+        p.allowSupplyCollateral = true;
+        p.allowWithdrawCollateral = true;
+        p.allowPlaceLimitOrder = true;
+        p.allowCancelOrder = true;
+        p.allowBuy = true;
+        p.allowSell = true;
+        p.allowAutoBorrow = true;
+        p.maxAutoBorrowAmount = 2000e6;
+        p.allowAutoRepay = true;
+        p.minDebtToRepay = 100e6;
+        p.minHealthFactor = 15e17;
+        p.maxSlippageBps = 100;
+        p.minTimeBetweenTrades = 60;
+        p.dailyVolumeLimit = 20000e6;
+        p.maxDailyDrawdown = 1000;
+        p.maxTradesPerDay = 100;
+        p.minReputationScore = 50;
+        p.useReputationMultiplier = true;
+        p.requiresChainlinkFunctions = true;
+    }
+
+    function _initAggressiveTemplate() private {
+        PolicyTemplate storage t = templates["aggressive"];
+        t.name = "Aggressive";
+        t.description = "High risk, loose limits";
+        t.active = true;
+        Policy storage p = t.basePolicy;
+        p.enabled = true;
+        p.expiryTimestamp = type(uint256).max;
+        p.maxOrderSize = 50000e6;
+        p.minOrderSize = 100e6;
+        p.allowMarketOrders = true;
+        p.allowLimitOrders = true;
+        p.allowSwap = true;
+        p.allowBorrow = true;
+        p.allowRepay = true;
+        p.allowSupplyCollateral = true;
+        p.allowWithdrawCollateral = true;
+        p.allowPlaceLimitOrder = true;
+        p.allowCancelOrder = true;
+        p.allowBuy = true;
+        p.allowSell = true;
+        p.allowAutoBorrow = true;
+        p.maxAutoBorrowAmount = 20000e6;
+        p.allowAutoRepay = true;
+        p.minDebtToRepay = 100e6;
+        p.minHealthFactor = 12e17;
+        p.maxSlippageBps = 300;
+        p.dailyVolumeLimit = 200000e6;
+        p.maxDailyDrawdown = 2000;
+        p.maxTradesPerDay = 1000;
+        p.minReputationScore = 25;
+        p.useReputationMultiplier = true;
+        p.requiresChainlinkFunctions = true;
     }
 
     // ============ Access Control ============

@@ -32,9 +32,14 @@ contract AuthorizeAgentRouterOnOrderBook is Script {
         address poolManagerAddr = _extractAddress(json, "PoolManager");
         address agentRouterAddr = _extractAddress(json, "AgentRouter");
 
+        // Load orderBook addresses to authorize AgentRouter on
+        string memory quoteSymbol = vm.envString("QUOTE_SYMBOL");
+        address wethOrderBook = _extractAddress(json, string.concat("WETH_", quoteSymbol, "_Pool"));
+
         console.log("Loaded addresses:");
         console.log("  PoolManager:", poolManagerAddr);
         console.log("  AgentRouter:", agentRouterAddr);
+        console.log("  WETH OrderBook:", wethOrderBook);
         console.log("");
 
         require(poolManagerAddr != address(0), "PoolManager address is zero");
@@ -42,11 +47,14 @@ contract AuthorizeAgentRouterOnOrderBook is Script {
 
         vm.startBroadcast(deployerPrivateKey);
 
-        // Authorize AgentRouter in PoolManager
-        console.log("Authorizing AgentRouter on PoolManager OrderBook...");
+        // Authorize AgentRouter on each OrderBook via PoolManager
         PoolManager poolManager = PoolManager(poolManagerAddr);
-        poolManager.addAuthorizedOperator(agentRouterAddr);
-        console.log("[OK] AgentRouter authorized on OrderBook");
+
+        if (wethOrderBook != address(0)) {
+            console.log("Authorizing AgentRouter on WETH OrderBook...");
+            poolManager.addAuthorizedRouterToOrderBook(wethOrderBook, agentRouterAddr);
+            console.log("[OK] AgentRouter authorized on WETH OrderBook");
+        }
 
         vm.stopBroadcast();
 

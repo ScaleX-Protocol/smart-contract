@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.26;
+pragma solidity ^0.8.28;
 
 import {Script, console} from "forge-std/Script.sol";
 import {MockToken} from "@scalex/mocks/MockToken.sol";
@@ -24,13 +24,13 @@ contract DeployPhase1A is Script {
 
     function run() external returns (Phase1ADeployment memory deployment) {
         console.log("=== PHASE 1A: TOKEN DEPLOYMENT ===");
-        
+
         uint256 deployerPrivateKey = vm.envUint("PRIVATE_KEY");
         address deployer = vm.addr(deployerPrivateKey);
         console.log("Deployer address:", deployer);
-        
+
         vm.startBroadcast(deployerPrivateKey);
-        
+
         console.log("Step 1: Deploying Mock Tokens...");
 
         // Quote currency token (dynamic: USDC, IDRX, etc.)
@@ -101,21 +101,6 @@ contract DeployPhase1A is Script {
 
         vm.stopBroadcast();
 
-        // Save deployment data
-        _saveDeployment(
-            address(quoteToken),
-            quoteSymbol,
-            address(weth),
-            address(wbtc),
-            address(gold),
-            address(silver),
-            address(google),
-            address(nvidia),
-            address(mnt),
-            address(apple),
-            deployer
-        );
-
         deployment = Phase1ADeployment({
             QuoteToken: address(quoteToken),
             WETH: address(weth),
@@ -131,47 +116,45 @@ contract DeployPhase1A is Script {
             blockNumber: block.number
         });
 
+        // Save deployment data — pass struct (2 params) to avoid Yul stack-too-deep
+        _saveDeployment(deployment, quoteSymbol);
+
         console.log("=== PHASE 1A COMPLETED ===");
         console.log("Total tokens deployed: 9 (3 crypto + 6 RWA)");
         return deployment;
     }
-    
-    function _saveDeployment(
-        address quoteToken,
-        string memory quoteSymbol,
-        address weth,
-        address wbtc,
-        address gold,
-        address silver,
-        address google,
-        address nvidia,
-        address mnt,
-        address apple,
-        address deployer
-    ) internal {
+
+    /// @dev Takes the already-built struct (1 memory pointer) to avoid 11-param stack overflow.
+    ///      Writes the phase1a JSON file using vm.serializeAddress / vm.serializeUint.
+    function _saveDeployment(Phase1ADeployment memory d, string memory quoteSymbol) internal {
+        _serializeAddresses(d, quoteSymbol);
+        _writeDeploymentFile(d);
+    }
+
+    /// @dev Serialize all address fields into the "phase1a" json object.
+    function _serializeAddresses(Phase1ADeployment memory d, string memory quoteSymbol) private {
+        string memory obj = "phase1a";
+        vm.serializeString(obj, "phase", "1a");
+        vm.serializeAddress(obj, quoteSymbol, d.QuoteToken);
+        vm.serializeAddress(obj, "WETH", d.WETH);
+        vm.serializeAddress(obj, "WBTC", d.WBTC);
+        vm.serializeAddress(obj, "GOLD", d.GOLD);
+        vm.serializeAddress(obj, "SILVER", d.SILVER);
+        vm.serializeAddress(obj, "GOOGLE", d.GOOGLE);
+        vm.serializeAddress(obj, "NVIDIA", d.NVIDIA);
+        vm.serializeAddress(obj, "MNT", d.MNT);
+        vm.serializeAddress(obj, "APPLE", d.APPLE);
+        vm.serializeAddress(obj, "deployer", d.deployer);
+    }
+
+    /// @dev Finalize and write the json file.
+    function _writeDeploymentFile(Phase1ADeployment memory d) private {
+        string memory obj = "phase1a";
+        vm.serializeUint(obj, "timestamp", d.timestamp);
+        string memory json = vm.serializeUint(obj, "blockNumber", d.blockNumber);
+
         string memory root = vm.projectRoot();
-        uint256 chainId = block.chainid;
-        string memory chainIdStr = vm.toString(chainId);
-        string memory path = string.concat(root, "/deployments/", chainIdStr, "-phase1a.json");
-
-        string memory json = string.concat(
-            "{\n",
-            "  \"phase\": \"1a\",\n",
-            "  \"", quoteSymbol, "\": \"", vm.toString(quoteToken), "\",\n",
-            "  \"WETH\": \"", vm.toString(weth), "\",\n",
-            "  \"WBTC\": \"", vm.toString(wbtc), "\",\n",
-            "  \"GOLD\": \"", vm.toString(gold), "\",\n",
-            "  \"SILVER\": \"", vm.toString(silver), "\",\n",
-            "  \"GOOGLE\": \"", vm.toString(google), "\",\n",
-            "  \"NVIDIA\": \"", vm.toString(nvidia), "\",\n",
-            "  \"MNT\": \"", vm.toString(mnt), "\",\n",
-            "  \"APPLE\": \"", vm.toString(apple), "\",\n",
-            "  \"deployer\": \"", vm.toString(deployer), "\",\n",
-            "  \"timestamp\": \"", vm.toString(block.timestamp), "\",\n",
-            "  \"blockNumber\": \"", vm.toString(block.number), "\"\n",
-            "}"
-        );
-
+        string memory path = string.concat(root, "/deployments/", vm.toString(block.chainid), "-phase1a.json");
         vm.writeFile(path, json);
         console.log("Phase 1A deployment data written to:", path);
     }

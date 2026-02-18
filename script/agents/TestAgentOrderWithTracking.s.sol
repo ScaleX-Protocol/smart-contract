@@ -28,7 +28,10 @@ contract TestAgentOrderWithTracking is Script {
 
         vm.startBroadcast(executorKey);
 
+        address user = vm.addr(executorKey);
+
         try AgentRouter(agentRouter).executeLimitOrder(
+            user,
             100,
             pool,
             300000,

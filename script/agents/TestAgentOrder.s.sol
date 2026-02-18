@@ -94,66 +94,80 @@ contract TestAgentOrder is Script {
         console.log("Step 2: Checking for existing policy...");
 
         // Check if already authorized
-        PolicyFactory.Policy memory existing = PolicyFactory(policyFactory).getPolicy(owner, strategyAgentId);
-        if (existing.enabled) {
+        bool alreadyEnabled = PolicyFactory(policyFactory).isAgentEnabled(owner, strategyAgentId);
+        if (alreadyEnabled) {
             console.log("[OK] Policy already exists");
-            console.log("  Daily Volume Limit:", existing.dailyVolumeLimit);
-            console.log("  Max Daily Drawdown:", existing.maxDailyDrawdown);
             return;
         }
 
         console.log("No policy found. Authorizing agent with default policy...");
 
-        address[] memory emptyList = new address[](0);
-        PolicyFactory.Policy memory policy = PolicyFactory.Policy({
-            enabled:                     false,
-            installedAt:                 0,
-            expiryTimestamp:             type(uint256).max,
-            maxOrderSize:                10e18,
-            minOrderSize:                0,
-            whitelistedTokens:           emptyList,
-            blacklistedTokens:           emptyList,
-            allowMarketOrders:           true,
-            allowLimitOrders:            true,
-            allowSwap:                   true,
-            allowBorrow:                 false,
-            allowRepay:                  false,
-            allowSupplyCollateral:       true,
-            allowWithdrawCollateral:     false,
-            allowPlaceLimitOrder:        true,
-            allowCancelOrder:            true,
-            allowBuy:                    true,
-            allowSell:                   true,
-            allowAutoBorrow:             false,
-            maxAutoBorrowAmount:         0,
-            allowAutoRepay:              false,
-            minDebtToRepay:              0,
-            minHealthFactor:             1e18,
-            maxSlippageBps:              500,
-            minTimeBetweenTrades:        60,
-            emergencyRecipient:          address(0),
-            dailyVolumeLimit:            100000e6,
-            weeklyVolumeLimit:           0,
-            maxDailyDrawdown:            2000,
-            maxWeeklyDrawdown:           0,
-            maxTradeVsTVLBps:            0,
-            minWinRateBps:               0,
-            minSharpeRatio:              0,
-            maxPositionConcentrationBps: 0,
-            maxCorrelationBps:           0,
-            maxTradesPerDay:             0,
-            maxTradesPerHour:            0,
-            tradingStartHour:            0,
-            tradingEndHour:              0,
-            minReputationScore:          0,
-            useReputationMultiplier:     false,
-            requiresChainlinkFunctions:  false
-        });
-
         vm.startBroadcast(privateKey);
-        AgentRouter(agentRouter).authorize(strategyAgentId, policy);
+        _doAuthorize(agentRouter, strategyAgentId);
         vm.stopBroadcast();
         console.log("[OK] Agent authorized with policy");
+    }
+
+    /// @dev Stage 1: raw call -- `agentRouter` never shares stack with ABI encoding vars.
+    ///      Three-stage split to avoid Yul stack-too-deep (18 slots > SWAP16 limit):
+    ///      Stage 1 (_doAuthorize): raw call -- agentRouter separate from ABI encoding.
+    ///      Stage 2 (_buildAuthorizeData): build Policy + encode in isolated pure frame.
+    ///      Stage 3 (_encodeAuthorize): only agentId + p live during abi.encodeCall.
+    function _doAuthorize(address agentRouter, uint256 agentId) private {
+        bytes memory data = _buildAuthorizeData(agentId);
+        (bool ok,) = agentRouter.call(data);
+        require(ok, "AgentRouter.authorize failed");
+    }
+
+    /// @dev Stage 2: builds Policy and encodes; `agentRouter` not in scope.
+    function _buildAuthorizeData(uint256 agentId) private pure returns (bytes memory) {
+        address[] memory empty = new address[](0);
+        PolicyFactory.Policy memory p;
+        p.expiryTimestamp       = type(uint256).max;
+        p.maxOrderSize          = 10e18;
+        p.whitelistedTokens     = empty;
+        p.blacklistedTokens     = empty;
+        p.allowMarketOrders     = true;
+        p.allowLimitOrders      = true;
+        p.allowSwap             = true;
+        p.allowBorrow           = false;
+        p.allowRepay            = false;
+        p.allowSupplyCollateral = true;
+        p.allowWithdrawCollateral = false;
+        p.allowPlaceLimitOrder  = true;
+        p.allowCancelOrder      = true;
+        p.allowBuy              = true;
+        p.allowSell             = true;
+        p.allowAutoBorrow       = false;
+        p.maxAutoBorrowAmount   = 0;
+        p.allowAutoRepay        = false;
+        p.minDebtToRepay        = 0;
+        p.minHealthFactor       = 1e18;
+        p.maxSlippageBps        = 500;
+        p.minTimeBetweenTrades  = 60;
+        p.emergencyRecipient    = address(0);
+        p.dailyVolumeLimit      = 100000e6;
+        p.weeklyVolumeLimit     = 0;
+        p.maxDailyDrawdown      = 2000;
+        p.maxWeeklyDrawdown     = 0;
+        p.maxTradeVsTVLBps      = 0;
+        p.minWinRateBps         = 0;
+        p.minSharpeRatio        = 0;
+        p.maxPositionConcentrationBps = 0;
+        p.maxCorrelationBps     = 0;
+        p.maxTradesPerDay       = 0;
+        p.maxTradesPerHour      = 0;
+        p.tradingStartHour      = 0;
+        p.tradingEndHour        = 0;
+        p.minReputationScore    = 0;
+        p.useReputationMultiplier = false;
+        p.requiresChainlinkFunctions = false;
+        return _encodeAuthorize(agentId, p);
+    }
+
+    /// @dev Stage 3: isolated so only `agentId` and `p` are live during abi.encodeCall.
+    function _encodeAuthorize(uint256 agentId, PolicyFactory.Policy memory p) private pure returns (bytes memory) {
+        return abi.encodeCall(AgentRouter.authorize, (agentId, p));
     }
 
     function _depositFunds(
