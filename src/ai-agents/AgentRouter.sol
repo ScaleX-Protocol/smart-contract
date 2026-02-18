@@ -15,9 +15,16 @@ import {IERC20} from "../../lib/openzeppelin-contracts/contracts/token/ERC20/IER
 
 /**
  * @title AgentRouter
- * @notice Execution layer for AI agent trading with policy-based authorization
- * @dev Separate entry point from Router - humans use Router, agents use AgentRouter
- *      Enforces PolicyFactory rules before executing any action
+ * @notice Execution layer for AI agent trading with policy-based authorization.
+ *
+ * Flow:
+ *   1. Strategy agent calls IdentityRegistry.register() → gets strategyAgentId NFT.
+ *   2. User calls AgentRouter.authorize(strategyAgentId, policy) → grants permission +
+ *      installs policy (what the agent can do with user's funds) in one transaction.
+ *   3. Strategy agent calls execute*() functions, passing userAddress + strategyAgentId.
+ *      AgentRouter verifies: msg.sender == ownerOf(strategyAgentId)
+ *                            authorizedStrategyAgents[user][strategyAgentId] == true
+ *                            policy limits are respected
  */
 contract AgentRouter {
     // ============ State Variables ============
@@ -28,24 +35,23 @@ contract AgentRouter {
     PolicyFactory public immutable policyFactory;
     ChainlinkMetricsConsumer public metricsConsumer;
 
-    // Core contracts
     IPoolManager public immutable poolManager;
     IBalanceManager public immutable balanceManager;
     ILendingManager public immutable lendingManager;
 
-    // Tracking for circuit breakers
-    mapping(address => mapping(uint256 => uint256)) public dayStartValues;  // owner => day => value
-    mapping(uint256 => uint256) public lastTradeTime;  // agentTokenId => timestamp
-    mapping(uint256 => mapping(uint256 => uint256)) public dailyVolumes;  // agentTokenId => day => volume
+    // Circuit-breaker tracking (keyed by strategyAgentId — reputation is per strategy)
+    mapping(address => mapping(uint256 => uint256)) public dayStartValues;  // user => day => value
+    mapping(uint256 => uint256) public lastTradeTime;                        // strategyAgentId => timestamp
+    mapping(uint256 => mapping(uint256 => uint256)) public dailyVolumes;    // strategyAgentId => day => volume
 
-    // Maps user address => strategy agent ID => authorized
+    // user => strategyAgentId => authorized
     mapping(address => mapping(uint256 => bool)) public authorizedStrategyAgents;
 
     // ============ Events ============
 
     event AgentSwapExecuted(
-        address indexed owner,
-        uint256 indexed agentTokenId,
+        address indexed user,
+        uint256 indexed strategyAgentId,
         address indexed executor,
         address tokenIn,
         address tokenOut,
@@ -55,8 +61,8 @@ contract AgentRouter {
     );
 
     event AgentLimitOrderPlaced(
-        address indexed owner,
-        uint256 indexed agentTokenId,
+        address indexed user,
+        uint256 indexed strategyAgentId,
         address indexed executor,
         bytes32 orderId,
         address tokenIn,
@@ -68,16 +74,16 @@ contract AgentRouter {
     );
 
     event AgentOrderCancelled(
-        address indexed owner,
-        uint256 indexed agentTokenId,
+        address indexed user,
+        uint256 indexed strategyAgentId,
         address indexed executor,
         bytes32 orderId,
         uint256 timestamp
     );
 
     event AgentBorrowExecuted(
-        address indexed owner,
-        uint256 indexed agentTokenId,
+        address indexed user,
+        uint256 indexed strategyAgentId,
         address indexed executor,
         address token,
         uint256 amount,
@@ -86,8 +92,8 @@ contract AgentRouter {
     );
 
     event AgentRepayExecuted(
-        address indexed owner,
-        uint256 indexed agentTokenId,
+        address indexed user,
+        uint256 indexed strategyAgentId,
         address indexed executor,
         address token,
         uint256 amount,
@@ -96,8 +102,8 @@ contract AgentRouter {
     );
 
     event AgentCollateralSupplied(
-        address indexed owner,
-        uint256 indexed agentTokenId,
+        address indexed user,
+        uint256 indexed strategyAgentId,
         address indexed executor,
         address token,
         uint256 amount,
@@ -105,8 +111,8 @@ contract AgentRouter {
     );
 
     event AgentCollateralWithdrawn(
-        address indexed owner,
-        uint256 indexed agentTokenId,
+        address indexed user,
+        uint256 indexed strategyAgentId,
         address indexed executor,
         address token,
         uint256 amount,
@@ -114,8 +120,8 @@ contract AgentRouter {
     );
 
     event CircuitBreakerTriggered(
-        address indexed owner,
-        uint256 indexed agentTokenId,
+        address indexed user,
+        uint256 indexed strategyAgentId,
         uint256 drawdownBps,
         uint256 currentValue,
         uint256 dayStartValue,
@@ -123,22 +129,20 @@ contract AgentRouter {
     );
 
     event PolicyViolation(
-        address indexed owner,
-        uint256 indexed agentTokenId,
+        address indexed user,
+        uint256 indexed strategyAgentId,
         string reason,
         uint256 timestamp
     );
 
     event StrategyAgentAuthorized(
         address indexed user,
-        uint256 indexed userAgentId,
         uint256 indexed strategyAgentId,
         uint256 timestamp
     );
 
     event StrategyAgentRevoked(
         address indexed user,
-        uint256 indexed userAgentId,
         uint256 indexed strategyAgentId,
         uint256 timestamp
     );
@@ -163,32 +167,73 @@ contract AgentRouter {
         lendingManager = ILendingManager(_lendingManager);
     }
 
-    /**
-     * @notice Set Chainlink Metrics Consumer (only called once during setup)
-     * @param _metricsConsumer Address of ChainlinkMetricsConsumer
-     */
     function setMetricsConsumer(address _metricsConsumer) external {
         require(address(metricsConsumer) == address(0), "Already set");
         metricsConsumer = ChainlinkMetricsConsumer(_metricsConsumer);
     }
 
+    // ============ Authorization ============
+
+    /**
+     * @notice Grant a strategy agent permission to trade on behalf of msg.sender,
+     *         and define the policy limits in a single transaction.
+     * @param strategyAgentId NFT ID of the strategy agent to authorize.
+     * @param policy          Trading limits the strategy agent must respect.
+     */
+    function authorize(
+        uint256 strategyAgentId,
+        PolicyFactory.Policy calldata policy
+    ) external {
+        policyFactory.installPolicyFor(msg.sender, strategyAgentId, policy);
+        authorizedStrategyAgents[msg.sender][strategyAgentId] = true;
+        emit StrategyAgentAuthorized(msg.sender, strategyAgentId, block.timestamp);
+    }
+
+    /**
+     * @notice Revoke a strategy agent's authorization and remove its policy.
+     */
+    function revoke(uint256 strategyAgentId) external {
+        authorizedStrategyAgents[msg.sender][strategyAgentId] = false;
+        policyFactory.uninstallPolicyFor(msg.sender, strategyAgentId);
+        emit StrategyAgentRevoked(msg.sender, strategyAgentId, block.timestamp);
+    }
+
+    /**
+     * @notice Check if a strategy agent is authorized by a user.
+     */
+    function isAuthorized(address user, uint256 strategyAgentId) external view returns (bool) {
+        return authorizedStrategyAgents[user][strategyAgentId];
+    }
+
+    // ============ Internal Auth Helper ============
+
+    function _verifyAndGetPolicy(
+        address user,
+        uint256 strategyAgentId
+    ) internal view returns (PolicyFactory.Policy memory policy) {
+        require(
+            msg.sender == identityRegistry.ownerOf(strategyAgentId),
+            "Not strategy agent owner"
+        );
+        require(
+            authorizedStrategyAgents[user][strategyAgentId],
+            "Strategy agent not authorized"
+        );
+
+        policy = policyFactory.getPolicy(user, strategyAgentId);
+        require(policy.enabled, "Agent disabled");
+        require(block.timestamp < policy.expiryTimestamp, "Agent expired");
+    }
+
     // ============ Trading Functions ============
 
     /**
-     * @notice Execute a market order (swap) using agent-based authorization
-     * @param userAgentId User's personal agent ID (e.g., Bob's Agent #101)
-     * @param strategyAgentId Strategy agent ID being used (e.g., Alice's Agent #500)
-     * @param pool Pool to trade in
-     * @param side BUY or SELL
-     * @param quantity Amount to trade
-     * @param minOutAmount Minimum amount to receive (slippage protection)
-     * @param autoRepay Whether to auto-repay debt from proceeds
-     * @param autoBorrow Whether to auto-borrow if needed
-     * @return orderId Order ID
-     * @return filled Amount filled
+     * @notice Execute a market order on behalf of `user`.
+     * @param user            Address of the user whose funds are used.
+     * @param strategyAgentId NFT ID of the strategy agent executing this order.
      */
     function executeMarketOrder(
-        uint256 userAgentId,
+        address user,
         uint256 strategyAgentId,
         IPoolManager.Pool calldata pool,
         IOrderBook.Side side,
@@ -197,85 +242,35 @@ contract AgentRouter {
         bool autoRepay,
         bool autoBorrow
     ) external returns (uint48 orderId, uint128 filled) {
-        // 1. Get user (owner of personal agent)
-        address user = identityRegistry.ownerOf(userAgentId);
+        PolicyFactory.Policy memory policy = _verifyAndGetPolicy(user, strategyAgentId);
 
-        // 2. Verify executor authorization via strategy agent
-        require(msg.sender == identityRegistry.ownerOf(strategyAgentId), "Not strategy agent owner");
-        require(authorizedStrategyAgents[user][strategyAgentId], "Strategy agent not authorized");
-
-        // 3. Get user's policy (enforced on user's personal agent)
-        PolicyFactory.Policy memory policy = policyFactory.getPolicy(user, userAgentId);
-
-        // 4. Verify agent is enabled
-        require(policy.enabled, "Agent disabled");
-        require(block.timestamp < policy.expiryTimestamp, "Agent expired");
-
-        // 5. Check if requires Chainlink (complex permissions)
         require(!policy.requiresChainlinkFunctions, "Use executeMarketOrderWithMetrics");
 
-        // 6. Enforce simple permissions
-        _enforceMarketOrderPermissions(
-            policy,
-            user,
-            userAgentId,
-            pool,
-            side,
-            quantity,
-            autoRepay,
-            autoBorrow
-        );
+        _enforceMarketOrderPermissions(policy, user, strategyAgentId, pool, side, quantity, autoRepay, autoBorrow);
 
-        // 7. Get OrderBook for this pool
         IOrderBook orderBook = pool.orderBook;
-
-        // 8. Execute market order
         (orderId, filled) = orderBook.placeMarketOrder(
-            quantity,
-            side,
-            user,
-            autoRepay,
-            autoBorrow,
-            userAgentId,
-            msg.sender
+            quantity, side, user, autoRepay, autoBorrow, strategyAgentId, msg.sender
         );
 
-        // 9. Update tracking
-        _updateTracking(user, userAgentId, quantity);
-
-        // 10. Check circuit breaker
-        _checkCircuitBreaker(user, userAgentId, policy);
-
-        // 11. Record to reputation registry (track on STRATEGY agent)
+        _updateTracking(strategyAgentId, quantity);
+        _checkCircuitBreaker(user, strategyAgentId, policy);
         _recordTradeToReputation(strategyAgentId, Currency.unwrap(pool.baseCurrency), Currency.unwrap(pool.quoteCurrency), quantity, filled);
 
         emit AgentSwapExecuted(
-            user,
-            userAgentId,
-            msg.sender,
-            Currency.unwrap(pool.baseCurrency),
-            Currency.unwrap(pool.quoteCurrency),
-            quantity,
-            filled,
-            block.timestamp
+            user, strategyAgentId, msg.sender,
+            Currency.unwrap(pool.baseCurrency), Currency.unwrap(pool.quoteCurrency),
+            quantity, filled, block.timestamp
         );
     }
 
     /**
-     * @notice Place a limit order using agent-based authorization
-     * @param userAgentId User's personal agent ID (e.g., Bob's Agent #101)
-     * @param strategyAgentId Strategy agent ID being used (e.g., Alice's Agent #500)
-     * @param pool Pool to trade in
-     * @param price Limit price
-     * @param quantity Amount to trade
-     * @param side BUY or SELL
-     * @param timeInForce Time in force (GTC, IOC, FOK, PO)
-     * @param autoRepay Whether to auto-repay debt from proceeds
-     * @param autoBorrow Whether to auto-borrow if needed
-     * @return orderId Order ID
+     * @notice Place a limit order on behalf of `user`.
+     * @param user            Address of the user whose funds are used.
+     * @param strategyAgentId NFT ID of the strategy agent executing this order.
      */
     function executeLimitOrder(
-        uint256 userAgentId,
+        address user,
         uint256 strategyAgentId,
         IPoolManager.Pool calldata pool,
         uint128 price,
@@ -285,103 +280,47 @@ contract AgentRouter {
         bool autoRepay,
         bool autoBorrow
     ) external returns (uint48 orderId) {
-        // 1. Get user (owner of personal agent)
-        address user = identityRegistry.ownerOf(userAgentId);
+        PolicyFactory.Policy memory policy = _verifyAndGetPolicy(user, strategyAgentId);
 
-        // 2. Verify executor authorization via strategy agent
-        require(msg.sender == identityRegistry.ownerOf(strategyAgentId), "Not strategy agent owner");
-        require(authorizedStrategyAgents[user][strategyAgentId], "Strategy agent not authorized");
-
-        // 3. Get user's policy (enforced on user's personal agent)
-        PolicyFactory.Policy memory policy = policyFactory.getPolicy(user, userAgentId);
-
-        // 4. Verify agent is enabled
-        require(policy.enabled, "Agent disabled");
-        require(block.timestamp < policy.expiryTimestamp, "Agent expired");
-
-        // 5. Check permissions
         require(policy.allowLimitOrders, "Limit orders not allowed");
         require(policy.allowPlaceLimitOrder, "Placing limit orders not allowed");
+        require(!policy.requiresChainlinkFunctions, "Use executeLimitOrderWithMetrics");
 
-        // 6. Enforce simple permissions
-        _enforceLimitOrderPermissions(
-            policy,
-            user,
-            userAgentId,
-            pool,
-            side,
-            quantity,
-            autoRepay,
-            autoBorrow
-        );
+        _enforceLimitOrderPermissions(policy, user, strategyAgentId, pool, side, quantity, autoRepay, autoBorrow);
 
-        // 7. Get OrderBook for this pool
         IOrderBook orderBook = pool.orderBook;
-
-        // 8. Place limit order
         orderId = orderBook.placeOrder(
-            price,
-            quantity,
-            side,
-            user,
-            timeInForce,
-            autoRepay,
-            autoBorrow,
-            userAgentId,
-            msg.sender
+            price, quantity, side, user, timeInForce, autoRepay, autoBorrow, strategyAgentId, msg.sender
         );
 
-        // 9. Update tracking
-        _updateTracking(user, userAgentId, quantity);
+        _updateTracking(strategyAgentId, quantity);
 
         emit AgentLimitOrderPlaced(
-            user,
-            userAgentId,
-            msg.sender,
+            user, strategyAgentId, msg.sender,
             bytes32(uint256(orderId)),
-            Currency.unwrap(pool.baseCurrency),
-            Currency.unwrap(pool.quoteCurrency),
-            quantity,
-            price,
+            Currency.unwrap(pool.baseCurrency), Currency.unwrap(pool.quoteCurrency),
+            quantity, price,
             side == IOrderBook.Side.BUY,
             block.timestamp
         );
     }
 
     /**
-     * @notice Cancel a limit order using agent-based authorization
-     * @param userAgentId User's personal agent ID
-     * @param strategyAgentId Strategy agent ID
-     * @param pool Pool where order was placed
-     * @param orderId Order ID to cancel
+     * @notice Cancel a limit order on behalf of `user`.
      */
     function cancelOrder(
-        uint256 userAgentId,
+        address user,
         uint256 strategyAgentId,
         IPoolManager.Pool calldata pool,
         uint48 orderId
     ) external {
-        address user = identityRegistry.ownerOf(userAgentId);
-
-        // Verify executor authorization via strategy agent
-        require(msg.sender == identityRegistry.ownerOf(strategyAgentId), "Not strategy agent owner");
-        require(authorizedStrategyAgents[user][strategyAgentId], "Strategy agent not authorized");
-
-        PolicyFactory.Policy memory policy = policyFactory.getPolicy(user, userAgentId);
-
-        require(policy.enabled, "Agent disabled");
+        PolicyFactory.Policy memory policy = _verifyAndGetPolicy(user, strategyAgentId);
         require(policy.allowCancelOrder, "Cancelling orders not allowed");
 
-        // Get OrderBook for this pool
-        IOrderBook orderBook = pool.orderBook;
-
-        // Cancel order
-        orderBook.cancelOrder(orderId, user, userAgentId, msg.sender);
+        pool.orderBook.cancelOrder(orderId, user, strategyAgentId, msg.sender);
 
         emit AgentOrderCancelled(
-            user,
-            userAgentId,
-            msg.sender,
+            user, strategyAgentId, msg.sender,
             bytes32(uint256(orderId)),
             block.timestamp
         );
@@ -390,310 +329,163 @@ contract AgentRouter {
     // ============ Lending Functions ============
 
     /**
-     * @notice Borrow tokens using agent-based authorization
-     * @param userAgentId User's personal agent ID
-     * @param strategyAgentId Strategy agent ID
-     * @param token Token to borrow
-     * @param amount Amount to borrow
+     * @notice Borrow tokens on behalf of `user`.
      */
     function executeBorrow(
-        uint256 userAgentId,
+        address user,
         uint256 strategyAgentId,
         address token,
         uint256 amount
     ) external {
-        address user = identityRegistry.ownerOf(userAgentId);
+        PolicyFactory.Policy memory policy = _verifyAndGetPolicy(user, strategyAgentId);
 
-        // Verify executor authorization via strategy agent
-        require(msg.sender == identityRegistry.ownerOf(strategyAgentId), "Not strategy agent owner");
-        require(authorizedStrategyAgents[user][strategyAgentId], "Strategy agent not authorized");
-
-        PolicyFactory.Policy memory policy = policyFactory.getPolicy(user, userAgentId);
-
-        require(policy.enabled, "Agent disabled");
-        require(block.timestamp < policy.expiryTimestamp, "Agent expired");
-
-        // Check permissions
         require(policy.allowBorrow, "Borrowing not allowed");
         require(amount <= policy.maxAutoBorrowAmount, "Borrow amount exceeds limit");
+        require(policyFactory.isTokenAllowed(user, strategyAgentId, token), "Token not allowed");
 
-        // Check token is allowed
-        require(policyFactory.isTokenAllowed(user, userAgentId, token), "Token not allowed");
-
-        // Check health factor before borrow
         uint256 currentHF = lendingManager.getHealthFactor(user);
         require(currentHF >= policy.minHealthFactor, "Health factor too low");
 
-        // Execute borrow for user (through BalanceManager which delegates to LendingManager)
         balanceManager.borrowForUser(user, token, amount);
 
-        // Check health factor after borrow
         uint256 newHF = lendingManager.getHealthFactor(user);
         require(newHF >= policy.minHealthFactor, "Borrow would harm health factor");
 
-        // Record to reputation (on strategy agent)
         _recordBorrowToReputation(strategyAgentId, token, amount);
 
-        emit AgentBorrowExecuted(
-            user,
-            userAgentId,
-            msg.sender,
-            token,
-            amount,
-            newHF,
-            block.timestamp
-        );
+        emit AgentBorrowExecuted(user, strategyAgentId, msg.sender, token, amount, newHF, block.timestamp);
     }
 
     /**
-     * @notice Repay borrowed tokens using agent-based authorization
-     * @param userAgentId User's personal agent ID
-     * @param strategyAgentId Strategy agent ID
-     * @param token Token to repay
-     * @param amount Amount to repay
+     * @notice Repay borrowed tokens on behalf of `user`.
      */
     function executeRepay(
-        uint256 userAgentId,
+        address user,
         uint256 strategyAgentId,
         address token,
         uint256 amount
     ) external {
-        address user = identityRegistry.ownerOf(userAgentId);
-
-        // Verify executor authorization via strategy agent
-        require(msg.sender == identityRegistry.ownerOf(strategyAgentId), "Not strategy agent owner");
-        require(authorizedStrategyAgents[user][strategyAgentId], "Strategy agent not authorized");
-
-        PolicyFactory.Policy memory policy = policyFactory.getPolicy(user, userAgentId);
-
-        require(policy.enabled, "Agent disabled");
+        PolicyFactory.Policy memory policy = _verifyAndGetPolicy(user, strategyAgentId);
         require(policy.allowRepay, "Repaying not allowed");
 
-        // Execute repay for user
         balanceManager.repayForUser(user, token, amount);
 
         uint256 newHF = lendingManager.getHealthFactor(user);
-
-        // Record to reputation (on strategy agent)
         _recordRepayToReputation(strategyAgentId, token, amount);
 
-        emit AgentRepayExecuted(
-            user,
-            userAgentId,
-            msg.sender,
-            token,
-            amount,
-            newHF,
-            block.timestamp
-        );
+        emit AgentRepayExecuted(user, strategyAgentId, msg.sender, token, amount, newHF, block.timestamp);
     }
 
     /**
-     * @notice Supply collateral using agent-based authorization
-     * @param userAgentId User's personal agent ID
-     * @param strategyAgentId Strategy agent ID
-     * @param token Token to supply
-     * @param amount Amount to supply
+     * @notice Supply collateral on behalf of `user`.
      */
     function executeSupplyCollateral(
-        uint256 userAgentId,
+        address user,
         uint256 strategyAgentId,
         address token,
         uint256 amount
     ) external {
-        address user = identityRegistry.ownerOf(userAgentId);
-
-        // Verify executor authorization via strategy agent
-        require(msg.sender == identityRegistry.ownerOf(strategyAgentId), "Not strategy agent owner");
-        require(authorizedStrategyAgents[user][strategyAgentId], "Strategy agent not authorized");
-
-        PolicyFactory.Policy memory policy = policyFactory.getPolicy(user, userAgentId);
-
-        require(policy.enabled, "Agent disabled");
+        PolicyFactory.Policy memory policy = _verifyAndGetPolicy(user, strategyAgentId);
         require(policy.allowSupplyCollateral, "Supplying collateral not allowed");
+        require(policyFactory.isTokenAllowed(user, strategyAgentId, token), "Token not allowed");
 
-        // Check token is allowed
-        require(policyFactory.isTokenAllowed(user, userAgentId, token), "Token not allowed");
-
-        // Execute supply for user: pull tokens from user, then supply via BalanceManager
         IERC20(token).transferFrom(user, address(this), amount);
         IERC20(token).approve(address(balanceManager), amount);
         balanceManager.depositLocal(token, amount, user);
 
-        emit AgentCollateralSupplied(
-            user,
-            userAgentId,
-            msg.sender,
-            token,
-            amount,
-            block.timestamp
-        );
+        emit AgentCollateralSupplied(user, strategyAgentId, msg.sender, token, amount, block.timestamp);
     }
 
     /**
-     * @notice Withdraw collateral using agent-based authorization
-     * @param userAgentId User's personal agent ID
-     * @param strategyAgentId Strategy agent ID
-     * @param token Token to withdraw
-     * @param amount Amount to withdraw
+     * @notice Withdraw collateral on behalf of `user`.
      */
     function executeWithdrawCollateral(
-        uint256 userAgentId,
+        address user,
         uint256 strategyAgentId,
         address token,
         uint256 amount
     ) external {
-        address user = identityRegistry.ownerOf(userAgentId);
-
-        // Verify executor authorization via strategy agent
-        require(msg.sender == identityRegistry.ownerOf(strategyAgentId), "Not strategy agent owner");
-        require(authorizedStrategyAgents[user][strategyAgentId], "Strategy agent not authorized");
-
-        PolicyFactory.Policy memory policy = policyFactory.getPolicy(user, userAgentId);
-
-        require(policy.enabled, "Agent disabled");
+        PolicyFactory.Policy memory policy = _verifyAndGetPolicy(user, strategyAgentId);
         require(policy.allowWithdrawCollateral, "Withdrawing collateral not allowed");
 
-        // Check health factor before withdrawal
         uint256 currentHF = lendingManager.getHealthFactor(user);
         require(currentHF >= policy.minHealthFactor, "Health factor too low");
 
-        // Execute withdrawal via BalanceManager (AgentRouter is authorized operator)
         balanceManager.withdraw(Currency.wrap(token), amount, user);
 
-        // Check health factor after withdrawal
         uint256 newHF = lendingManager.getHealthFactor(user);
         require(newHF >= policy.minHealthFactor, "Withdrawal would harm health factor");
 
-        emit AgentCollateralWithdrawn(
-            user,
-            userAgentId,
-            msg.sender,
-            token,
-            amount,
-            block.timestamp
-        );
+        emit AgentCollateralWithdrawn(user, strategyAgentId, msg.sender, token, amount, block.timestamp);
     }
 
     // ============ Permission Enforcement ============
 
-    /**
-     * @notice Enforce permissions for market orders
-     */
     function _enforceMarketOrderPermissions(
         PolicyFactory.Policy memory policy,
-        address owner,
-        uint256 agentTokenId,
+        address user,
+        uint256 strategyAgentId,
         IPoolManager.Pool calldata pool,
         IOrderBook.Side side,
         uint128 quantity,
         bool autoRepay,
         bool autoBorrow
     ) internal view {
-        // 1. Order size limits
         require(quantity <= policy.maxOrderSize, "Order too large");
-        if (policy.minOrderSize > 0) {
-            require(quantity >= policy.minOrderSize, "Order too small");
-        }
+        if (policy.minOrderSize > 0) require(quantity >= policy.minOrderSize, "Order too small");
 
-        // 2. Token whitelist/blacklist
-        require(
-            policyFactory.isTokenAllowed(owner, agentTokenId, Currency.unwrap(pool.baseCurrency)),
-            "Base token not allowed"
-        );
-        require(
-            policyFactory.isTokenAllowed(owner, agentTokenId, Currency.unwrap(pool.quoteCurrency)),
-            "Quote token not allowed"
-        );
+        require(policyFactory.isTokenAllowed(user, strategyAgentId, Currency.unwrap(pool.baseCurrency)), "Base token not allowed");
+        require(policyFactory.isTokenAllowed(user, strategyAgentId, Currency.unwrap(pool.quoteCurrency)), "Quote token not allowed");
 
-        // 3. Operation permissions
         require(policy.allowSwap, "Swap not allowed");
         require(policy.allowMarketOrders, "Market orders not allowed");
 
-        // 4. Buy/Sell direction
-        if (side == IOrderBook.Side.BUY) {
-            require(policy.allowBuy, "Buy orders not allowed");
-        } else {
-            require(policy.allowSell, "Sell orders not allowed");
-        }
+        if (side == IOrderBook.Side.BUY) require(policy.allowBuy, "Buy orders not allowed");
+        else require(policy.allowSell, "Sell orders not allowed");
 
-        // 5. Auto-borrow/repay flags
-        if (autoBorrow) {
-            require(policy.allowAutoBorrow, "Auto-borrow not allowed");
-        }
-        if (autoRepay) {
-            require(policy.allowAutoRepay, "Auto-repay not allowed");
-        }
+        if (autoBorrow) require(policy.allowAutoBorrow, "Auto-borrow not allowed");
+        if (autoRepay)  require(policy.allowAutoRepay,  "Auto-repay not allowed");
 
-        // 6. Health factor check
-        uint256 healthFactor = lendingManager.getHealthFactor(owner);
-        require(healthFactor >= policy.minHealthFactor, "Health factor too low");
+        require(lendingManager.getHealthFactor(user) >= policy.minHealthFactor, "Health factor too low");
 
-        // 7. Trade cooldown
         if (policy.minTimeBetweenTrades > 0) {
             require(
-                block.timestamp >= lastTradeTime[agentTokenId] + policy.minTimeBetweenTrades,
+                block.timestamp >= lastTradeTime[strategyAgentId] + policy.minTimeBetweenTrades,
                 "Cooldown period active"
             );
         }
     }
 
-    /**
-     * @notice Enforce permissions for limit orders
-     */
     function _enforceLimitOrderPermissions(
         PolicyFactory.Policy memory policy,
-        address owner,
-        uint256 agentTokenId,
+        address user,
+        uint256 strategyAgentId,
         IPoolManager.Pool calldata pool,
         IOrderBook.Side side,
         uint128 quantity,
         bool autoRepay,
         bool autoBorrow
     ) internal view {
-        // 1. Order size limits
         require(quantity <= policy.maxOrderSize, "Order too large");
-        if (policy.minOrderSize > 0) {
-            require(quantity >= policy.minOrderSize, "Order too small");
-        }
+        if (policy.minOrderSize > 0) require(quantity >= policy.minOrderSize, "Order too small");
 
-        // 2. Token whitelist/blacklist
-        require(
-            policyFactory.isTokenAllowed(owner, agentTokenId, Currency.unwrap(pool.baseCurrency)),
-            "Base token not allowed"
-        );
-        require(
-            policyFactory.isTokenAllowed(owner, agentTokenId, Currency.unwrap(pool.quoteCurrency)),
-            "Quote token not allowed"
-        );
+        require(policyFactory.isTokenAllowed(user, strategyAgentId, Currency.unwrap(pool.baseCurrency)), "Base token not allowed");
+        require(policyFactory.isTokenAllowed(user, strategyAgentId, Currency.unwrap(pool.quoteCurrency)), "Quote token not allowed");
 
-        // 3. Operation permissions
         require(policy.allowLimitOrders, "Limit orders not allowed");
         require(policy.allowPlaceLimitOrder, "Placing limit orders not allowed");
 
-        // 4. Buy/Sell direction
-        if (side == IOrderBook.Side.BUY) {
-            require(policy.allowBuy, "Buy orders not allowed");
-        } else {
-            require(policy.allowSell, "Sell orders not allowed");
-        }
+        if (side == IOrderBook.Side.BUY) require(policy.allowBuy, "Buy orders not allowed");
+        else require(policy.allowSell, "Sell orders not allowed");
 
-        // 5. Auto-borrow/repay flags
-        if (autoBorrow) {
-            require(policy.allowAutoBorrow, "Auto-borrow not allowed");
-        }
-        if (autoRepay) {
-            require(policy.allowAutoRepay, "Auto-repay not allowed");
-        }
+        if (autoBorrow) require(policy.allowAutoBorrow, "Auto-borrow not allowed");
+        if (autoRepay)  require(policy.allowAutoRepay,  "Auto-repay not allowed");
 
-        // 6. Health factor check
-        uint256 healthFactor = lendingManager.getHealthFactor(owner);
-        require(healthFactor >= policy.minHealthFactor, "Health factor too low");
+        require(lendingManager.getHealthFactor(user) >= policy.minHealthFactor, "Health factor too low");
 
-        // 7. Trade cooldown
         if (policy.minTimeBetweenTrades > 0) {
             require(
-                block.timestamp >= lastTradeTime[agentTokenId] + policy.minTimeBetweenTrades,
+                block.timestamp >= lastTradeTime[strategyAgentId] + policy.minTimeBetweenTrades,
                 "Cooldown period active"
             );
         }
@@ -701,212 +493,95 @@ contract AgentRouter {
 
     // ============ Circuit Breakers ============
 
-    /**
-     * @notice Check circuit breaker conditions and disable agent if triggered
-     */
     function _checkCircuitBreaker(
-        address owner,
-        uint256 agentTokenId,
+        address user,
+        uint256 strategyAgentId,
         PolicyFactory.Policy memory policy
     ) internal {
-        if (policy.maxDailyDrawdown == 0) {
-            return; // No drawdown limit set
-        }
+        if (policy.maxDailyDrawdown == 0) return;
 
         uint256 today = block.timestamp / 1 days;
+        uint256 currentValue = _getPortfolioValue(user);
 
-        // Get current portfolio value from BalanceManager
-        // Note: This requires BalanceManager to have a getTotalValue function
-        // If not available, we can use a different metric like total supplied collateral
-        uint256 currentValue = _getPortfolioValue(owner);
-
-        // Initialize day start value if not set
-        if (dayStartValues[owner][today] == 0) {
-            dayStartValues[owner][today] = currentValue;
+        if (dayStartValues[user][today] == 0) {
+            dayStartValues[user][today] = currentValue;
             return;
         }
 
-        uint256 startValue = dayStartValues[owner][today];
-
-        // Calculate drawdown
+        uint256 startValue = dayStartValues[user][today];
         if (currentValue < startValue) {
             uint256 drawdownBps = ((startValue - currentValue) * 10000) / startValue;
-
             if (drawdownBps > policy.maxDailyDrawdown) {
-                // Trigger circuit breaker
-                policyFactory.emergencyDisable(
-                    owner,
-                    agentTokenId,
-                    "CIRCUIT_BREAKER_DRAWDOWN"
-                );
+                policyFactory.emergencyDisable(user, strategyAgentId, "CIRCUIT_BREAKER_DRAWDOWN");
 
-                // Submit validation proof to ERC-8004
                 validationRegistry.requestValidation(
-                    agentTokenId,
+                    strategyAgentId,
                     IERC8004Validation.ValidationTask.CIRCUIT_BREAKER,
                     abi.encode(currentValue, startValue, drawdownBps, block.timestamp)
                 );
 
-                emit CircuitBreakerTriggered(
-                    owner,
-                    agentTokenId,
-                    drawdownBps,
-                    currentValue,
-                    startValue,
-                    block.timestamp
-                );
-
+                emit CircuitBreakerTriggered(user, strategyAgentId, drawdownBps, currentValue, startValue, block.timestamp);
                 revert("Circuit breaker triggered");
             }
         }
     }
 
-    /**
-     * @notice Get portfolio value for an owner
-     * @dev This is a simplified version - in production would aggregate across all assets
-     */
-    function _getPortfolioValue(address owner) internal view returns (uint256) {
-        // For now, return a placeholder
-        // In production, this would query BalanceManager for total value across all assets
-        // Or sum up all supplied collateral values
-        return 0; // TODO: Implement proper portfolio value calculation
+    function _getPortfolioValue(address user) internal view returns (uint256) {
+        return 0; // TODO: implement proper portfolio value via BalanceManager
     }
 
-    // ============ Tracking & Updates ============
+    // ============ Tracking ============
 
-    /**
-     * @notice Update tracking data after trade
-     */
-    function _updateTracking(
-        address owner,
-        uint256 agentTokenId,
-        uint256 amountIn
-    ) internal {
-        // Update last trade time
-        lastTradeTime[agentTokenId] = block.timestamp;
-
-        // Update daily volume
+    function _updateTracking(uint256 strategyAgentId, uint256 amountIn) internal {
+        lastTradeTime[strategyAgentId] = block.timestamp;
         uint256 today = block.timestamp / 1 days;
-        dailyVolumes[agentTokenId][today] += amountIn;
+        dailyVolumes[strategyAgentId][today] += amountIn;
     }
 
     // ============ Reputation Recording ============
 
-    /**
-     * @notice Record trade to ERC-8004 Reputation Registry
-     */
     function _recordTradeToReputation(
-        uint256 agentTokenId,
+        uint256 strategyAgentId,
         address tokenIn,
         address tokenOut,
         uint256 amountIn,
         uint256 amountOut
     ) internal {
-        // Calculate PnL (simplified - just comparing amounts)
-        // In production, would use oracle prices for accurate PnL
         int256 pnl = int256(amountOut) - int256(amountIn);
-
-        bytes memory data = abi.encode(pnl, amountIn, amountOut, block.timestamp);
-
         reputationRegistry.submitFeedback(
-            agentTokenId,
+            strategyAgentId,
             IERC8004Reputation.FeedbackType.TRADE_EXECUTION,
-            data
+            abi.encode(pnl, amountIn, amountOut, block.timestamp)
         );
     }
 
-    /**
-     * @notice Record borrow to reputation
-     */
-    function _recordBorrowToReputation(
-        uint256 agentTokenId,
-        address token,
-        uint256 amount
-    ) internal {
-        bytes memory data = abi.encode(token, amount, block.timestamp);
-
+    function _recordBorrowToReputation(uint256 strategyAgentId, address token, uint256 amount) internal {
         reputationRegistry.submitFeedback(
-            agentTokenId,
+            strategyAgentId,
             IERC8004Reputation.FeedbackType.BORROW,
-            data
+            abi.encode(token, amount, block.timestamp)
         );
     }
 
-    /**
-     * @notice Record repay to reputation
-     */
-    function _recordRepayToReputation(
-        uint256 agentTokenId,
-        address token,
-        uint256 amount
-    ) internal {
-        bytes memory data = abi.encode(token, amount, block.timestamp);
-
+    function _recordRepayToReputation(uint256 strategyAgentId, address token, uint256 amount) internal {
         reputationRegistry.submitFeedback(
-            agentTokenId,
+            strategyAgentId,
             IERC8004Reputation.FeedbackType.REPAY,
-            data
+            abi.encode(token, amount, block.timestamp)
         );
-    }
-
-    // ============ Agent-Based Authorization ============
-
-    /**
-     * @notice User authorizes a strategy agent (Model B - Simple!)
-     * @param strategyAgentId Developer's strategy agent ID to authorize (e.g., Agent #500)
-     * @dev User (msg.sender) authorizes the STRATEGY agent
-     *      Policy restrictions come from user's personal agent during execution
-     */
-    function authorize(uint256 strategyAgentId) external {
-        // Verify the strategy agent exists (ownerOf reverts on invalid token)
-        identityRegistry.ownerOf(strategyAgentId);
-
-        authorizedStrategyAgents[msg.sender][strategyAgentId] = true;
-        emit StrategyAgentAuthorized(msg.sender, 0, strategyAgentId, block.timestamp);
-    }
-
-    /**
-     * @notice User revokes authorization for a strategy agent (Model B)
-     * @param strategyAgentId Strategy agent ID to revoke
-     */
-    function revoke(uint256 strategyAgentId) external {
-        authorizedStrategyAgents[msg.sender][strategyAgentId] = false;
-        emit StrategyAgentRevoked(msg.sender, 0, strategyAgentId, block.timestamp);
-    }
-
-    /**
-     * @notice Check if a strategy agent is authorized by a user (Model B)
-     * @param user User's address
-     * @param strategyAgentId Strategy agent ID
-     * @return bool True if authorized
-     */
-    function isAuthorized(address user, uint256 strategyAgentId) external view returns (bool) {
-        return authorizedStrategyAgents[user][strategyAgentId];
     }
 
     // ============ View Functions ============
 
-    /**
-     * @notice Get agent's current daily volume
-     */
-    function getDailyVolume(uint256 agentTokenId) external view returns (uint256) {
-        uint256 today = block.timestamp / 1 days;
-        return dailyVolumes[agentTokenId][today];
+    function getDailyVolume(uint256 strategyAgentId) external view returns (uint256) {
+        return dailyVolumes[strategyAgentId][block.timestamp / 1 days];
     }
 
-    /**
-     * @notice Get agent's last trade timestamp
-     */
-    function getLastTradeTime(uint256 agentTokenId) external view returns (uint256) {
-        return lastTradeTime[agentTokenId];
+    function getLastTradeTime(uint256 strategyAgentId) external view returns (uint256) {
+        return lastTradeTime[strategyAgentId];
     }
 
-    /**
-     * @notice Get day start value for drawdown calculation
-     */
-    function getDayStartValue(address owner) external view returns (uint256) {
-        uint256 today = block.timestamp / 1 days;
-        return dayStartValues[owner][today];
+    function getDayStartValue(address user) external view returns (uint256) {
+        return dayStartValues[user][block.timestamp / 1 days];
     }
-
 }

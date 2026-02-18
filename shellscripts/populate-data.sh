@@ -975,14 +975,13 @@ else
     echo "  Agent Executor:   $AGENT_ADDRESS"
     echo ""
 
-    # Run the full end-to-end agent execution verification script (Model B flow):
-    #   1. Primary trader registers user agent NFT (IdentityRegistry)
-    #   2. Primary trader installs trading policy (PolicyFactory, no Chainlink)
-    #   3. Primary trader deposits IDRX into BalanceManager (collateral for BUY order)
-    #   4. Strategy agent registers its NFT (agent wallet = NFT owner = executor)
-    #   5. Primary trader authorizes the strategy agent
-    #   6. Strategy agent places BUY limit order on behalf of primary trader
-    #   7. Strategy agent cancels the order
+    # Run the full end-to-end agent execution verification:
+    #   1. Strategy agent registers its NFT (IdentityRegistry)
+    #   2. Primary trader calls AgentRouter.authorize(strategyAgentId, policy)
+    #      -> installs policy + grants authorization in ONE transaction
+    #   3. Primary trader deposits IDRX collateral (BalanceManager)
+    #   4. Strategy agent places BUY limit order for primary trader (AgentRouter)
+    #   5. Strategy agent cancels the order (AgentRouter)
 
     echo "  Running full Model B agent execution verification..."
     if PRIVATE_KEY=$PRIVATE_KEY AGENT_PRIVATE_KEY=$AGENT_PRIVATE_KEY \
@@ -1012,7 +1011,7 @@ if [[ "$POLICY_FACTORY_ADDRESS" != "0x0000000000000000000000000000000000000000" 
         print_success "🤖 ERC-8004 Model B agent flow verified end-to-end!"
         echo "    Verified:"
         echo "      - IdentityRegistry.register() → agent NFT minted"
-        echo "      - PolicyFactory.installAgent() → trading policy applied"
+        echo "      - AgentRouter.authorize() -> policy installed + authorized (1 tx)"
         echo "      - AgentRouter.authorize() → user authorized strategy agent"
         echo "      - AgentRouter.executeLimitOrder() → order placed for user by agent"
         echo "      - AgentRouter.cancelOrder() → order cancelled for user by agent"

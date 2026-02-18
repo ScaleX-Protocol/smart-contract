@@ -5,28 +5,33 @@ import "./interfaces/IERC8004Identity.sol";
 
 /**
  * @title PolicyFactory
- * @notice Central policy management for AI agent trading permissions
- * @dev Stores and manages policies that define what actions agents can perform
- *      Single source of truth for all agent authorization rules
+ * @notice Central policy management for AI agent trading permissions.
+ *
+ * Policies are stored as: policies[user][strategyAgentId]
+ *   - "user"            = the wallet that owns the funds (grants permission)
+ *   - "strategyAgentId" = the NFT ID of the strategy agent being permitted
+ *
+ * Users never need to register an NFT. Only strategy agents need one.
+ * Use AgentRouter.authorize(strategyAgentId, policy) to install a policy and
+ * grant authorization in a single transaction.
  */
 contract PolicyFactory {
     // ============ State Variables ============
 
     IERC8004Identity public immutable identityRegistry;
 
-    // owner => agentTokenId => Policy
+    // user => strategyAgentId => Policy
     mapping(address => mapping(uint256 => Policy)) public policies;
 
-    // owner => list of installed agent token IDs
+    // user => list of authorised strategy agent IDs
     mapping(address => uint256[]) public installedAgents;
 
     // Policy templates
     mapping(string => PolicyTemplate) public templates;
 
-    // Authorized routers (can call emergencyDisable)
+    // Authorized routers (AgentRouter) - can call installPolicyFor / uninstallPolicyFor
     mapping(address => bool) public authorizedRouters;
 
-    // Owner
     address public owner;
 
     // ============ Structs ============
@@ -36,7 +41,7 @@ contract PolicyFactory {
         bool enabled;
         uint256 installedAt;
         uint256 expiryTimestamp;
-        uint256 agentTokenId;
+        // Note: strategyAgentId is NOT stored here — it is the mapping key
 
         // ============ SIMPLE PERMISSIONS (No external compute) ============
 
@@ -90,15 +95,15 @@ contract PolicyFactory {
         uint256 maxWeeklyDrawdown;     // Basis points
 
         // Market Depth
-        uint256 maxTradeVsTVLBps;      // Max trade as % of TVL
+        uint256 maxTradeVsTVLBps;
 
         // Performance Requirements
-        uint256 minWinRateBps;         // Minimum win rate
-        int256 minSharpeRatio;         // Minimum Sharpe ratio (scaled by 1e18)
+        uint256 minWinRateBps;
+        int256 minSharpeRatio;         // scaled by 1e18
 
         // Position Management
-        uint256 maxPositionConcentrationBps;  // Max % in one asset
-        uint256 maxCorrelationBps;     // Max correlation to market
+        uint256 maxPositionConcentrationBps;
+        uint256 maxCorrelationBps;
 
         // Trade Frequency
         uint256 maxTradesPerDay;
@@ -109,11 +114,11 @@ contract PolicyFactory {
         uint256 tradingEndHour;        // UTC hour (0-23)
 
         // Reputation
-        uint256 minReputationScore;    // Minimum ERC-8004 reputation (0-100)
-        bool useReputationMultiplier;  // Scale limits based on reputation
+        uint256 minReputationScore;
+        bool useReputationMultiplier;
 
         // ============ Optimization Flag ============
-        bool requiresChainlinkFunctions;  // True if any complex permissions enabled
+        bool requiresChainlinkFunctions;
     }
 
     struct PolicyTemplate {
@@ -132,35 +137,35 @@ contract PolicyFactory {
 
     // ============ Events ============
 
-    event AgentInstalled(
-        address indexed owner,
-        uint256 indexed agentTokenId,
+    event PolicyInstalled(
+        address indexed user,
+        uint256 indexed strategyAgentId,
         string templateUsed,
         uint256 timestamp
     );
 
-    event AgentUninstalled(
-        address indexed owner,
-        uint256 indexed agentTokenId,
+    event PolicyUninstalled(
+        address indexed user,
+        uint256 indexed strategyAgentId,
         uint256 timestamp
     );
 
     event PolicyUpdated(
-        address indexed owner,
-        uint256 indexed agentTokenId,
+        address indexed user,
+        uint256 indexed strategyAgentId,
         string field,
         uint256 timestamp
     );
 
     event PolicyEnabled(
-        address indexed owner,
-        uint256 indexed agentTokenId,
+        address indexed user,
+        uint256 indexed strategyAgentId,
         uint256 timestamp
     );
 
     event PolicyDisabled(
-        address indexed owner,
-        uint256 indexed agentTokenId,
+        address indexed user,
+        uint256 indexed strategyAgentId,
         string reason,
         uint256 timestamp
     );
@@ -177,7 +182,6 @@ contract PolicyFactory {
         identityRegistry = IERC8004Identity(_identityRegistry);
         owner = msg.sender;
         authorizedRouters[msg.sender] = true;
-
         _initializeTemplates();
     }
 
@@ -193,301 +197,259 @@ contract PolicyFactory {
         _;
     }
 
-    // ============ Install/Uninstall ============
+    // ============ Install / Uninstall (called directly by user) ============
 
     /**
-     * @notice Install an agent with a custom policy
-     * @param agentTokenId The ERC-8004 agent token ID
-     * @param policy The policy configuration
+     * @notice Install a policy granting strategyAgentId permission to trade for msg.sender.
+     * @dev The strategy agent NFT must exist. The caller does NOT need to own it.
+     *      Prefer AgentRouter.authorize(strategyAgentId, policy) which does this + auth in one tx.
      */
-    function installAgent(
-        uint256 agentTokenId,
+    function installPolicy(
+        uint256 strategyAgentId,
         Policy calldata policy
     ) external {
-        // Verify caller owns the agent
+        // Verify strategy agent NFT exists (reverts on invalid token)
+        identityRegistry.ownerOf(strategyAgentId);
+
         require(
-            identityRegistry.ownerOf(agentTokenId) == msg.sender,
-            "Not agent owner"
+            !policies[msg.sender][strategyAgentId].enabled &&
+                policies[msg.sender][strategyAgentId].installedAt == 0,
+            "Policy already installed"
         );
 
-        // Verify agent not already installed
-        require(
-            !policies[msg.sender][agentTokenId].enabled &&
-                policies[msg.sender][agentTokenId].installedAt == 0,
-            "Agent already installed"
-        );
-
-        // Validate policy
         _validatePolicy(policy);
 
-        // Store policy
-        policies[msg.sender][agentTokenId] = policy;
-        policies[msg.sender][agentTokenId].installedAt = block.timestamp;
-        policies[msg.sender][agentTokenId].enabled = true;
-        policies[msg.sender][agentTokenId].agentTokenId = agentTokenId;
+        policies[msg.sender][strategyAgentId] = policy;
+        policies[msg.sender][strategyAgentId].installedAt = block.timestamp;
+        policies[msg.sender][strategyAgentId].enabled = true;
+        policies[msg.sender][strategyAgentId].requiresChainlinkFunctions = _requiresChainlink(policy);
 
-        // Auto-detect if requires Chainlink
-        policies[msg.sender][agentTokenId].requiresChainlinkFunctions = _requiresChainlink(
-            policy
-        );
+        installedAgents[msg.sender].push(strategyAgentId);
 
-        // Add to installed agents list
-        installedAgents[msg.sender].push(agentTokenId);
-
-        emit AgentInstalled(msg.sender, agentTokenId, "custom", block.timestamp);
+        emit PolicyInstalled(msg.sender, strategyAgentId, "custom", block.timestamp);
     }
 
     /**
-     * @notice Install an agent using a template
-     * @param agentTokenId The ERC-8004 agent token ID
-     * @param templateName Name of the template to use
-     * @param customizations Optional customizations to the template
+     * @notice Install a policy from a template.
      */
-    function installAgentFromTemplate(
-        uint256 agentTokenId,
+    function installPolicyFromTemplate(
+        uint256 strategyAgentId,
         string calldata templateName,
         PolicyCustomization calldata customizations
     ) external {
-        require(
-            identityRegistry.ownerOf(agentTokenId) == msg.sender,
-            "Not agent owner"
-        );
+        identityRegistry.ownerOf(strategyAgentId);
 
         require(
-            !policies[msg.sender][agentTokenId].enabled,
-            "Agent already installed"
+            !policies[msg.sender][strategyAgentId].enabled,
+            "Policy already installed"
         );
 
-        PolicyTemplate memory template = templates[templateName];
-        require(template.active, "Template not found or inactive");
+        PolicyTemplate memory tmpl = templates[templateName];
+        require(tmpl.active, "Template not found or inactive");
 
-        // Start with template policy
-        Policy memory policy = template.basePolicy;
-        policy.agentTokenId = agentTokenId;
+        Policy memory policy = tmpl.basePolicy;
 
-        // Apply customizations
-        if (customizations.maxOrderSize > 0) {
-            policy.maxOrderSize = customizations.maxOrderSize;
-        }
-        if (customizations.dailyVolumeLimit > 0) {
-            policy.dailyVolumeLimit = customizations.dailyVolumeLimit;
-        }
-        if (customizations.expiryTimestamp > 0) {
-            policy.expiryTimestamp = customizations.expiryTimestamp;
-        }
-        if (customizations.whitelistedTokens.length > 0) {
-            policy.whitelistedTokens = customizations.whitelistedTokens;
-        }
+        if (customizations.maxOrderSize > 0)        policy.maxOrderSize = customizations.maxOrderSize;
+        if (customizations.dailyVolumeLimit > 0)    policy.dailyVolumeLimit = customizations.dailyVolumeLimit;
+        if (customizations.expiryTimestamp > 0)     policy.expiryTimestamp = customizations.expiryTimestamp;
+        if (customizations.whitelistedTokens.length > 0) policy.whitelistedTokens = customizations.whitelistedTokens;
 
-        // Validate and store
         _validatePolicy(policy);
-        policies[msg.sender][agentTokenId] = policy;
-        policies[msg.sender][agentTokenId].installedAt = block.timestamp;
-        policies[msg.sender][agentTokenId].enabled = true;
-        policies[msg.sender][agentTokenId].requiresChainlinkFunctions = _requiresChainlink(
-            policy
-        );
+        policies[msg.sender][strategyAgentId] = policy;
+        policies[msg.sender][strategyAgentId].installedAt = block.timestamp;
+        policies[msg.sender][strategyAgentId].enabled = true;
+        policies[msg.sender][strategyAgentId].requiresChainlinkFunctions = _requiresChainlink(policy);
 
-        installedAgents[msg.sender].push(agentTokenId);
+        installedAgents[msg.sender].push(strategyAgentId);
 
-        emit AgentInstalled(msg.sender, agentTokenId, templateName, block.timestamp);
+        emit PolicyInstalled(msg.sender, strategyAgentId, templateName, block.timestamp);
     }
 
     /**
-     * @notice Uninstall an agent (removes all permissions)
-     * @param agentTokenId The agent to uninstall
+     * @notice Remove the policy for a strategy agent (does not revoke AgentRouter auth).
+     *         Use AgentRouter.revoke() to remove both authorization and policy at once.
      */
-    function uninstallAgent(uint256 agentTokenId) external {
+    function uninstallPolicy(uint256 strategyAgentId) external {
         require(
-            policies[msg.sender][agentTokenId].enabled ||
-                policies[msg.sender][agentTokenId].installedAt > 0,
-            "Agent not installed"
+            policies[msg.sender][strategyAgentId].enabled ||
+                policies[msg.sender][strategyAgentId].installedAt > 0,
+            "Policy not installed"
         );
 
-        delete policies[msg.sender][agentTokenId];
+        delete policies[msg.sender][strategyAgentId];
+        _removeFromInstalledList(msg.sender, strategyAgentId);
 
-        // Remove from installed agents list
-        _removeFromInstalledList(msg.sender, agentTokenId);
+        emit PolicyUninstalled(msg.sender, strategyAgentId, block.timestamp);
+    }
 
-        emit AgentUninstalled(msg.sender, agentTokenId, block.timestamp);
+    // ============ Router-delegated Install / Uninstall ============
+    // Called by AgentRouter on behalf of a user (msg.sender = AgentRouter).
+
+    /**
+     * @notice Install policy for `user` — called by AgentRouter.authorize().
+     */
+    function installPolicyFor(
+        address user,
+        uint256 strategyAgentId,
+        Policy calldata policy
+    ) external onlyAuthorizedRouter {
+        identityRegistry.ownerOf(strategyAgentId);
+
+        require(
+            !policies[user][strategyAgentId].enabled &&
+                policies[user][strategyAgentId].installedAt == 0,
+            "Policy already installed"
+        );
+
+        _validatePolicy(policy);
+
+        policies[user][strategyAgentId] = policy;
+        policies[user][strategyAgentId].installedAt = block.timestamp;
+        policies[user][strategyAgentId].enabled = true;
+        policies[user][strategyAgentId].requiresChainlinkFunctions = _requiresChainlink(policy);
+
+        installedAgents[user].push(strategyAgentId);
+
+        emit PolicyInstalled(user, strategyAgentId, "custom", block.timestamp);
+    }
+
+    /**
+     * @notice Uninstall policy for `user` — called by AgentRouter.revoke().
+     */
+    function uninstallPolicyFor(
+        address user,
+        uint256 strategyAgentId
+    ) external onlyAuthorizedRouter {
+        if (policies[user][strategyAgentId].installedAt == 0) return; // already gone
+
+        delete policies[user][strategyAgentId];
+        _removeFromInstalledList(user, strategyAgentId);
+
+        emit PolicyUninstalled(user, strategyAgentId, block.timestamp);
     }
 
     // ============ Policy Management ============
 
-    /**
-     * @notice Update trading limits
-     */
     function updateTradingLimits(
-        uint256 agentTokenId,
+        uint256 strategyAgentId,
         uint256 maxOrderSize,
         uint256 minOrderSize,
         uint256 dailyVolumeLimit
     ) external {
-        Policy storage policy = _getPolicy(msg.sender, agentTokenId);
-
+        Policy storage policy = _getPolicy(msg.sender, strategyAgentId);
         policy.maxOrderSize = maxOrderSize;
         policy.minOrderSize = minOrderSize;
         policy.dailyVolumeLimit = dailyVolumeLimit;
-
         policy.requiresChainlinkFunctions = _requiresChainlink(policy);
-
-        emit PolicyUpdated(msg.sender, agentTokenId, "tradingLimits", block.timestamp);
+        emit PolicyUpdated(msg.sender, strategyAgentId, "tradingLimits", block.timestamp);
     }
 
-    /**
-     * @notice Update borrowing limits
-     */
     function updateBorrowingLimits(
-        uint256 agentTokenId,
+        uint256 strategyAgentId,
         uint256 maxAutoBorrowAmount,
         bool allowBorrowing
     ) external {
-        Policy storage policy = _getPolicy(msg.sender, agentTokenId);
-
+        Policy storage policy = _getPolicy(msg.sender, strategyAgentId);
         policy.maxAutoBorrowAmount = maxAutoBorrowAmount;
         policy.allowBorrow = allowBorrowing;
-
-        emit PolicyUpdated(msg.sender, agentTokenId, "borrowingLimits", block.timestamp);
+        emit PolicyUpdated(msg.sender, strategyAgentId, "borrowingLimits", block.timestamp);
     }
 
-    /**
-     * @notice Update safety controls
-     */
     function updateSafetyControls(
-        uint256 agentTokenId,
+        uint256 strategyAgentId,
         uint256 minHealthFactor,
         uint256 maxDailyDrawdown
     ) external {
-        Policy storage policy = _getPolicy(msg.sender, agentTokenId);
-
+        Policy storage policy = _getPolicy(msg.sender, strategyAgentId);
         require(minHealthFactor >= 1e18, "Health factor must be >= 100%");
         require(maxDailyDrawdown <= 10000, "Drawdown must be <= 100%");
-
         policy.minHealthFactor = minHealthFactor;
         policy.maxDailyDrawdown = maxDailyDrawdown;
-
         policy.requiresChainlinkFunctions = _requiresChainlink(policy);
-
-        emit PolicyUpdated(msg.sender, agentTokenId, "safetyControls", block.timestamp);
+        emit PolicyUpdated(msg.sender, strategyAgentId, "safetyControls", block.timestamp);
     }
 
-    /**
-     * @notice Update token whitelist/blacklist
-     */
     function updateTokenLists(
-        uint256 agentTokenId,
+        uint256 strategyAgentId,
         address[] calldata whitelistedTokens,
         address[] calldata blacklistedTokens
     ) external {
-        Policy storage policy = _getPolicy(msg.sender, agentTokenId);
-
+        Policy storage policy = _getPolicy(msg.sender, strategyAgentId);
         policy.whitelistedTokens = whitelistedTokens;
         policy.blacklistedTokens = blacklistedTokens;
-
-        emit PolicyUpdated(msg.sender, agentTokenId, "tokenLists", block.timestamp);
+        emit PolicyUpdated(msg.sender, strategyAgentId, "tokenLists", block.timestamp);
     }
 
-    /**
-     * @notice Enable or disable an agent
-     */
-    function setAgentEnabled(uint256 agentTokenId, bool enabled) external {
-        Policy storage policy = _getPolicy(msg.sender, agentTokenId);
-
+    function setAgentEnabled(uint256 strategyAgentId, bool enabled) external {
+        Policy storage policy = _getPolicy(msg.sender, strategyAgentId);
         policy.enabled = enabled;
-
         if (enabled) {
-            emit PolicyEnabled(msg.sender, agentTokenId, block.timestamp);
+            emit PolicyEnabled(msg.sender, strategyAgentId, block.timestamp);
         } else {
-            emit PolicyDisabled(msg.sender, agentTokenId, "manual", block.timestamp);
+            emit PolicyDisabled(msg.sender, strategyAgentId, "manual", block.timestamp);
         }
     }
 
     /**
-     * @notice Emergency disable (callable by AgentRouter when circuit breaker triggers)
+     * @notice Emergency disable — called by AgentRouter when circuit breaker triggers.
      */
     function emergencyDisable(
-        address owner,
-        uint256 agentTokenId,
+        address user,
+        uint256 strategyAgentId,
         string calldata reason
     ) external onlyAuthorizedRouter {
-        Policy storage policy = policies[owner][agentTokenId];
+        Policy storage policy = policies[user][strategyAgentId];
         require(policy.enabled, "Already disabled");
-
         policy.enabled = false;
-
-        emit PolicyDisabled(owner, agentTokenId, reason, block.timestamp);
+        emit PolicyDisabled(user, strategyAgentId, reason, block.timestamp);
     }
 
     // ============ Policy Queries ============
 
-    /**
-     * @notice Get policy for an agent
-     */
     function getPolicy(
-        address _owner,
-        uint256 agentTokenId
+        address user,
+        uint256 strategyAgentId
     ) external view returns (Policy memory) {
-        return policies[_owner][agentTokenId];
+        return policies[user][strategyAgentId];
     }
 
-    /**
-     * @notice Check if an agent is installed and enabled
-     */
     function isAgentEnabled(
-        address _owner,
-        uint256 agentTokenId
+        address user,
+        uint256 strategyAgentId
     ) external view returns (bool) {
-        Policy memory policy = policies[_owner][agentTokenId];
+        Policy memory policy = policies[user][strategyAgentId];
         return policy.enabled && block.timestamp < policy.expiryTimestamp;
     }
 
-    /**
-     * @notice Get all installed agents for an owner
-     */
-    function getInstalledAgents(address _owner) external view returns (uint256[] memory) {
-        return installedAgents[_owner];
+    function getInstalledAgents(address user) external view returns (uint256[] memory) {
+        return installedAgents[user];
     }
 
-    /**
-     * @notice Check if a token is allowed for trading
-     */
     function isTokenAllowed(
-        address _owner,
-        uint256 agentTokenId,
+        address user,
+        uint256 strategyAgentId,
         address token
     ) external view returns (bool) {
-        Policy memory policy = policies[_owner][agentTokenId];
+        Policy memory policy = policies[user][strategyAgentId];
 
-        // Check blacklist first
         for (uint256 i = 0; i < policy.blacklistedTokens.length; i++) {
-            if (policy.blacklistedTokens[i] == token) {
-                return false;
-            }
+            if (policy.blacklistedTokens[i] == token) return false;
         }
 
-        // If whitelist is empty, all tokens (except blacklisted) are allowed
-        if (policy.whitelistedTokens.length == 0) {
-            return true;
-        }
+        if (policy.whitelistedTokens.length == 0) return true;
 
-        // Check whitelist
         for (uint256 i = 0; i < policy.whitelistedTokens.length; i++) {
-            if (policy.whitelistedTokens[i] == token) {
-                return true;
-            }
+            if (policy.whitelistedTokens[i] == token) return true;
         }
 
         return false;
     }
 
-    // ============ Internal Functions ============
+    // ============ Internal ============
 
-    function _getPolicy(
-        address _owner,
-        uint256 agentTokenId
-    ) internal view returns (Policy storage) {
-        Policy storage policy = policies[_owner][agentTokenId];
-        require(policy.installedAt > 0, "Agent not installed");
+    function _getPolicy(address user, uint256 strategyAgentId) internal view returns (Policy storage) {
+        Policy storage policy = policies[user][strategyAgentId];
+        require(policy.installedAt > 0, "Policy not installed");
         return policy;
     }
 
@@ -517,10 +479,10 @@ contract PolicyFactory {
         );
     }
 
-    function _removeFromInstalledList(address _owner, uint256 agentTokenId) internal {
-        uint256[] storage agents = installedAgents[_owner];
+    function _removeFromInstalledList(address user, uint256 strategyAgentId) internal {
+        uint256[] storage agents = installedAgents[user];
         for (uint256 i = 0; i < agents.length; i++) {
-            if (agents[i] == agentTokenId) {
+            if (agents[i] == strategyAgentId) {
                 agents[i] = agents[agents.length - 1];
                 agents.pop();
                 break;
@@ -531,7 +493,6 @@ contract PolicyFactory {
     // ============ Templates ============
 
     function _initializeTemplates() internal {
-        // Conservative Template
         templates["conservative"] = PolicyTemplate({
             name: "Conservative",
             description: "Low risk, strict limits",
@@ -540,15 +501,14 @@ contract PolicyFactory {
                 enabled: true,
                 installedAt: 0,
                 expiryTimestamp: type(uint256).max,
-                agentTokenId: 0,
-                maxOrderSize: 1000e6,        // $1,000 max per order
-                minOrderSize: 100e6,         // $100 min per order
+                maxOrderSize: 1000e6,
+                minOrderSize: 100e6,
                 whitelistedTokens: new address[](0),
                 blacklistedTokens: new address[](0),
                 allowMarketOrders: true,
                 allowLimitOrders: true,
                 allowSwap: true,
-                allowBorrow: false,          // No borrowing
+                allowBorrow: false,
                 allowRepay: true,
                 allowSupplyCollateral: true,
                 allowWithdrawCollateral: true,
@@ -560,13 +520,13 @@ contract PolicyFactory {
                 maxAutoBorrowAmount: 0,
                 allowAutoRepay: false,
                 minDebtToRepay: 0,
-                minHealthFactor: 2e18,       // 200% minimum
-                maxSlippageBps: 50,          // 0.5% max slippage
-                minTimeBetweenTrades: 300,   // 5 min cooldown
+                minHealthFactor: 2e18,
+                maxSlippageBps: 50,
+                minTimeBetweenTrades: 300,
                 emergencyRecipient: address(0),
-                dailyVolumeLimit: 5000e6,    // $5,000 per day
+                dailyVolumeLimit: 5000e6,
                 weeklyVolumeLimit: 0,
-                maxDailyDrawdown: 500,       // 5% max daily loss
+                maxDailyDrawdown: 500,
                 maxWeeklyDrawdown: 0,
                 maxTradeVsTVLBps: 0,
                 minWinRateBps: 0,
@@ -579,11 +539,10 @@ contract PolicyFactory {
                 tradingEndHour: 0,
                 minReputationScore: 75,
                 useReputationMultiplier: false,
-                requiresChainlinkFunctions: true  // Uses daily volume & drawdown
+                requiresChainlinkFunctions: true
             })
         });
 
-        // Moderate Template
         templates["moderate"] = PolicyTemplate({
             name: "Moderate",
             description: "Balanced risk and limits",
@@ -592,8 +551,7 @@ contract PolicyFactory {
                 enabled: true,
                 installedAt: 0,
                 expiryTimestamp: type(uint256).max,
-                agentTokenId: 0,
-                maxOrderSize: 5000e6,        // $5,000 max per order
+                maxOrderSize: 5000e6,
                 minOrderSize: 100e6,
                 whitelistedTokens: new address[](0),
                 blacklistedTokens: new address[](0),
@@ -612,13 +570,13 @@ contract PolicyFactory {
                 maxAutoBorrowAmount: 2000e6,
                 allowAutoRepay: true,
                 minDebtToRepay: 100e6,
-                minHealthFactor: 15e17,      // 150% minimum
-                maxSlippageBps: 100,         // 1% max slippage
-                minTimeBetweenTrades: 60,    // 1 min cooldown
+                minHealthFactor: 15e17,
+                maxSlippageBps: 100,
+                minTimeBetweenTrades: 60,
                 emergencyRecipient: address(0),
-                dailyVolumeLimit: 20000e6,   // $20,000 per day
+                dailyVolumeLimit: 20000e6,
                 weeklyVolumeLimit: 0,
-                maxDailyDrawdown: 1000,      // 10% max daily loss
+                maxDailyDrawdown: 1000,
                 maxWeeklyDrawdown: 0,
                 maxTradeVsTVLBps: 0,
                 minWinRateBps: 0,
@@ -635,7 +593,6 @@ contract PolicyFactory {
             })
         });
 
-        // Aggressive Template
         templates["aggressive"] = PolicyTemplate({
             name: "Aggressive",
             description: "High risk, loose limits",
@@ -644,8 +601,7 @@ contract PolicyFactory {
                 enabled: true,
                 installedAt: 0,
                 expiryTimestamp: type(uint256).max,
-                agentTokenId: 0,
-                maxOrderSize: 50000e6,       // $50,000 max per order
+                maxOrderSize: 50000e6,
                 minOrderSize: 100e6,
                 whitelistedTokens: new address[](0),
                 blacklistedTokens: new address[](0),
@@ -664,13 +620,13 @@ contract PolicyFactory {
                 maxAutoBorrowAmount: 20000e6,
                 allowAutoRepay: true,
                 minDebtToRepay: 100e6,
-                minHealthFactor: 12e17,      // 120% minimum
-                maxSlippageBps: 300,         // 3% max slippage
-                minTimeBetweenTrades: 0,     // No cooldown
+                minHealthFactor: 12e17,
+                maxSlippageBps: 300,
+                minTimeBetweenTrades: 0,
                 emergencyRecipient: address(0),
-                dailyVolumeLimit: 200000e6,  // $200,000 per day
+                dailyVolumeLimit: 200000e6,
                 weeklyVolumeLimit: 0,
-                maxDailyDrawdown: 2000,      // 20% max daily loss
+                maxDailyDrawdown: 2000,
                 maxWeeklyDrawdown: 0,
                 maxTradeVsTVLBps: 0,
                 minWinRateBps: 0,

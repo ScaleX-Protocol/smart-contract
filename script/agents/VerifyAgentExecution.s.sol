@@ -13,42 +13,38 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 /**
  * @title VerifyAgentExecution
- * @notice End-to-end verification of the complete ERC-8004 agent execution flow (Model B)
+ * @notice End-to-end verification of the simplified ERC-8004 agent flow.
  *
- * Flow verified:
- *   1. Primary trader registers user agent NFT (IdentityRegistry)
- *   2. Primary trader installs trading policy (PolicyFactory, no Chainlink)
- *   3. Primary trader deposits IDRX into BalanceManager (collateral for BUY order)
- *   4. Strategy agent registers its NFT (IdentityRegistry)
- *   5. Primary trader authorizes the strategy agent
- *   6. Strategy agent places BUY limit order on behalf of primary trader (AgentRouter)
- *   7. Strategy agent cancels the order
+ * Flow:
+ *   1. Strategy agent calls IdentityRegistry.register() ->gets strategyAgentId NFT.
+ *   2. Primary trader calls AgentRouter.authorize(strategyAgentId, policy) →
+ *      installs policy + grants authorization in ONE transaction.
+ *   3. Primary trader deposits IDRX collateral for BUY order.
+ *   4. Strategy agent calls AgentRouter.executeLimitOrder(primaryTrader, strategyAgentId, ...)
+ *   5. Strategy agent calls AgentRouter.cancelOrder(primaryTrader, strategyAgentId, ...)
  *
- * The strategy agent's own wallet (NFT owner) is the only one that can execute —
- * no separate executor registration needed.
+ * No userAgentId NFT needed — user is identified by wallet address.
  *
  * Environment variables required:
- *   PRIVATE_KEY        - Primary trader private key (owns funds + user agent)
+ *   PRIVATE_KEY        - Primary trader private key (owns funds, grants authorization)
  *   AGENT_PRIVATE_KEY  - Strategy agent private key (NFT owner, executes orders)
  */
 contract VerifyAgentExecution is Script {
 
     function run() external {
-        console.log("=== ERC-8004 AGENT EXECUTION VERIFICATION (Model B) ===");
+        console.log("=== ERC-8004 AGENT EXECUTION VERIFICATION ===");
         console.log("");
 
-        uint256 primaryKey   = vm.envUint("PRIVATE_KEY");
-        uint256 agentKey     = vm.envUint("AGENT_PRIVATE_KEY");
+        uint256 primaryKey    = vm.envUint("PRIVATE_KEY");
+        uint256 agentKey      = vm.envUint("AGENT_PRIVATE_KEY");
         address primaryTrader = vm.addr(primaryKey);
-        address agentExecutor = vm.addr(agentKey);
+        address agentWallet   = vm.addr(agentKey);
 
-        // Load deployment addresses
         string memory root       = vm.projectRoot();
         string memory deployPath = string.concat(root, "/deployments/", vm.toString(block.chainid), ".json");
         string memory json       = vm.readFile(deployPath);
 
         address identityRegistry = _extractAddress(json, "IdentityRegistry");
-        address policyFactory    = _extractAddress(json, "PolicyFactory");
         address agentRouter      = _extractAddress(json, "AgentRouter");
         address balanceManager   = _extractAddress(json, "BalanceManager");
         address weth             = _extractAddress(json, "WETH");
@@ -56,56 +52,45 @@ contract VerifyAgentExecution is Script {
         address wethIdrxPool     = _extractAddress(json, "WETH_IDRX_Pool");
 
         require(identityRegistry != address(0), "IdentityRegistry not in deployment");
-        require(policyFactory    != address(0), "PolicyFactory not in deployment");
         require(agentRouter      != address(0), "AgentRouter not in deployment");
         require(balanceManager   != address(0), "BalanceManager not in deployment");
         require(weth             != address(0), "WETH not in deployment");
         require(idrx             != address(0), "IDRX not in deployment");
         require(wethIdrxPool     != address(0), "WETH_IDRX_Pool not in deployment");
 
-        console.log("Loaded addresses:");
-        console.log("  IdentityRegistry:", identityRegistry);
-        console.log("  PolicyFactory:   ", policyFactory);
-        console.log("  AgentRouter:     ", agentRouter);
-        console.log("  BalanceManager:  ", balanceManager);
-        console.log("  WETH:            ", weth);
-        console.log("  IDRX:            ", idrx);
-        console.log("  WETH/IDRX Pool:  ", wethIdrxPool);
-        console.log("");
         console.log("Actors:");
-        console.log("  Primary Trader (user agent owner):", primaryTrader);
-        console.log("  Agent Executor (strategy runner): ", agentExecutor);
+        console.log("  Primary Trader:", primaryTrader);
+        console.log("  Agent Wallet:  ", agentWallet);
         console.log("");
 
         // ──────────────────────────────────────────────────────────────────────
-        // PRIMARY TRADER ACTIONS
+        // STEP 1: Strategy agent registers its NFT
         // ──────────────────────────────────────────────────────────────────────
+        console.log("Step 1: Strategy agent registers NFT...");
+        vm.startBroadcast(agentKey);
+        uint256 strategyAgentId = IERC8004Identity(identityRegistry).register("ipfs://QmStrategyAgentVerify");
+        console.log("[OK] Strategy agent NFT minted, tokenId:", strategyAgentId);
+        console.log("     NFT owner (= executor):", agentWallet);
+        vm.stopBroadcast();
+
+        // ──────────────────────────────────────────────────────────────────────
+        // STEP 2: Primary trader calls authorize(strategyAgentId, policy)
+        //         ->installs policy + grants authorization in ONE transaction
+        // ──────────────────────────────────────────────────────────────────────
+        console.log("Step 2: Primary trader authorizes strategy agent with policy...");
         vm.startBroadcast(primaryKey);
 
-        // Step 1: Register user agent NFT
-        console.log("Step 1: Primary trader registers user agent NFT...");
-        uint256 userAgentId = IERC8004Identity(identityRegistry).register("ipfs://QmUserAgentVerify");
-        console.log("[OK] User agent registered, tokenId:", userAgentId);
-
-        // Step 2: Install agent policy (all complex fields = 0 → no Chainlink required)
-        console.log("Step 2: Installing simple trading policy (no Chainlink)...");
         address[] memory emptyList = new address[](0);
         PolicyFactory.Policy memory policy = PolicyFactory.Policy({
-            // Metadata
-            enabled:                     false,            // set by installAgent
-            installedAt:                 0,                // set by installAgent
+            enabled:                     false,            // set by installPolicyFor
+            installedAt:                 0,                // set by installPolicyFor
             expiryTimestamp:             type(uint256).max,
-            agentTokenId:                userAgentId,
-            // Order size
-            maxOrderSize:                100e18,           // 100 WETH max per order (covers 0.001 WETH test)
+            maxOrderSize:                100e18,           // 100 WETH max per order
             minOrderSize:                0,
-            // Token lists (empty = all tokens allowed)
             whitelistedTokens:           emptyList,
             blacklistedTokens:           emptyList,
-            // Order types
             allowMarketOrders:           true,
             allowLimitOrders:            true,
-            // Operations
             allowSwap:                   true,
             allowBorrow:                 false,
             allowRepay:                  false,
@@ -113,20 +98,17 @@ contract VerifyAgentExecution is Script {
             allowWithdrawCollateral:     false,
             allowPlaceLimitOrder:        true,
             allowCancelOrder:            true,
-            // Direction
             allowBuy:                    true,
             allowSell:                   true,
-            // Auto-borrow/repay (disabled)
             allowAutoBorrow:             false,
             maxAutoBorrowAmount:         0,
             allowAutoRepay:              false,
             minDebtToRepay:              0,
-            // Safety
             minHealthFactor:             1e18,             // 100% (user has no debt)
             maxSlippageBps:              1000,             // 10%
-            minTimeBetweenTrades:        0,                // no cooldown for testing
+            minTimeBetweenTrades:        0,
             emergencyRecipient:          address(0),
-            // Complex permissions (ALL ZERO → requiresChainlinkFunctions = false)
+            // All complex fields = 0 ->requiresChainlinkFunctions = false
             dailyVolumeLimit:            0,
             weeklyVolumeLimit:           0,
             maxDailyDrawdown:            0,
@@ -144,29 +126,32 @@ contract VerifyAgentExecution is Script {
             useReputationMultiplier:     false,
             requiresChainlinkFunctions:  false
         });
-        PolicyFactory(policyFactory).installAgent(userAgentId, policy);
-        console.log("[OK] Policy installed (requiresChainlinkFunctions: false)");
-        console.log("       maxOrderSize: 100 WETH");
-        console.log("       allowLimitOrders: true, allowCancelOrder: true");
 
-        // Step 3: Ensure IDRX balance in BalanceManager for BUY order collateral
-        // BUY 0.001 WETH at 1900 IDRX/WETH → locks ~190 raw IDRX (1.90 IDRX)
-        console.log("Step 3: Ensuring IDRX balance in BalanceManager for order collateral...");
+        AgentRouter(agentRouter).authorize(strategyAgentId, policy);
+        console.log("[OK] Strategy agent", strategyAgentId, "authorized with policy");
+        console.log("     maxOrderSize: 100 WETH, allowLimitOrders: true, allowCancelOrder: true");
+        vm.stopBroadcast();
+
+        // ──────────────────────────────────────────────────────────────────────
+        // STEP 3: Ensure IDRX balance for BUY order collateral
+        // BUY 0.001 WETH at 1900 IDRX/WETH ->locks ~190 raw IDRX (1.90 IDRX)
+        // ──────────────────────────────────────────────────────────────────────
+        console.log("Step 3: Ensuring IDRX collateral in BalanceManager...");
+        vm.startBroadcast(primaryKey);
+
         uint256 bmBalance = IBalanceManager(balanceManager).getBalance(primaryTrader, Currency.wrap(idrx));
         console.log("  Current IDRX in BalanceManager (raw units, 2 dec):", bmBalance);
 
-        uint256 neededRaw = 500; // 5.00 IDRX raw (2 decimals) - covers 190 raw needed for test order
+        uint256 neededRaw = 500; // 5.00 IDRX raw
         if (bmBalance < neededRaw) {
             uint256 walletBal = IERC20(idrx).balanceOf(primaryTrader);
-            console.log("  IDRX wallet balance (raw):", walletBal);
             if (walletBal >= neededRaw) {
                 IERC20(idrx).approve(balanceManager, type(uint256).max);
                 IBalanceManager(balanceManager).depositLocal(idrx, neededRaw, primaryTrader);
                 uint256 newBal = IBalanceManager(balanceManager).getBalance(primaryTrader, Currency.wrap(idrx));
-                console.log("[OK] Deposited", neededRaw, "raw IDRX. New BalanceManager balance:", newBal);
+                console.log("[OK] Deposited", neededRaw, "raw IDRX. New balance:", newBal);
             } else {
-                console.log("[WARN] Insufficient IDRX in wallet. Limit order may fail.");
-                console.log("       Run populate-data.sh first to fund the primary trader.");
+                console.log("[WARN] Insufficient IDRX. Order may fail. Run populate-data.sh first.");
             }
         } else {
             console.log("[OK] Sufficient IDRX in BalanceManager (", bmBalance, "raw units)");
@@ -175,73 +160,38 @@ contract VerifyAgentExecution is Script {
         vm.stopBroadcast();
 
         // ──────────────────────────────────────────────────────────────────────
-        // AGENT EXECUTOR ACTIONS
+        // STEP 4: Strategy agent places BUY limit order for primary trader
         // ──────────────────────────────────────────────────────────────────────
-
-        // Step 4: Strategy agent registers its NFT
-        console.log("Step 4: Strategy agent registers its NFT...");
-        vm.startBroadcast(agentKey);
-        uint256 strategyAgentId = IERC8004Identity(identityRegistry).register("ipfs://QmStrategyAgentVerify");
-        console.log("[OK] Strategy agent registered, tokenId:", strategyAgentId);
-        console.log("     Strategy agent wallet (NFT owner):", agentExecutor);
-        vm.stopBroadcast();
-
-        // ──────────────────────────────────────────────────────────────────────
-        // PRIMARY TRADER AUTHORIZES STRATEGY AGENT
-        // ──────────────────────────────────────────────────────────────────────
-
-        // Step 5: Primary trader authorizes the strategy agent
-        console.log("Step 5: Primary trader authorizes strategy agent...");
-        vm.startBroadcast(primaryKey);
-        AgentRouter(agentRouter).authorize(strategyAgentId);
-        console.log("[OK] Strategy agent", strategyAgentId, "authorized by primary trader");
-        vm.stopBroadcast();
-
-        // ──────────────────────────────────────────────────────────────────────
-        // AGENT EXECUTOR TRADES ON BEHALF OF PRIMARY TRADER
-        // ──────────────────────────────────────────────────────────────────────
-        vm.startBroadcast(agentKey);
-
-        // Build pool struct: WETH (base) / IDRX (quote) / WETH_IDRX_Pool (orderBook)
-        IPoolManager.Pool memory pool = IPoolManager.Pool({
-            baseCurrency: Currency.wrap(weth),
-            quoteCurrency: Currency.wrap(idrx),
-            orderBook: IOrderBook(wethIdrxPool)
-        });
-
-        // Step 6: Place BUY limit order at below-market price (won't fill)
-        // Price: 1900 IDRX/WETH → raw = 1900 * 10^2 (IDRX decimals) = 190000
-        // Quantity: 0.001 WETH = 1e15 (18 decimals)
-        // IDRX to lock = 190000 * 1e15 / 1e18 = 190 raw IDRX ≈ 1.90 IDRX
-        console.log("Step 6: Strategy agent places BUY limit order on behalf of primary trader...");
-        console.log("  userAgentId:     ", userAgentId);
+        console.log("Step 4: Strategy agent places BUY limit order for primary trader...");
+        console.log("  user:            ", primaryTrader);
         console.log("  strategyAgentId: ", strategyAgentId);
-        console.log("  Side:             BUY");
         console.log("  Price:            190000 raw (1900 IDRX/WETH, below market - will not fill)");
         console.log("  Quantity:         1e15 (0.001 WETH)");
-        console.log("  IDRX to lock:     ~190 raw (1.90 IDRX)");
+
+        vm.startBroadcast(agentKey);
+
+        IPoolManager.Pool memory pool = IPoolManager.Pool({
+            baseCurrency:  Currency.wrap(weth),
+            quoteCurrency: Currency.wrap(idrx),
+            orderBook:     IOrderBook(wethIdrxPool)
+        });
 
         uint48 orderId;
         try AgentRouter(agentRouter).executeLimitOrder(
-            userAgentId,
+            primaryTrader,
             strategyAgentId,
             pool,
-            190000,            // limitPrice: 1900 IDRX/WETH
-            1e15,              // quantity: 0.001 WETH
+            190000,
+            1e15,
             IOrderBook.Side.BUY,
             IOrderBook.TimeInForce.GTC,
-            false,             // autoRepay
-            false              // autoBorrow
+            false,
+            false
         ) returns (uint48 id) {
             orderId = id;
             console.log("[OK] Limit order placed! orderId:", orderId);
-            console.log("     Owner (primary trader):", primaryTrader);
-            console.log("     Executed by (agent):   ", agentExecutor);
         } catch Error(string memory reason) {
             console.log("[FAIL] executeLimitOrder reverted:", reason);
-            console.log("       Possible causes:");
-            console.log("         - Insufficient IDRX in primary trader BalanceManager");
-            console.log("         - Policy check failed (health factor, order size, etc.)");
             vm.stopBroadcast();
             return;
         } catch (bytes memory data) {
@@ -251,16 +201,17 @@ contract VerifyAgentExecution is Script {
             return;
         }
 
-        // Step 7: Cancel the order (proves agent can manage orders)
-        console.log("Step 7: Strategy agent cancels the limit order...");
+        // ──────────────────────────────────────────────────────────────────────
+        // STEP 5: Strategy agent cancels the order
+        // ──────────────────────────────────────────────────────────────────────
+        console.log("Step 5: Strategy agent cancels the order...");
         try AgentRouter(agentRouter).cancelOrder(
-            userAgentId,
+            primaryTrader,
             strategyAgentId,
             pool,
             orderId
         ) {
-            console.log("[OK] Order", orderId, "cancelled successfully!");
-            console.log("     IDRX collateral returned to primary trader BalanceManager");
+            console.log("[OK] Order", orderId, "cancelled. IDRX collateral returned.");
         } catch Error(string memory reason) {
             console.log("[FAIL] cancelOrder reverted:", reason);
         } catch (bytes memory data) {
@@ -271,43 +222,35 @@ contract VerifyAgentExecution is Script {
         vm.stopBroadcast();
 
         // ──────────────────────────────────────────────────────────────────────
-        // VERIFICATION SUMMARY
+        // SUMMARY
         // ──────────────────────────────────────────────────────────────────────
         console.log("");
-        console.log("=== AGENT VERIFICATION COMPLETE ===");
+        console.log("=== VERIFICATION COMPLETE ===");
         console.log("");
-        console.log("ERC-8004 Model B Flow Verified:");
-        console.log("  [1] User agent NFT registered in IdentityRegistry");
-        console.log("  [2] Policy installed in PolicyFactory (no Chainlink overhead)");
+        console.log("Simplified ERC-8004 Agent Flow:");
+        console.log("  [1] IdentityRegistry.register() ->strategy agent NFT minted");
+        console.log("  [2] AgentRouter.authorize(strategyAgentId, policy) ->policy installed + authorized (1 tx)");
         console.log("  [3] IDRX collateral confirmed in BalanceManager");
-        console.log("  [4] Strategy agent NFT registered (agent wallet = NFT owner = executor)");
-        console.log("  [5] Primary trader authorized strategy agent via AgentRouter.authorize()");
-        console.log("  [6] AgentRouter.executeLimitOrder() called by strategy agent, order placed for user");
-        console.log("  [7] AgentRouter.cancelOrder() called by strategy agent, order cancelled for user");
+        console.log("  [4] AgentRouter.executeLimitOrder(userAddress, strategyAgentId, ...) ->order placed");
+        console.log("  [5] AgentRouter.cancelOrder(userAddress, strategyAgentId, ...) ->order cancelled");
         console.log("");
-        console.log("Agent summary:");
-        console.log("  User Agent Token ID:     ", userAgentId);
-        console.log("  Strategy Agent Token ID: ", strategyAgentId);
-        console.log("  Primary Trader:          ", primaryTrader);
-        console.log("  Agent Executor:          ", agentExecutor);
+        console.log("  Strategy Agent ID:", strategyAgentId);
+        console.log("  Primary Trader:   ", primaryTrader);
+        console.log("  Agent Wallet:     ", agentWallet);
     }
 
     // ──────────────────────────────────────────────────────────────────────────
-    // JSON helpers (same pattern as DeployPhase5.s.sol)
+    // JSON helpers
     // ──────────────────────────────────────────────────────────────────────────
 
     function _extractAddress(string memory json, string memory key) internal pure returns (address) {
         bytes memory jsonBytes = bytes(json);
         bytes memory keyBytes  = bytes(string.concat('"', key, '": "'));
-
         uint256 keyPos = _indexOf(jsonBytes, keyBytes);
         if (keyPos == type(uint256).max) return address(0);
-
         uint256 addressStart = keyPos + keyBytes.length;
         bytes memory addrBytes = new bytes(42);
-        for (uint256 i = 0; i < 42; i++) {
-            addrBytes[i] = jsonBytes[addressStart + i];
-        }
+        for (uint256 i = 0; i < 42; i++) addrBytes[i] = jsonBytes[addressStart + i];
         return _bytesToAddress(addrBytes);
     }
 
