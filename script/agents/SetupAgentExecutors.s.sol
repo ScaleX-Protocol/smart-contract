@@ -89,7 +89,7 @@ contract SetupAgentExecutors is Script {
             primaryWallet,
             primaryPrivateKey,
             identityRegistry,
-            policyFactory,
+            agentRouter,
             balanceManager,
             quoteToken
         );
@@ -138,7 +138,7 @@ contract SetupAgentExecutors is Script {
         address primaryWallet,
         uint256 primaryPrivateKey,
         address identityRegistry,
-        address policyFactory,
+        address agentRouter,
         address balanceManager,
         address quoteToken
     ) internal returns (uint256 agentId) {
@@ -167,7 +167,7 @@ contract SetupAgentExecutors is Script {
 
         // Create policy
         console.log("Creating trading policy...");
-        _createPolicy(policyFactory, agentId);
+        _createPolicy(agentRouter, agentId);
         console.log("[OK] Policy created");
 
         // Deposit funds
@@ -199,16 +199,15 @@ contract SetupAgentExecutors is Script {
         return agentId;
     }
 
-    function _createPolicy(address policyFactory, uint256 agentId) internal {
+    function _createPolicy(address agentRouter, uint256 agentId) internal {
         // Create a permissive policy for agent trading
         address[] memory emptyAddressArray = new address[](0);
 
         PolicyFactory.Policy memory policy = PolicyFactory.Policy({
             // Metadata
-            enabled: false,  // Will be set by installAgent
-            installedAt: 0,  // Will be set by installAgent
-            expiryTimestamp: 0,  // No expiry
-            agentTokenId: agentId,
+            enabled: false,
+            installedAt: 0,
+            expiryTimestamp: type(uint256).max,
 
             // Order Size
             maxOrderSize: 10000e6,  // 10k max per order
@@ -284,7 +283,7 @@ contract SetupAgentExecutors is Script {
             requiresChainlinkFunctions: false  // Set by contract
         });
 
-        PolicyFactory(policyFactory).installAgent(agentId, policy);
+        AgentRouter(agentRouter).authorize(agentId, policy);
     }
 
     function _authorizeExecutors(
@@ -299,17 +298,11 @@ contract SetupAgentExecutors is Script {
 
         vm.startBroadcast(primaryPrivateKey);
 
+        // In the simplified auth model, authorization is granted per (user, strategyAgentId)
+        // via AgentRouter.authorize() called in _createPolicy. No per-executor delegation needed.
         for (uint256 i = 0; i < executors.length; i++) {
-            console.log(string.concat("Authorizing ", executors[i].name, "..."));
+            console.log(string.concat("[OK] ", executors[i].name, " is authorized via strategyAgentId policy"));
             console.log("  Executor address:", executors[i].executorWallet);
-
-            // Authorize executor in AgentRouter
-            AgentRouter(agentRouter).authorizeExecutor(
-                agentId,
-                executors[i].executorWallet
-            );
-
-            console.log("[OK] Authorized");
             console.log("");
         }
 
@@ -335,21 +328,15 @@ contract SetupAgentExecutors is Script {
         console.log("Primary Wallet Balance:", balance / 1e6, "tokens");
         console.log("");
 
-        // Check executor authorizations
-        console.log("Executor Authorizations:");
-        for (uint256 i = 0; i < executors.length; i++) {
-            bool authorized = AgentRouter(agentRouter).authorizedExecutors(
-                agentId,
-                executors[i].executorWallet
-            );
-
-            console.log(string.concat("  ", executors[i].name, ":"));
-            console.log("    Address:", executors[i].executorWallet);
-            if (authorized) {
-                console.log("    Status: AUTHORIZED");
-            } else {
-                console.log("    Status: NOT AUTHORIZED!");
-            }
+        // Check authorization: primaryWallet -> agentId
+        console.log("Authorization check:");
+        bool authorized = AgentRouter(agentRouter).isAuthorized(primaryWallet, agentId);
+        console.log("  primaryWallet:", primaryWallet);
+        console.log("  agentId:", agentId);
+        if (authorized) {
+            console.log("  Status: AUTHORIZED");
+        } else {
+            console.log("  Status: NOT AUTHORIZED!");
         }
     }
 

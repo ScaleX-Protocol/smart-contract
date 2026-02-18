@@ -52,7 +52,9 @@ contract MockOrderBook is IOrderBook {
         Side, // side
         address user,
         bool, // autoRepay
-        bool // autoBorrow
+        bool, // autoBorrow
+        uint256, // agentTokenId
+        address // executor
     ) external override returns (uint48 orderId, uint128 filled) {
         _lastOrderOwner = user; // Track owner for verification
         orderId = _nextOrderId;
@@ -70,7 +72,9 @@ contract MockOrderBook is IOrderBook {
         address user,
         TimeInForce, // timeInForce
         bool, // autoRepay
-        bool // autoBorrow
+        bool, // autoBorrow
+        uint256, // agentTokenId
+        address // executor
     ) external override returns (uint48 orderId) {
         _lastOrderOwner = user; // Track owner for verification
         orderId = _nextOrderId;
@@ -80,7 +84,7 @@ contract MockOrderBook is IOrderBook {
     /**
      * @notice Mock cancelOrder
      */
-    function cancelOrder(uint48, address) external override {
+    function cancelOrder(uint48, address, uint256, address) external override {
         _cancelOrderCalled = true;
     }
 

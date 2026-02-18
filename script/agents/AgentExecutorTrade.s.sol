@@ -48,20 +48,20 @@ contract AgentExecutorTrade is Script {
         console.log("  Pool:", wethPool);
         console.log("");
 
-        // Get agent ID owned by primary wallet
-        uint256 agentId = MockERC8004Identity(identityRegistry).tokenOfOwnerByIndex(primaryWallet, 0);
-        console.log("Agent ID:", agentId);
+        // Strategy agent ID (the executor's NFT — set via env var STRATEGY_AGENT_ID)
+        uint256 agentId = vm.envUint("STRATEGY_AGENT_ID");
+        console.log("Strategy Agent ID:", agentId);
         console.log("");
 
-        // Check authorization
-        bool isAuthorized = AgentRouter(agentRouter).authorizedExecutors(agentId, executorWallet);
-        console.log("Executor Authorization:", isAuthorized ? "YES" : "NO");
+        // Check authorization: primary wallet must have authorized the strategy agent
+        bool isAuthorized = AgentRouter(agentRouter).isAuthorized(primaryWallet, agentId);
+        console.log("Authorization (primaryWallet -> agentId):", isAuthorized ? "YES" : "NO");
 
         if (!isAuthorized) {
             console.log("");
-            console.log("[ERROR] Executor not authorized!");
-            console.log("Run setup script first: ./shellscripts/setup-agent-executors.sh");
-            revert("Executor not authorized");
+            console.log("[ERROR] Strategy agent not authorized by primary wallet!");
+            console.log("Primary wallet must call AgentRouter.authorize(strategyAgentId, policy) first.");
+            revert("Agent not authorized");
         }
 
         // Check primary wallet's balance
@@ -85,10 +85,11 @@ contract AgentExecutorTrade is Script {
         console.log("Uses primary wallet's funds");
         console.log("");
 
-        // Build pool struct
+        // Build pool struct (wethPool is the orderBook address)
         IPoolManager.Pool memory poolStruct = IPoolManager.Pool({
-            baseCurrency: Currency.wrap(weth),
-            quoteCurrency: Currency.wrap(quoteToken)
+            baseCurrency:  Currency.wrap(weth),
+            quoteCurrency: Currency.wrap(quoteToken),
+            orderBook:     IOrderBook(wethPool)
         });
 
         uint128 quantity = 0.01e18; // 0.01 WETH
@@ -97,14 +98,16 @@ contract AgentExecutorTrade is Script {
         console.log("Order Details:");
         console.log("  Side: BUY");
         console.log("  Quantity: 0.01 WETH");
-        console.log("  Agent ID:", agentId);
+        console.log("  User (primaryWallet):", primaryWallet);
+        console.log("  Strategy Agent ID:", agentId);
         console.log("");
 
         // Executor broadcasts (signs with executor key, uses primary wallet's funds)
         vm.startBroadcast(executorPrivateKey);
 
         try AgentRouter(agentRouter).executeMarketOrder(
-            agentId,       // Primary wallet's agent
+            primaryWallet, // user whose funds are used
+            agentId,       // strategy agent's NFT ID
             poolStruct,
             side,
             quantity,
@@ -123,7 +126,12 @@ contract AgentExecutorTrade is Script {
                 Currency.wrap(quoteToken)
             );
             console.log("Primary Wallet Balance After:", newPrimaryBalance / 1e6, quoteSymbol);
-            console.log("Primary Wallet Change:", int256(newPrimaryBalance) - int256(primaryBalance), "base units");
+            int256 change = int256(newPrimaryBalance) - int256(primaryBalance);
+            if (change >= 0) {
+                console.log("Primary Wallet Change: +", uint256(change), "base units");
+            } else {
+                console.log("Primary Wallet Change: -", uint256(-change), "base units");
+            }
 
         } catch Error(string memory reason) {
             console.log("[FAIL] Order failed:", reason);

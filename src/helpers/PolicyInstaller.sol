@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.26;
 
+import "../ai-agents/AgentRouter.sol";
 import "../ai-agents/PolicyFactory.sol";
 
 /**
@@ -8,25 +9,24 @@ import "../ai-agents/PolicyFactory.sol";
  * @notice Helper contract to install a simple permissive policy for an agent
  */
 contract PolicyInstaller {
-    PolicyFactory public immutable policyFactory;
+    AgentRouter public immutable agentRouter;
 
-    constructor(address _policyFactory) {
-        policyFactory = PolicyFactory(_policyFactory);
+    constructor(address _agentRouter) {
+        agentRouter = AgentRouter(_agentRouter);
     }
 
     /**
      * @notice Install a permissive trading policy for an agent
-     * @param agentId The agent token ID
+     * @param agentId The strategy agent token ID
      */
     function installPermissivePolicy(uint256 agentId) external {
         address[] memory empty = new address[](0);
 
         PolicyFactory.Policy memory policy = PolicyFactory.Policy({
             // Metadata
-            enabled: false,  // Will be set by installAgent
-            installedAt: 0,  // Will be set by installAgent
+            enabled: false,
+            installedAt: 0,
             expiryTimestamp: 0,  // No expiry
-            agentTokenId: agentId,
 
             // Order Size
             maxOrderSize: 1000000e6,  // 1M max per order
@@ -67,7 +67,7 @@ contract PolicyInstaller {
             minTimeBetweenTrades: 0,  // No cooldown
             emergencyRecipient: address(0),
 
-            // Volume Limits (Chainlink required) - all disabled
+            // Volume Limits - all disabled
             dailyVolumeLimit: 0,
             weeklyVolumeLimit: 0,
 
@@ -102,6 +102,6 @@ contract PolicyInstaller {
             requiresChainlinkFunctions: false
         });
 
-        policyFactory.installAgent(agentId, policy);
+        agentRouter.authorize(agentId, policy);
     }
 }

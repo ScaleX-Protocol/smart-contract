@@ -4,6 +4,7 @@ pragma solidity ^0.8.26;
 import "forge-std/Script.sol";
 import {MockERC8004Identity} from "@scalexagents/mocks/MockERC8004Identity.sol";
 import {PolicyFactory} from "@scalexagents/PolicyFactory.sol";
+import {AgentRouter} from "@scalexagents/AgentRouter.sol";
 import {IBalanceManager} from "@scalexcore/interfaces/IBalanceManager.sol";
 import {Currency} from "@scalexcore/libraries/Currency.sol";
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
@@ -33,17 +34,17 @@ contract CreateMultipleAgents is Script {
         string memory json = vm.readFile(deploymentPath);
 
         address identityRegistry = _extractAddress(json, "IdentityRegistry");
-        address policyFactory = _extractAddress(json, "PolicyFactory");
-        address balanceManager = _extractAddress(json, "BalanceManager");
+        address agentRouter      = _extractAddress(json, "AgentRouter");
+        address balanceManager   = _extractAddress(json, "BalanceManager");
 
         string memory quoteSymbol = vm.envString("QUOTE_SYMBOL");
         address quoteToken = _extractAddress(json, quoteSymbol);
 
         console.log("Loaded addresses:");
         console.log("  IdentityRegistry:", identityRegistry);
-        console.log("  PolicyFactory:", policyFactory);
-        console.log("  BalanceManager:", balanceManager);
-        console.log("  Quote Token:", quoteToken);
+        console.log("  AgentRouter:     ", agentRouter);
+        console.log("  BalanceManager:  ", balanceManager);
+        console.log("  Quote Token:     ", quoteToken);
         console.log("");
 
         // Define 3 agents with different wallets and capital
@@ -96,7 +97,7 @@ contract CreateMultipleAgents is Script {
             _setupAgent(
                 agents[i],
                 identityRegistry,
-                policyFactory,
+                agentRouter,
                 balanceManager,
                 quoteToken
             );
@@ -125,24 +126,21 @@ contract CreateMultipleAgents is Script {
     function _setupAgent(
         AgentSetup memory agent,
         address identityRegistry,
-        address policyFactory,
+        address agentRouter,
         address balanceManager,
         address quoteToken
     ) internal {
         vm.startBroadcast(agent.privateKey);
 
-        // Step 1: Mint agent identity
-        console.log("Step 1: Minting agent identity...");
-        MockERC8004Identity(identityRegistry).mint(agent.wallet);
+        // Step 1: Register agent identity (caller = agent.wallet via broadcast)
+        console.log("Step 1: Registering agent identity...");
+        agent.agentId = MockERC8004Identity(identityRegistry).register();
+        console.log("[OK] Agent registered with ID:", agent.agentId);
 
-        // Get the token ID
-        agent.agentId = MockERC8004Identity(identityRegistry).tokenOfOwnerByIndex(agent.wallet, 0);
-        console.log("[OK] Agent minted with ID:", agent.agentId);
-
-        // Step 2: Create policy
-        console.log("Step 2: Creating trading policy...");
-        _createPolicy(policyFactory, agent);
-        console.log("[OK] Policy created");
+        // Step 2: Authorize strategy agent with policy (installs policy + grants auth in one tx)
+        console.log("Step 2: Authorizing agent with policy...");
+        _createPolicy(agentRouter, agent);
+        console.log("[OK] Policy installed + agent authorized");
 
         // Step 3: Deposit capital
         console.log("Step 3: Depositing capital...");
@@ -152,51 +150,78 @@ contract CreateMultipleAgents is Script {
         vm.stopBroadcast();
     }
 
-    function _createPolicy(address policyFactory, AgentSetup memory agent) internal {
-        // Create asset limits (empty for now - will be set per-asset)
-        PolicyFactory.AssetLimit[] memory assetLimits = new PolicyFactory.AssetLimit[](0);
-
-        // Create policy based on agent type
+    function _createPolicy(address agentRouter, AgentSetup memory agent) internal {
+        // Tune limits per agent type
         uint256 maxDailyVolume;
         uint256 maxDrawdownBps;
-        uint256 minHealthFactor;
         uint256 maxSlippageBps;
         uint256 minCooldownSeconds;
 
-        // Conservative agent: strict limits
-        if (agent.capitalAllocation == 1000e6) {
-            maxDailyVolume = 5000e6;      // 5k daily volume
-            maxDrawdownBps = 1000;        // 10% max drawdown
-            minHealthFactor = 300;        // 1.3x health factor
-            maxSlippageBps = 300;         // 3% max slippage
-            minCooldownSeconds = 120;     // 2 minute cooldown
-        }
-        // Aggressive agent: looser limits
-        else if (agent.capitalAllocation == 5000e6) {
-            maxDailyVolume = 50000e6;     // 50k daily volume
-            maxDrawdownBps = 2500;        // 25% max drawdown
-            minHealthFactor = 250;        // 1.25x health factor
-            maxSlippageBps = 500;         // 5% max slippage
-            minCooldownSeconds = 30;      // 30 second cooldown
-        }
-        // Test agent: very strict limits
-        else {
-            maxDailyVolume = 2000e6;      // 2k daily volume
-            maxDrawdownBps = 500;         // 5% max drawdown
-            minHealthFactor = 350;        // 1.35x health factor
-            maxSlippageBps = 200;         // 2% max slippage
-            minCooldownSeconds = 300;     // 5 minute cooldown
+        if (agent.capitalAllocation == 1000e6) {          // Conservative
+            maxDailyVolume    = 5000e6;
+            maxDrawdownBps    = 1000;
+            maxSlippageBps    = 300;
+            minCooldownSeconds = 120;
+        } else if (agent.capitalAllocation == 5000e6) {   // Aggressive
+            maxDailyVolume    = 50000e6;
+            maxDrawdownBps    = 2500;
+            maxSlippageBps    = 500;
+            minCooldownSeconds = 30;
+        } else {                                           // Test
+            maxDailyVolume    = 2000e6;
+            maxDrawdownBps    = 500;
+            maxSlippageBps    = 200;
+            minCooldownSeconds = 300;
         }
 
-        PolicyFactory(policyFactory).createPolicy(
-            agent.agentId,
-            assetLimits,
-            maxDailyVolume,
-            maxDrawdownBps,
-            minHealthFactor,
-            maxSlippageBps,
-            minCooldownSeconds
-        );
+        address[] memory emptyList = new address[](0);
+        PolicyFactory.Policy memory policy = PolicyFactory.Policy({
+            enabled:                     false,
+            installedAt:                 0,
+            expiryTimestamp:             type(uint256).max,
+            maxOrderSize:                agent.capitalAllocation * 2,
+            minOrderSize:                0,
+            whitelistedTokens:           emptyList,
+            blacklistedTokens:           emptyList,
+            allowMarketOrders:           true,
+            allowLimitOrders:            true,
+            allowSwap:                   true,
+            allowBorrow:                 false,
+            allowRepay:                  false,
+            allowSupplyCollateral:       true,
+            allowWithdrawCollateral:     false,
+            allowPlaceLimitOrder:        true,
+            allowCancelOrder:            true,
+            allowBuy:                    true,
+            allowSell:                   true,
+            allowAutoBorrow:             false,
+            maxAutoBorrowAmount:         0,
+            allowAutoRepay:              false,
+            minDebtToRepay:              0,
+            minHealthFactor:             1e18,
+            maxSlippageBps:              maxSlippageBps,
+            minTimeBetweenTrades:        minCooldownSeconds,
+            emergencyRecipient:          address(0),
+            dailyVolumeLimit:            maxDailyVolume,
+            weeklyVolumeLimit:           0,
+            maxDailyDrawdown:            maxDrawdownBps,
+            maxWeeklyDrawdown:           0,
+            maxTradeVsTVLBps:            0,
+            minWinRateBps:               0,
+            minSharpeRatio:              0,
+            maxPositionConcentrationBps: 0,
+            maxCorrelationBps:           0,
+            maxTradesPerDay:             0,
+            maxTradesPerHour:            0,
+            tradingStartHour:            0,
+            tradingEndHour:              0,
+            minReputationScore:          0,
+            useReputationMultiplier:     false,
+            requiresChainlinkFunctions:  false
+        });
+
+        // Agent authorizes itself: installs policy + grants authorization in one tx
+        AgentRouter(agentRouter).authorize(agent.agentId, policy);
     }
 
     function _depositCapital(
@@ -212,7 +237,7 @@ contract CreateMultipleAgents is Script {
         ERC20(token).approve(balanceManager, type(uint256).max);
 
         // Deposit
-        IBalanceManager(balanceManager).deposit(Currency.wrap(token), agent.capitalAllocation);
+        IBalanceManager(balanceManager).deposit(Currency.wrap(token), agent.capitalAllocation, agent.wallet, agent.wallet);
     }
 
     function _verifyAgent(

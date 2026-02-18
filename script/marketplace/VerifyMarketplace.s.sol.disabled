@@ -91,7 +91,7 @@ contract VerifyMarketplace is Script {
         step4_ExecutorPlacesOrder();
 
         console.log("\n========================================");
-        console.log("VERIFICATION COMPLETE ✓");
+        console.log("VERIFICATION COMPLETE [OK]");
         console.log("========================================\n");
     }
 
@@ -113,7 +113,7 @@ contract VerifyMarketplace is Script {
         console.log("  NOTE: No policy installed (just identity)");
 
         vm.stopBroadcast();
-        console.log("  ✓ Developer setup complete\n");
+        console.log("  [OK] Developer setup complete\n");
     }
 
     function step2_VerifyUserHasNoAgent() internal {
@@ -122,7 +122,7 @@ contract VerifyMarketplace is Script {
 
         console.log("User address:", user);
         console.log("User does not own any agent NFT yet");
-        console.log("  ✓ Verified\n");
+        console.log("  [OK] Verified\n");
     }
 
     function step3_UserSubscribes() internal {
@@ -168,7 +168,7 @@ contract VerifyMarketplace is Script {
 
         agentRouter.authorizeExecutor(userAgentId, executor);
 
-        console.log("  ✓ Executor authorized");
+        console.log("  [OK] Executor authorized");
 
         // Verify authorization
         require(
@@ -197,7 +197,7 @@ contract VerifyMarketplace is Script {
         require(balance == depositAmount, "Deposit failed");
 
         vm.stopBroadcast();
-        console.log("  ✓ User subscription complete\n");
+        console.log("  [OK] User subscription complete\n");
     }
 
     function step4_ExecutorPlacesOrder() internal {
@@ -233,7 +233,7 @@ contract VerifyMarketplace is Script {
         ) returns (uint48) {
             revert("Should have failed but succeeded");
         } catch {
-            console.log("  ✓ Order rejected (policy violation)");
+            console.log("  [OK] Order rejected (policy violation)");
         }
 
         // Place order within policy limit
@@ -254,13 +254,13 @@ contract VerifyMarketplace is Script {
             false
         );
 
-        console.log("  ✓ Order placed successfully");
+        console.log("  [OK] Order placed successfully");
         console.log("  Order ID:", orderId);
         console.log("  Agent ID:", userAgentId);
         console.log("  Executor:", executor);
         console.log("  User (owner):", user);
 
         vm.stopBroadcast();
-        console.log("\n  ✓ Executor trading verified\n");
+        console.log("\n  [OK] Executor trading verified\n");
     }
 }

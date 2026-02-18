@@ -53,13 +53,13 @@ contract UpgradeAgentRouterWithDelegation is Script {
 
         // Deploy new AgentRouter
         AgentRouter newAgentRouter = new AgentRouter(
-            IERC8004Identity(identityRegistry),
-            IERC8004Reputation(reputationRegistry),
-            IERC8004Validation(validationRegistry),
-            PolicyFactory(policyFactory),
-            IPoolManager(poolManager),
-            IBalanceManager(balanceManager),
-            ILendingManager(lendingManager)
+            identityRegistry,
+            reputationRegistry,
+            validationRegistry,
+            policyFactory,
+            poolManager,
+            balanceManager,
+            lendingManager
         );
 
         console.log("New AgentRouter deployed:", address(newAgentRouter));

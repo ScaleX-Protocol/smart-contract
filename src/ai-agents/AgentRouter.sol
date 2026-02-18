@@ -11,7 +11,7 @@ import "../core/interfaces/IBalanceManager.sol";
 import "../core/interfaces/ILendingManager.sol";
 import "../core/interfaces/IPoolManager.sol";
 import {Currency} from "../core/libraries/Currency.sol";
-import {IERC20} from "../../lib/openzeppelin-contracts/contracts/token/ERC20/IERC20.sol";
+import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 /**
  * @title AgentRouter

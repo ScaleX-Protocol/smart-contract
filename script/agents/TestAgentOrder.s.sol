@@ -56,8 +56,8 @@ contract TestAgentOrder is Script {
         uint256 agentTokenId = _getOrMintAgent(identityRegistry, deployer, deployerPrivateKey);
         console.log("");
 
-        // Check if policy exists
-        _createPolicyIfNeeded(policyFactory, deployer, agentTokenId, deployerPrivateKey);
+        // Check if policy exists, authorize agent if not
+        _createPolicyIfNeeded(agentRouter, policyFactory, deployer, agentTokenId, deployerPrivateKey);
         console.log("");
 
         // Deposit funds
@@ -72,86 +72,88 @@ contract TestAgentOrder is Script {
         console.log("[SUCCESS] Agent order test completed!");
     }
 
-    function _getOrMintAgent(address identityRegistry, address owner, uint256 privateKey)
+    function _getOrMintAgent(address identityRegistry, address, uint256 privateKey)
         internal
         returns (uint256 agentTokenId)
     {
-        console.log("Step 1: Checking for existing agent...");
-
-        // Try to get balance (if > 0, user has agents)
-        try MockERC8004Identity(identityRegistry).balanceOf(owner) returns (uint256 balance) {
-            if (balance > 0) {
-                // Get first token ID
-                agentTokenId = MockERC8004Identity(identityRegistry).tokenOfOwnerByIndex(owner, 0);
-                console.log("[OK] Found existing agent token ID:", agentTokenId);
-                return agentTokenId;
-            }
-        } catch {}
-
-        console.log("No existing agent found. Minting new agent...");
+        console.log("Step 1: Minting new agent identity via register()...");
         vm.startBroadcast(privateKey);
-
-        MockERC8004Identity(identityRegistry).mint(owner);
-        agentTokenId = MockERC8004Identity(identityRegistry).tokenOfOwnerByIndex(owner, 0);
-
+        agentTokenId = MockERC8004Identity(identityRegistry).register();
         vm.stopBroadcast();
-        console.log("[OK] Minted agent token ID:", agentTokenId);
+        console.log("[OK] Agent token ID:", agentTokenId);
         return agentTokenId;
     }
 
     function _createPolicyIfNeeded(
+        address agentRouter,
         address policyFactory,
         address owner,
-        uint256 agentTokenId,
+        uint256 strategyAgentId,
         uint256 privateKey
     ) internal {
         console.log("Step 2: Checking for existing policy...");
 
-        // Try to get existing policy
-        try PolicyFactory(policyFactory).getPolicy(owner, agentTokenId) returns (
-            PolicyFactory.Policy memory policy
-        ) {
-            if (policy.exists) {
-                console.log("[OK] Policy already exists");
-                console.log("  Max Daily Volume:", policy.maxDailyVolume);
-                console.log("  Max Drawdown BPS:", policy.maxDrawdownBps);
-                return;
-            }
-        } catch {}
+        // Check if already authorized
+        PolicyFactory.Policy memory existing = PolicyFactory(policyFactory).getPolicy(owner, strategyAgentId);
+        if (existing.enabled) {
+            console.log("[OK] Policy already exists");
+            console.log("  Daily Volume Limit:", existing.dailyVolumeLimit);
+            console.log("  Max Daily Drawdown:", existing.maxDailyDrawdown);
+            return;
+        }
 
-        console.log("No policy found. Creating default policy...");
+        console.log("No policy found. Authorizing agent with default policy...");
+
+        address[] memory emptyList = new address[](0);
+        PolicyFactory.Policy memory policy = PolicyFactory.Policy({
+            enabled:                     false,
+            installedAt:                 0,
+            expiryTimestamp:             type(uint256).max,
+            maxOrderSize:                10e18,
+            minOrderSize:                0,
+            whitelistedTokens:           emptyList,
+            blacklistedTokens:           emptyList,
+            allowMarketOrders:           true,
+            allowLimitOrders:            true,
+            allowSwap:                   true,
+            allowBorrow:                 false,
+            allowRepay:                  false,
+            allowSupplyCollateral:       true,
+            allowWithdrawCollateral:     false,
+            allowPlaceLimitOrder:        true,
+            allowCancelOrder:            true,
+            allowBuy:                    true,
+            allowSell:                   true,
+            allowAutoBorrow:             false,
+            maxAutoBorrowAmount:         0,
+            allowAutoRepay:              false,
+            minDebtToRepay:              0,
+            minHealthFactor:             1e18,
+            maxSlippageBps:              500,
+            minTimeBetweenTrades:        60,
+            emergencyRecipient:          address(0),
+            dailyVolumeLimit:            100000e6,
+            weeklyVolumeLimit:           0,
+            maxDailyDrawdown:            2000,
+            maxWeeklyDrawdown:           0,
+            maxTradeVsTVLBps:            0,
+            minWinRateBps:               0,
+            minSharpeRatio:              0,
+            maxPositionConcentrationBps: 0,
+            maxCorrelationBps:           0,
+            maxTradesPerDay:             0,
+            maxTradesPerHour:            0,
+            tradingStartHour:            0,
+            tradingEndHour:              0,
+            minReputationScore:          0,
+            useReputationMultiplier:     false,
+            requiresChainlinkFunctions:  false
+        });
 
         vm.startBroadcast(privateKey);
-
-        // Create a permissive policy for testing
-        PolicyFactory.AssetLimit[] memory assetLimits = new PolicyFactory.AssetLimit[](2);
-
-        // Allow WETH trading (18 decimals) - up to 10 WETH
-        assetLimits[0] = PolicyFactory.AssetLimit({
-            asset: address(0), // Will be set properly in actual call
-            maxPositionSize: 10e18,
-            enabled: true
-        });
-
-        // Allow quote currency - up to 50,000 units
-        assetLimits[1] = PolicyFactory.AssetLimit({
-            asset: address(0), // Will be set properly in actual call
-            maxPositionSize: 50000e6,
-            enabled: true
-        });
-
-        PolicyFactory(policyFactory).createPolicy(
-            agentTokenId,
-            assetLimits,
-            100000e6,  // maxDailyVolume: 100k USD
-            2000,      // maxDrawdownBps: 20%
-            300,       // minHealthFactor: 1.3x (300%)
-            500,       // maxSlippageBps: 5%
-            60         // minCooldownSeconds: 1 minute
-        );
-
+        AgentRouter(agentRouter).authorize(strategyAgentId, policy);
         vm.stopBroadcast();
-        console.log("[OK] Policy created successfully");
+        console.log("[OK] Agent authorized with policy");
     }
 
     function _depositFunds(
@@ -194,7 +196,7 @@ contract TestAgentOrder is Script {
 
         // Deposit
         console.log("Depositing", amount, "to BalanceManager...");
-        IBalanceManager(balanceManager).deposit(Currency.wrap(token), amount);
+        IBalanceManager(balanceManager).deposit(Currency.wrap(token), amount, owner, owner);
 
         vm.stopBroadcast();
 
@@ -213,18 +215,17 @@ contract TestAgentOrder is Script {
     ) internal {
         console.log("Step 4: Placing test order via AgentRouter...");
 
-        // Build pool struct
+        // Build pool struct (pool address is the orderBook)
         IPoolManager.Pool memory poolStruct = IPoolManager.Pool({
-            baseCurrency: Currency.wrap(baseToken),
-            quoteCurrency: Currency.wrap(quoteToken)
+            baseCurrency:  Currency.wrap(baseToken),
+            quoteCurrency: Currency.wrap(quoteToken),
+            orderBook:     IOrderBook(pool)
         });
 
         // Place a small market BUY order for 0.01 WETH
         uint128 quantity = 0.01e18; // 0.01 WETH (18 decimals)
         uint128 minOutAmount = 0; // Accept any price for test
         IOrderBook.Side side = IOrderBook.Side.BUY;
-        bool autoRepay = false;
-        bool autoBorrow = false;
 
         console.log("Order details:");
         console.log("  Pool:", pool);
@@ -235,13 +236,14 @@ contract TestAgentOrder is Script {
         vm.startBroadcast(privateKey);
 
         try AgentRouter(agentRouter).executeMarketOrder(
+            owner,
             agentTokenId,
             poolStruct,
             side,
             quantity,
             minOutAmount,
-            autoRepay,
-            autoBorrow
+            false,
+            false
         ) returns (uint48 orderId, uint128 filled) {
             console.log("[OK] Order executed successfully!");
             console.log("  Order ID:", orderId);

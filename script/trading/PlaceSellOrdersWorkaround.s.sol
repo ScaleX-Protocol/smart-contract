@@ -51,11 +51,11 @@ contract PlaceSellOrdersWorkaround is MarketOrderBook {
         for (uint i = 0; i < sellPrices.length; i++) {
             try scalexRouter.placeLimitOrder(
                 pool,
-                quantity,
                 sellPrices[i],
+                quantity,
                 IOrderBook.Side.SELL,
-                address(0),
-                bytes32(0)
+                IOrderBook.TimeInForce.GTC,
+                uint128(0)
             ) returns (uint48 orderId) {
                 console.log("  [OK] Placed SELL order ID:", orderId, "at price:", sellPrices[i]);
             } catch Error(string memory reason) {

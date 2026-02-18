@@ -15,10 +15,12 @@ contract TestAgentTrade is Script {
         address sxIDRX = 0x7770cA54914d53A4AC8ef4618A36139141B7546A;
 
         uint256 executorKey = vm.envUint("AGENT_EXECUTOR_1_KEY");
+        address user = vm.envOr("TRADER_ADDRESS", vm.addr(executorKey));
 
         console.log("=== TESTING AGENT TRADE ===");
         console.log("AgentRouter:", agentRouter);
         console.log("OrderBook:", wethPool);
+        console.log("User (trader):", user);
         console.log("Executor:", vm.addr(executorKey));
         console.log("");
 
@@ -45,14 +47,15 @@ contract TestAgentTrade is Script {
         vm.startBroadcast(executorKey);
 
         try AgentRouter(agentRouter).executeLimitOrder(
-            100,                    // agentTokenId
-            pool,                   // pool
-            300000,                 // price
-            10000000000000000,      // quantity (0.01 WETH)
-            IOrderBook.Side.BUY,    // side
+            user,                       // user (trader)
+            100,                        // strategyAgentId
+            pool,                       // pool
+            300000,                     // limitPrice
+            10000000000000000,          // quantity (0.01 WETH)
+            IOrderBook.Side.BUY,        // side
             IOrderBook.TimeInForce.GTC, // timeInForce
-            false,                  // autoRepay
-            false                   // autoBorrow
+            false,                      // autoRepay
+            false                       // autoBorrow
         ) returns (uint48 orderId) {
             console.log("SUCCESS! Order ID:", orderId);
         } catch Error(string memory reason) {

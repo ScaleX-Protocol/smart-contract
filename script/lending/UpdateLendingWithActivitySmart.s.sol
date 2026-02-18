@@ -300,35 +300,34 @@ contract UpdateLendingWithActivitySmart is Script, DeployHelpers {
                 continue;
             }
 
-            // Check borrowing power
-            try lendingManager.getUserBorrowingPower(primaryAccount) returns (uint256 borrowingPower) {
-                if (borrowingPower == 0) {
-                    console.log("[SKIP]", tokenSymbol, "- no borrowing power (need collateral)");
-                    continue;
+            // Check health factor as proxy for borrowing capacity
+            uint256 healthFactor = lendingManager.getHealthFactor(primaryAccount);
+            if (healthFactor < 1e18) {
+                console.log("[SKIP]", tokenSymbol, "- health factor too low (need collateral)");
+                continue;
+            }
+
+            console.log("     Health Factor:", healthFactor);
+            console.log("     Need to borrow:", neededBorrow);
+            console.log("     Target utilization:", targetUtilization / 100, "%");
+
+            // Try to borrow
+            try lendingManager.borrow(tokenAddress, neededBorrow) {
+                console.log("[OK]", tokenSymbol, "borrowed:", neededBorrow);
+
+                CurrentState memory stateAfter = _getCurrentState(tokenAddress);
+                console.log("     Borrow:", stateBefore.userBorrow, "->", stateAfter.userBorrow);
+                console.log("     Pool Borrow:", stateBefore.poolTotalBorrow, "->", stateAfter.poolTotalBorrow);
+                console.log("     Utilization before:", stateBefore.currentUtilization / 100, "%");
+                console.log("     Utilization after: ", stateAfter.currentUtilization / 100, "%");
+
+                if (stateAfter.currentUtilization >= targetUtilization) {
+                    console.log("     [OK] Target utilization reached!");
                 }
-
-                console.log("     Borrowing Power:", borrowingPower);
-                console.log("     Need to borrow:", neededBorrow, "to reach", targetUtilization / 100, "% utilization");
-
-                // Try to borrow
-                try lendingManager.borrow(tokenAddress, neededBorrow) {
-                    console.log("[OK]", tokenSymbol, "borrowed:", neededBorrow);
-
-                    CurrentState memory stateAfter = _getCurrentState(tokenAddress);
-                    console.log("     Borrow:", stateBefore.userBorrow, "->", stateAfter.userBorrow);
-                    console.log("     Pool Borrow:", stateBefore.poolTotalBorrow, "->", stateAfter.poolTotalBorrow);
-                    console.log("     Utilization:", stateBefore.currentUtilization / 100, "% ->", stateAfter.currentUtilization / 100, "%");
-
-                    if (stateAfter.currentUtilization >= targetUtilization) {
-                        console.log("     [OK] Target utilization reached!");
-                    }
-                } catch Error(string memory reason) {
-                    console.log("[ERROR]", tokenSymbol, "borrow failed:", reason);
-                } catch {
-                    console.log("[ERROR]", tokenSymbol, "borrow failed");
-                }
+            } catch Error(string memory reason) {
+                console.log("[ERROR]", tokenSymbol, "borrow failed:", reason);
             } catch {
-                console.log("[SKIP]", tokenSymbol, "- cannot check borrowing power");
+                console.log("[ERROR]", tokenSymbol, "borrow failed");
             }
         }
     }
