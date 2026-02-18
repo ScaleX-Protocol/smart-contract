@@ -38,9 +38,6 @@ contract AgentRouter {
     mapping(uint256 => uint256) public lastTradeTime;  // agentTokenId => timestamp
     mapping(uint256 => mapping(uint256 => uint256)) public dailyVolumes;  // agentTokenId => day => volume
 
-    // Maps strategy agent ID => executor wallet
-    mapping(uint256 => address) public agentExecutors;
-
     // Maps user address => strategy agent ID => authorized
     mapping(address => mapping(uint256 => bool)) public authorizedStrategyAgents;
 
@@ -132,13 +129,6 @@ contract AgentRouter {
         uint256 timestamp
     );
 
-    event AgentExecutorRegistered(
-        uint256 indexed strategyAgentId,
-        address indexed executor,
-        address indexed owner,
-        uint256 timestamp
-    );
-
     event StrategyAgentAuthorized(
         address indexed user,
         uint256 indexed userAgentId,
@@ -211,9 +201,7 @@ contract AgentRouter {
         address user = identityRegistry.ownerOf(userAgentId);
 
         // 2. Verify executor authorization via strategy agent
-        address strategyExecutor = agentExecutors[strategyAgentId];
-        require(strategyExecutor != address(0), "Strategy agent has no executor");
-        require(msg.sender == strategyExecutor, "Not strategy executor");
+        require(msg.sender == identityRegistry.ownerOf(strategyAgentId), "Not strategy agent owner");
         require(authorizedStrategyAgents[user][strategyAgentId], "Strategy agent not authorized");
 
         // 3. Get user's policy (enforced on user's personal agent)
@@ -301,9 +289,7 @@ contract AgentRouter {
         address user = identityRegistry.ownerOf(userAgentId);
 
         // 2. Verify executor authorization via strategy agent
-        address strategyExecutor = agentExecutors[strategyAgentId];
-        require(strategyExecutor != address(0), "Strategy agent has no executor");
-        require(msg.sender == strategyExecutor, "Not strategy executor");
+        require(msg.sender == identityRegistry.ownerOf(strategyAgentId), "Not strategy agent owner");
         require(authorizedStrategyAgents[user][strategyAgentId], "Strategy agent not authorized");
 
         // 3. Get user's policy (enforced on user's personal agent)
@@ -378,9 +364,7 @@ contract AgentRouter {
         address user = identityRegistry.ownerOf(userAgentId);
 
         // Verify executor authorization via strategy agent
-        address strategyExecutor = agentExecutors[strategyAgentId];
-        require(strategyExecutor != address(0), "Strategy agent has no executor");
-        require(msg.sender == strategyExecutor, "Not strategy executor");
+        require(msg.sender == identityRegistry.ownerOf(strategyAgentId), "Not strategy agent owner");
         require(authorizedStrategyAgents[user][strategyAgentId], "Strategy agent not authorized");
 
         PolicyFactory.Policy memory policy = policyFactory.getPolicy(user, userAgentId);
@@ -421,9 +405,7 @@ contract AgentRouter {
         address user = identityRegistry.ownerOf(userAgentId);
 
         // Verify executor authorization via strategy agent
-        address strategyExecutor = agentExecutors[strategyAgentId];
-        require(strategyExecutor != address(0), "Strategy agent has no executor");
-        require(msg.sender == strategyExecutor, "Not strategy executor");
+        require(msg.sender == identityRegistry.ownerOf(strategyAgentId), "Not strategy agent owner");
         require(authorizedStrategyAgents[user][strategyAgentId], "Strategy agent not authorized");
 
         PolicyFactory.Policy memory policy = policyFactory.getPolicy(user, userAgentId);
@@ -479,9 +461,7 @@ contract AgentRouter {
         address user = identityRegistry.ownerOf(userAgentId);
 
         // Verify executor authorization via strategy agent
-        address strategyExecutor = agentExecutors[strategyAgentId];
-        require(strategyExecutor != address(0), "Strategy agent has no executor");
-        require(msg.sender == strategyExecutor, "Not strategy executor");
+        require(msg.sender == identityRegistry.ownerOf(strategyAgentId), "Not strategy agent owner");
         require(authorizedStrategyAgents[user][strategyAgentId], "Strategy agent not authorized");
 
         PolicyFactory.Policy memory policy = policyFactory.getPolicy(user, userAgentId);
@@ -524,9 +504,7 @@ contract AgentRouter {
         address user = identityRegistry.ownerOf(userAgentId);
 
         // Verify executor authorization via strategy agent
-        address strategyExecutor = agentExecutors[strategyAgentId];
-        require(strategyExecutor != address(0), "Strategy agent has no executor");
-        require(msg.sender == strategyExecutor, "Not strategy executor");
+        require(msg.sender == identityRegistry.ownerOf(strategyAgentId), "Not strategy agent owner");
         require(authorizedStrategyAgents[user][strategyAgentId], "Strategy agent not authorized");
 
         PolicyFactory.Policy memory policy = policyFactory.getPolicy(user, userAgentId);
@@ -568,9 +546,7 @@ contract AgentRouter {
         address user = identityRegistry.ownerOf(userAgentId);
 
         // Verify executor authorization via strategy agent
-        address strategyExecutor = agentExecutors[strategyAgentId];
-        require(strategyExecutor != address(0), "Strategy agent has no executor");
-        require(msg.sender == strategyExecutor, "Not strategy executor");
+        require(msg.sender == identityRegistry.ownerOf(strategyAgentId), "Not strategy agent owner");
         require(authorizedStrategyAgents[user][strategyAgentId], "Strategy agent not authorized");
 
         PolicyFactory.Policy memory policy = policyFactory.getPolicy(user, userAgentId);
@@ -876,28 +852,14 @@ contract AgentRouter {
     // ============ Agent-Based Authorization ============
 
     /**
-     * @notice Register executor wallet for a strategy agent (Model B)
-     * @param strategyAgentId The strategy agent's token ID
-     * @param executor The wallet address that will execute trades for this strategy
-     * @dev Only the strategy agent owner can register/update executor
-     */
-    function registerAgentExecutor(uint256 strategyAgentId, address executor) external {
-        address owner = identityRegistry.ownerOf(strategyAgentId);
-        require(msg.sender == owner, "Not agent owner");
-        require(executor != address(0), "Invalid executor");
-
-        agentExecutors[strategyAgentId] = executor;
-        emit AgentExecutorRegistered(strategyAgentId, executor, owner, block.timestamp);
-    }
-
-    /**
      * @notice User authorizes a strategy agent (Model B - Simple!)
      * @param strategyAgentId Developer's strategy agent ID to authorize (e.g., Agent #500)
      * @dev User (msg.sender) authorizes the STRATEGY agent
      *      Policy restrictions come from user's personal agent during execution
      */
     function authorize(uint256 strategyAgentId) external {
-        require(agentExecutors[strategyAgentId] != address(0), "Strategy agent has no executor");
+        // Verify the strategy agent exists (ownerOf reverts on invalid token)
+        identityRegistry.ownerOf(strategyAgentId);
 
         authorizedStrategyAgents[msg.sender][strategyAgentId] = true;
         emit StrategyAgentAuthorized(msg.sender, 0, strategyAgentId, block.timestamp);
@@ -920,15 +882,6 @@ contract AgentRouter {
      */
     function isAuthorized(address user, uint256 strategyAgentId) external view returns (bool) {
         return authorizedStrategyAgents[user][strategyAgentId];
-    }
-
-    /**
-     * @notice Get executor wallet for a strategy agent
-     * @param strategyAgentId The strategy agent's token ID
-     * @return executor The registered executor wallet
-     */
-    function getStrategyExecutor(uint256 strategyAgentId) external view returns (address) {
-        return agentExecutors[strategyAgentId];
     }
 
     // ============ View Functions ============

@@ -979,11 +979,10 @@ else
     #   1. Primary trader registers user agent NFT (IdentityRegistry)
     #   2. Primary trader installs trading policy (PolicyFactory, no Chainlink)
     #   3. Primary trader deposits IDRX into BalanceManager (collateral for BUY order)
-    #   4. Agent executor registers strategy agent NFT
-    #   5. Agent executor registers their wallet as strategy executor (AgentRouter)
-    #   6. Primary trader authorizes the strategy agent
-    #   7. Agent executor places BUY limit order on behalf of primary trader
-    #   8. Agent executor cancels the order
+    #   4. Strategy agent registers its NFT (agent wallet = NFT owner = executor)
+    #   5. Primary trader authorizes the strategy agent
+    #   6. Strategy agent places BUY limit order on behalf of primary trader
+    #   7. Strategy agent cancels the order
 
     echo "  Running full Model B agent execution verification..."
     if PRIVATE_KEY=$PRIVATE_KEY AGENT_PRIVATE_KEY=$AGENT_PRIVATE_KEY \
@@ -1014,7 +1013,6 @@ if [[ "$POLICY_FACTORY_ADDRESS" != "0x0000000000000000000000000000000000000000" 
         echo "    Verified:"
         echo "      - IdentityRegistry.register() → agent NFT minted"
         echo "      - PolicyFactory.installAgent() → trading policy applied"
-        echo "      - AgentRouter.registerAgentExecutor() → executor wallet set"
         echo "      - AgentRouter.authorize() → user authorized strategy agent"
         echo "      - AgentRouter.executeLimitOrder() → order placed for user by agent"
         echo "      - AgentRouter.cancelOrder() → order cancelled for user by agent"

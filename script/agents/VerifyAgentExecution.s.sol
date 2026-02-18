@@ -19,15 +19,17 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
  *   1. Primary trader registers user agent NFT (IdentityRegistry)
  *   2. Primary trader installs trading policy (PolicyFactory, no Chainlink)
  *   3. Primary trader deposits IDRX into BalanceManager (collateral for BUY order)
- *   4. Agent executor registers strategy agent NFT
- *   5. Agent executor registers their wallet as strategy executor
- *   6. Primary trader authorizes the strategy agent
- *   7. Agent executor places BUY limit order on behalf of primary trader (AgentRouter)
- *   8. Agent executor cancels the order
+ *   4. Strategy agent registers its NFT (IdentityRegistry)
+ *   5. Primary trader authorizes the strategy agent
+ *   6. Strategy agent places BUY limit order on behalf of primary trader (AgentRouter)
+ *   7. Strategy agent cancels the order
+ *
+ * The strategy agent's own wallet (NFT owner) is the only one that can execute —
+ * no separate executor registration needed.
  *
  * Environment variables required:
  *   PRIVATE_KEY        - Primary trader private key (owns funds + user agent)
- *   AGENT_PRIVATE_KEY  - Agent executor private key (runs the strategy)
+ *   AGENT_PRIVATE_KEY  - Strategy agent private key (NFT owner, executes orders)
  */
 contract VerifyAgentExecution is Script {
 
@@ -176,24 +178,20 @@ contract VerifyAgentExecution is Script {
         // AGENT EXECUTOR ACTIONS
         // ──────────────────────────────────────────────────────────────────────
 
-        // Step 4: Agent executor registers strategy agent NFT
-        console.log("Step 4: Agent executor registers strategy agent NFT...");
+        // Step 4: Strategy agent registers its NFT
+        console.log("Step 4: Strategy agent registers its NFT...");
         vm.startBroadcast(agentKey);
         uint256 strategyAgentId = IERC8004Identity(identityRegistry).register("ipfs://QmStrategyAgentVerify");
         console.log("[OK] Strategy agent registered, tokenId:", strategyAgentId);
-
-        // Step 5: Register executor wallet for strategy agent
-        console.log("Step 5: Registering executor wallet for strategy agent...");
-        AgentRouter(agentRouter).registerAgentExecutor(strategyAgentId, agentExecutor);
-        console.log("[OK] Executor registered:", agentExecutor, "for strategyAgentId:", strategyAgentId);
+        console.log("     Strategy agent wallet (NFT owner):", agentExecutor);
         vm.stopBroadcast();
 
         // ──────────────────────────────────────────────────────────────────────
         // PRIMARY TRADER AUTHORIZES STRATEGY AGENT
         // ──────────────────────────────────────────────────────────────────────
 
-        // Step 6: Primary trader authorizes the strategy agent
-        console.log("Step 6: Primary trader authorizes strategy agent...");
+        // Step 5: Primary trader authorizes the strategy agent
+        console.log("Step 5: Primary trader authorizes strategy agent...");
         vm.startBroadcast(primaryKey);
         AgentRouter(agentRouter).authorize(strategyAgentId);
         console.log("[OK] Strategy agent", strategyAgentId, "authorized by primary trader");
@@ -211,11 +209,11 @@ contract VerifyAgentExecution is Script {
             orderBook: IOrderBook(wethIdrxPool)
         });
 
-        // Step 7: Place BUY limit order at below-market price (won't fill)
+        // Step 6: Place BUY limit order at below-market price (won't fill)
         // Price: 1900 IDRX/WETH → raw = 1900 * 10^2 (IDRX decimals) = 190000
         // Quantity: 0.001 WETH = 1e15 (18 decimals)
         // IDRX to lock = 190000 * 1e15 / 1e18 = 190 raw IDRX ≈ 1.90 IDRX
-        console.log("Step 7: Agent executor places BUY limit order on behalf of primary trader...");
+        console.log("Step 6: Strategy agent places BUY limit order on behalf of primary trader...");
         console.log("  userAgentId:     ", userAgentId);
         console.log("  strategyAgentId: ", strategyAgentId);
         console.log("  Side:             BUY");
@@ -253,8 +251,8 @@ contract VerifyAgentExecution is Script {
             return;
         }
 
-        // Step 8: Cancel the order (proves agent can manage orders)
-        console.log("Step 8: Agent executor cancels the limit order...");
+        // Step 7: Cancel the order (proves agent can manage orders)
+        console.log("Step 7: Strategy agent cancels the limit order...");
         try AgentRouter(agentRouter).cancelOrder(
             userAgentId,
             strategyAgentId,
@@ -282,11 +280,10 @@ contract VerifyAgentExecution is Script {
         console.log("  [1] User agent NFT registered in IdentityRegistry");
         console.log("  [2] Policy installed in PolicyFactory (no Chainlink overhead)");
         console.log("  [3] IDRX collateral confirmed in BalanceManager");
-        console.log("  [4] Strategy agent NFT registered by agent executor");
-        console.log("  [5] Executor wallet registered via AgentRouter.registerAgentExecutor()");
-        console.log("  [6] Primary trader authorized strategy agent via AgentRouter.authorize()");
-        console.log("  [7] AgentRouter.executeLimitOrder() called by executor, order placed for user");
-        console.log("  [8] AgentRouter.cancelOrder() called by executor, order cancelled for user");
+        console.log("  [4] Strategy agent NFT registered (agent wallet = NFT owner = executor)");
+        console.log("  [5] Primary trader authorized strategy agent via AgentRouter.authorize()");
+        console.log("  [6] AgentRouter.executeLimitOrder() called by strategy agent, order placed for user");
+        console.log("  [7] AgentRouter.cancelOrder() called by strategy agent, order cancelled for user");
         console.log("");
         console.log("Agent summary:");
         console.log("  User Agent Token ID:     ", userAgentId);
