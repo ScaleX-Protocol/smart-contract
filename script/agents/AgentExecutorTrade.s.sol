@@ -3,7 +3,6 @@ pragma solidity ^0.8.26;
 
 import "forge-std/Script.sol";
 import {AgentRouter} from "@scalexagents/AgentRouter.sol";
-import {MockERC8004Identity} from "@scalexagents/mocks/MockERC8004Identity.sol";
 import {IOrderBook} from "@scalexcore/interfaces/IOrderBook.sol";
 import {IPoolManager} from "@scalexcore/interfaces/IPoolManager.sol";
 import {IBalanceManager} from "@scalexcore/interfaces/IBalanceManager.sol";
@@ -11,8 +10,8 @@ import {Currency} from "@scalexcore/libraries/Currency.sol";
 
 /**
  * @title AgentExecutorTrade
- * @notice Agent executor places trade using primary wallet's funds
- * @dev Executor signs transaction, but uses primary wallet's BalanceManager funds
+ * @notice Agent wallet places trade using user wallet's funds
+ * @dev Agent signs transaction, but uses user wallet's BalanceManager funds
  */
 contract AgentExecutorTrade is Script {
     function run() external {
@@ -25,7 +24,6 @@ contract AgentExecutorTrade is Script {
         string memory deploymentPath = string.concat(root, "/deployments/", vm.toString(chainId), ".json");
         string memory json = vm.readFile(deploymentPath);
 
-        address identityRegistry = _extractAddress(json, "IdentityRegistry");
         address agentRouter = _extractAddress(json, "AgentRouter");
         address balanceManager = _extractAddress(json, "BalanceManager");
 
@@ -34,16 +32,16 @@ contract AgentExecutorTrade is Script {
         address weth = _extractAddress(json, "WETH");
         address wethPool = _extractAddress(json, string.concat("WETH_", quoteSymbol, "_Pool"));
 
-        // Primary wallet (owns funds and agent)
-        address primaryWallet = vm.envAddress("PRIMARY_WALLET_ADDRESS");
+        // User wallet (owns funds)
+        address userWallet = vm.envAddress("USER_ADDRESS");
 
-        // Executor wallet (authorized to trade)
-        uint256 executorPrivateKey = vm.envUint("EXECUTOR_PRIVATE_KEY");
-        address executorWallet = vm.addr(executorPrivateKey);
+        // Agent wallet (authorized to trade)
+        uint256 agentPrivateKey = vm.envUint("AGENT_PRIVATE_KEY");
+        address agentWallet = vm.addr(agentPrivateKey);
 
         console.log("Configuration:");
-        console.log("  Primary Wallet (Owner):", primaryWallet);
-        console.log("  Executor Wallet (Trader):", executorWallet);
+        console.log("  User Wallet (Owner):", userWallet);
+        console.log("  Agent Wallet (Trader):", agentWallet);
         console.log("  AgentRouter:", agentRouter);
         console.log("  Pool:", wethPool);
         console.log("");
@@ -53,36 +51,36 @@ contract AgentExecutorTrade is Script {
         console.log("Strategy Agent ID:", agentId);
         console.log("");
 
-        // Check authorization: primary wallet must have authorized the strategy agent
-        bool isAuthorized = AgentRouter(agentRouter).isAuthorized(primaryWallet, agentId);
-        console.log("Authorization (primaryWallet -> agentId):", isAuthorized ? "YES" : "NO");
+        // Check authorization: user wallet must have authorized the strategy agent
+        bool isAuthorized = AgentRouter(agentRouter).isAuthorized(userWallet, agentId);
+        console.log("Authorization (userWallet -> agentId):", isAuthorized ? "YES" : "NO");
 
         if (!isAuthorized) {
             console.log("");
-            console.log("[ERROR] Strategy agent not authorized by primary wallet!");
-            console.log("Primary wallet must call AgentRouter.authorize(strategyAgentId, policy) first.");
+            console.log("[ERROR] Strategy agent not authorized by user wallet!");
+            console.log("User wallet must call AgentRouter.authorize(strategyAgentId, policy) first.");
             revert("Agent not authorized");
         }
 
-        // Check primary wallet's balance
-        uint256 primaryBalance = IBalanceManager(balanceManager).getBalance(
-            primaryWallet,
+        // Check user wallet's balance
+        uint256 userBalance = IBalanceManager(balanceManager).getBalance(
+            userWallet,
             Currency.wrap(quoteToken)
         );
-        console.log("Primary Wallet Balance:", primaryBalance / 1e6, quoteSymbol);
+        console.log("User Wallet Balance:", userBalance / 1e6, quoteSymbol);
 
-        // Check executor's balance (should be low, just for gas)
-        uint256 executorBalance = IBalanceManager(balanceManager).getBalance(
-            executorWallet,
+        // Check agent's balance (should be low, just for gas)
+        uint256 agentBalance = IBalanceManager(balanceManager).getBalance(
+            agentWallet,
             Currency.wrap(quoteToken)
         );
-        console.log("Executor Balance:", executorBalance / 1e6, quoteSymbol);
+        console.log("Agent Balance:", agentBalance / 1e6, quoteSymbol);
         console.log("");
 
         // Place order
         console.log("=== PLACING ORDER ===");
-        console.log("Executor signs transaction (pays gas)");
-        console.log("Uses primary wallet's funds");
+        console.log("Agent signs transaction (pays gas)");
+        console.log("Uses user wallet's funds");
         console.log("");
 
         // Build pool struct (wethPool is the orderBook address)
@@ -92,46 +90,36 @@ contract AgentExecutorTrade is Script {
             orderBook:     IOrderBook(wethPool)
         });
 
-        uint128 quantity = 0.01e18; // 0.01 WETH
+        uint128 price    = 3000e6;   // $3000 IDRX per WETH (6-decimal quote)
+        uint128 quantity = 0.01e18;  // 0.01 WETH (18-decimal base)
         IOrderBook.Side side = IOrderBook.Side.BUY;
+        IOrderBook.TimeInForce tif = IOrderBook.TimeInForce.GTC;
 
         console.log("Order Details:");
-        console.log("  Side: BUY");
+        console.log("  Type: LIMIT BUY GTC");
+        console.log("  Price:", price / 1e6, quoteSymbol, "per WETH");
         console.log("  Quantity: 0.01 WETH");
-        console.log("  User (primaryWallet):", primaryWallet);
+        console.log("  User (userWallet):", userWallet);
         console.log("  Strategy Agent ID:", agentId);
         console.log("");
 
-        // Executor broadcasts (signs with executor key, uses primary wallet's funds)
-        vm.startBroadcast(executorPrivateKey);
+        // Agent broadcasts (signs with agent key, uses user wallet's funds)
+        vm.startBroadcast(agentPrivateKey);
 
-        try AgentRouter(agentRouter).executeMarketOrder(
-            primaryWallet, // user whose funds are used
-            agentId,       // strategy agent's NFT ID
+        try AgentRouter(agentRouter).executeLimitOrder(
+            userWallet,  // user whose funds are used
+            agentId,     // strategy agent's NFT ID
             poolStruct,
-            side,
+            price,
             quantity,
-            0,             // minOutAmount
-            false,         // autoRepay
-            false          // autoBorrow
-        ) returns (uint48 orderId, uint128 filled) {
-            console.log("[SUCCESS] Order executed!");
+            side,
+            tif,
+            false,       // autoRepay
+            false        // autoBorrow
+        ) returns (uint48 orderId) {
+            console.log("[SUCCESS] Limit order placed!");
             console.log("  Order ID:", orderId);
-            console.log("  Filled:", filled);
             console.log("");
-
-            // Check balances after
-            uint256 newPrimaryBalance = IBalanceManager(balanceManager).getBalance(
-                primaryWallet,
-                Currency.wrap(quoteToken)
-            );
-            console.log("Primary Wallet Balance After:", newPrimaryBalance / 1e6, quoteSymbol);
-            int256 change = int256(newPrimaryBalance) - int256(primaryBalance);
-            if (change >= 0) {
-                console.log("Primary Wallet Change: +", uint256(change), "base units");
-            } else {
-                console.log("Primary Wallet Change: -", uint256(-change), "base units");
-            }
 
         } catch Error(string memory reason) {
             console.log("[FAIL] Order failed:", reason);
@@ -144,19 +132,14 @@ contract AgentExecutorTrade is Script {
 
         console.log("");
         console.log("=== KEY POINTS ===");
-        console.log("1. Executor wallet:", executorWallet);
-        console.log("   - Signed the transaction");
-        console.log("   - Paid gas fees");
+        console.log("1. Agent wallet:", agentWallet);
+        console.log("   - Signed the transaction, paid gas");
         console.log("");
-        console.log("2. Primary wallet:", primaryWallet);
-        console.log("   - Owns the agent NFT");
-        console.log("   - Owns the funds in BalanceManager");
-        console.log("   - Funds were used for the trade");
+        console.log("2. User wallet:", userWallet);
+        console.log("   - Authorized agent NFT, owns funds");
+        console.log("   - Funds locked in BalanceManager when order fills");
         console.log("");
-        console.log("3. Fund Flow:");
-        console.log("   - Deducted from:", primaryWallet);
-        console.log("   - Executed by:", executorWallet);
-        console.log("   - Gas paid by:", executorWallet);
+        console.log("3. Order sits in the order book until matched or cancelled");
     }
 
     function _extractAddress(string memory json, string memory key) internal pure returns (address) {

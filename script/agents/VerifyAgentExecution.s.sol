@@ -3,7 +3,7 @@ pragma solidity ^0.8.28;
 
 import "forge-std/Script.sol";
 import {AgentRouter} from "@scalexagents/AgentRouter.sol";
-import {PolicyFactory} from "@scalexagents/PolicyFactory.sol";
+import {PolicyFactoryStorage} from "@scalexagents/storages/PolicyFactoryStorage.sol";
 import {IERC8004Identity} from "@scalexagents/interfaces/IERC8004Identity.sol";
 import {IOrderBook} from "@scalexcore/interfaces/IOrderBook.sol";
 import {IPoolManager} from "@scalexcore/interfaces/IPoolManager.sol";
@@ -30,11 +30,6 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
  *   AGENT_PRIVATE_KEY  - Strategy agent private key (NFT owner, executes orders)
  */
 contract VerifyAgentExecution is Script {
-    /// @dev Temporary storage for agentRouter so it doesn't occupy a Yul stack slot
-    ///      during authorize() ABI encoding. Loading from storage at the CALL opcode
-    ///      saves 1 stack slot vs passing it as a function parameter.
-    address private _agentRouterCache;
-
     function run() external {
         console.log("=== ERC-8004 AGENT EXECUTION VERIFICATION ===");
         console.log("");
@@ -76,14 +71,10 @@ contract VerifyAgentExecution is Script {
         vm.stopBroadcast();
 
         // STEP 2: Primary trader calls authorize(strategyAgentId, policy).
-        //         Three-function encode->call split avoids Yul stack-too-deep:
-        //         _doAuthorize makes the raw call; _buildAuthorizeData builds
-        //         calldata in a pure frame without agentRouter in scope;
-        //         _encodeAuthorize is isolated so only agentId + p are live
-        //         during abi.encodeCall (~14 internal Yul vars for 42-field Policy).
+        //         via_ir=true in foundry.toml handles stack-depth for 42-field Policy struct.
         console.log("Step 2: Primary trader authorizes strategy agent with policy...");
         vm.startBroadcast(primaryKey);
-        _doAuthorize(agentRouter, strategyAgentId);
+        AgentRouter(agentRouter).authorize(strategyAgentId, _buildPolicy());
         console.log("[OK] Strategy agent", strategyAgentId, "authorized with policy");
         console.log("     maxOrderSize: 100 WETH, allowLimitOrders: true, allowCancelOrder: true");
         vm.stopBroadcast();
@@ -186,22 +177,14 @@ contract VerifyAgentExecution is Script {
         console.log("  Agent Wallet:     ", agentWallet);
     }
 
-    /// @dev Two-stage split: cache agentRouter in storage (so it's not a live stack slot
-    ///      during ABI encoding), build Policy in an isolated pure frame, then call
-    ///      authorize with only 2 stack params — the minimum needed for the 42-field struct.
-    function _doAuthorize(address agentRouter, uint256 strategyAgentId) internal {
-        _agentRouterCache = agentRouter;
-        _callAuthorize(strategyAgentId, _makeVerifyPolicy());
-    }
-
-    /// @dev Builds the Policy struct in an isolated pure frame — no outer locals in scope.
-    ///      Only non-zero fields are set; Solidity zero-initializes all others automatically.
-    function _makeVerifyPolicy() private pure returns (PolicyFactory.Policy memory p) {
-        address[] memory emptyList = new address[](0);
+    /// @dev Builds the Policy struct for agent verification.
+    ///      via_ir=true in foundry.toml handles stack-depth automatically.
+    function _buildPolicy() private pure returns (PolicyFactoryStorage.Policy memory p) {
+        address[] memory empty = new address[](0);
         p.expiryTimestamp      = type(uint256).max;
         p.maxOrderSize         = 100e18;
-        p.whitelistedTokens    = emptyList;
-        p.blacklistedTokens    = emptyList;
+        p.whitelistedTokens    = empty;
+        p.blacklistedTokens    = empty;
         p.allowMarketOrders    = true;
         p.allowLimitOrders     = true;
         p.allowSwap            = true;
@@ -211,48 +194,6 @@ contract VerifyAgentExecution is Script {
         p.allowSell            = true;
         p.minHealthFactor      = 1e18;
         p.maxSlippageBps       = 1000;
-    }
-
-    /// @dev Assembly ABI encoder for authorize(uint256, Policy).
-    ///      Policy has 42 fields; whitelistedTokens (field 5) and blacklistedTokens (field 6)
-    ///      are the only dynamic types — always empty in scripts, so lengths are hardcoded 0.
-    ///      Calldata layout: 4 (sel) + 32 (id) + 32 (Policy offset=64) + 1344 (42-word head)
-    ///                       + 32 (wTokens len=0) + 32 (bTokens len=0) = 1476 bytes total.
-    ///      Peak named Yul variables: ~8 — well within the 16-slot SWAP16 window.
-    function _callAuthorize(uint256 strategyAgentId, PolicyFactory.Policy memory p) private {
-        bytes4 sel = AgentRouter.authorize.selector;
-        assembly {
-            let router   := sload(_agentRouterCache.slot)
-            let cdStart  := mload(0x40)
-            mstore(0x40, add(cdStart, 1476))
-
-            mstore(cdStart, sel)                        // selector (left-aligned bytes4)
-            mstore(add(cdStart,  4), strategyAgentId)  // param 1
-            mstore(add(cdStart, 36), 0x40)             // param 2: offset to Policy tuple = 64
-
-            let base := add(cdStart, 68)               // Policy tuple starts here
-
-            // Copy all 42 head words from struct memory → calldata head
-            for { let i := 0 } lt(i, 42) { i := add(i, 1) } {
-                mstore(add(base, mul(i, 0x20)), mload(add(p, mul(i, 0x20))))
-            }
-
-            // Overwrite field 5 (whitelistedTokens) and field 6 (blacklistedTokens)
-            // with their ABI tail offsets (relative to start of Policy tuple).
-            // Tail begins right after the 42-word head: 42*32 = 0x540.
-            mstore(add(base, 0xa0), 0x540)  // whitelistedTokens at base+0x540
-            mstore(add(base, 0xc0), 0x560)  // blacklistedTokens at base+0x560
-
-            // Write empty array lengths in the tail
-            mstore(add(base, 0x540), 0)     // whitelistedTokens.length = 0
-            mstore(add(base, 0x560), 0)     // blacklistedTokens.length  = 0
-
-            let ok := call(gas(), router, 0, cdStart, 1476, 0, 0)
-            if iszero(ok) {
-                returndatacopy(0, 0, returndatasize())
-                revert(0, returndatasize())
-            }
-        }
     }
 
     // JSON helpers

@@ -989,7 +989,6 @@ else
             --rpc-url "${SCALEX_CORE_RPC}" \
             --broadcast \
             --legacy \
-            --slow \
             --gas-estimate-multiplier 120 2>&1; then
         print_success "✅ ERC-8004 agent execution verification PASSED"
         AGENT_VERIFICATION_SUCCESS=true

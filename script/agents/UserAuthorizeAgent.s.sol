@@ -3,7 +3,7 @@ pragma solidity ^0.8.26;
 
 import "forge-std/Script.sol";
 import {AgentRouter} from "@scalexagents/AgentRouter.sol";
-import {PolicyFactory} from "@scalexagents/PolicyFactory.sol";
+import {PolicyFactoryStorage} from "@scalexagents/storages/PolicyFactoryStorage.sol";
 
 /**
  * @title UserAuthorizeAgent
@@ -21,12 +21,11 @@ import {PolicyFactory} from "@scalexagents/PolicyFactory.sol";
  * Required env vars:
  *   USER_PRIVATE_KEY    — wallet that owns funds and is granting authorization
  *   STRATEGY_AGENT_ID  — NFT token ID of the agent being authorized (from CreateMultipleAgents)
+ *
+ * @dev The via_ir=true setting in foundry.toml handles any potential stack-depth issues
+ *      when ABI-encoding the 42-field Policy struct.
  */
 contract UserAuthorizeAgent is Script {
-    /// @dev Cached agentRouter — stored in slot so it is not a live stack variable
-    ///      during the 42-field Policy ABI encoding, avoiding stack-too-deep errors.
-    address private _agentRouterCache;
-
     function run() external {
         string memory root = vm.projectRoot();
         uint256 chainId = block.chainid;
@@ -46,8 +45,15 @@ contract UserAuthorizeAgent is Script {
         console.log("Strategy Agent ID: ", strategyAgentId);
         console.log("");
 
+        PolicyFactoryStorage.Policy memory policy = _buildDefaultPolicy();
+
         vm.startBroadcast(userPrivateKey);
-        _authorize(agentRouter, strategyAgentId);
+        // If already authorized, revoke first so we can reinstall the updated policy.
+        if (AgentRouter(agentRouter).isAuthorized(userWallet, strategyAgentId)) {
+            console.log("[INFO] Already authorized - revoking to reinstall updated policy...");
+            AgentRouter(agentRouter).revoke(strategyAgentId);
+        }
+        AgentRouter(agentRouter).authorize(strategyAgentId, policy);
         vm.stopBroadcast();
 
         // Verify
@@ -62,20 +68,11 @@ contract UserAuthorizeAgent is Script {
         }
     }
 
-    /// @dev Stage 1: cache agentRouter in storage, then delegate to isolated frames
-    ///      to keep Yul stack depth within the SWAP16 window during Policy encoding.
-    function _authorize(address agentRouter, uint256 strategyAgentId) internal {
-        _agentRouterCache = agentRouter;
-        _callAuthorize(strategyAgentId, _buildDefaultPolicy());
-    }
-
-    /// @dev Builds the Policy in an isolated pure frame so its locals are gone before
-    ///      _callAuthorize begins encoding the 42-field struct.
-    function _buildDefaultPolicy() private pure returns (PolicyFactory.Policy memory p) {
+    function _buildDefaultPolicy() private pure returns (PolicyFactoryStorage.Policy memory p) {
         address[] memory empty = new address[](0);
         p.expiryTimestamp             = type(uint256).max;
-        p.maxOrderSize                = 10000e6;
-        p.minOrderSize                = 1e6;
+        p.maxOrderSize                = type(uint128).max; // no per-order cap for this policy
+        p.minOrderSize                = 0;
         p.whitelistedTokens           = empty;
         p.blacklistedTokens           = empty;
         p.allowMarketOrders           = true;
@@ -96,56 +93,11 @@ contract UserAuthorizeAgent is Script {
         p.minHealthFactor             = 13e17;   // 1.3 = 30% safety buffer
         p.maxSlippageBps              = 500;      // 5%
         p.minTimeBetweenTrades        = 60;       // 1 minute
-        p.dailyVolumeLimit            = 50000e6;
-        p.weeklyVolumeLimit           = 200000e6;
-        p.maxDailyDrawdown            = 2000;     // 20%
-        p.maxWeeklyDrawdown           = 3000;     // 30%
-        p.maxTradeVsTVLBps            = 1000;     // 10%
-        p.maxPositionConcentrationBps = 5000;     // 50%
+        // Leave dailyVolumeLimit, weeklyVolumeLimit, maxDailyDrawdown, maxWeeklyDrawdown,
+        // maxTradeVsTVLBps, maxPositionConcentrationBps, maxTradesPerDay, maxTradesPerHour at 0
+        // so PolicyFactory computes requiresChainlinkFunctions = false.
         p.maxCorrelationBps           = 10000;
-        p.maxTradesPerDay             = 1000;
-        p.maxTradesPerHour            = 100;
         p.tradingEndHour              = 23;
-    }
-
-    /// @dev Assembly ABI encoder for authorize(uint256, Policy).
-    ///      Policy has 42 ABI head words; whitelistedTokens (field 5) and
-    ///      blacklistedTokens (field 6) are dynamic — always empty here,
-    ///      so their tail lengths are hardcoded 0.
-    ///      Calldata: 4 (sel) + 32 (id) + 32 (Policy offset=64) + 1344 (42-word head)
-    ///                + 32 (wTokens len=0) + 32 (bTokens len=0) = 1476 bytes total.
-    function _callAuthorize(uint256 agentId, PolicyFactory.Policy memory p) private {
-        bytes4 sel = AgentRouter.authorize.selector;
-        assembly {
-            let router  := sload(_agentRouterCache.slot)
-            let cdStart := mload(0x40)
-            mstore(0x40, add(cdStart, 1476))
-
-            mstore(cdStart,           sel)    // selector
-            mstore(add(cdStart,  4),  agentId) // param 1: strategyAgentId
-            mstore(add(cdStart, 36),  0x40)    // param 2: offset to Policy tuple
-
-            let base := add(cdStart, 68)       // Policy head starts here
-
-            // Copy all 42 head words from Policy memory → calldata
-            for { let i := 0 } lt(i, 42) { i := add(i, 1) } {
-                mstore(add(base, mul(i, 0x20)), mload(add(p, mul(i, 0x20))))
-            }
-
-            // Overwrite dynamic field offsets (relative to Policy tuple start)
-            mstore(add(base, 0xa0), 0x540)  // whitelistedTokens tail offset
-            mstore(add(base, 0xc0), 0x560)  // blacklistedTokens tail offset
-
-            // Empty array lengths in the tail
-            mstore(add(base, 0x540), 0)
-            mstore(add(base, 0x560), 0)
-
-            let ok := call(gas(), router, 0, cdStart, 1476, 0, 0)
-            if iszero(ok) {
-                returndatacopy(0, 0, returndatasize())
-                revert(0, returndatasize())
-            }
-        }
     }
 
     function _extractAddress(string memory json, string memory key) internal pure returns (address) {
