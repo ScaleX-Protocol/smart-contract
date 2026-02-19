@@ -3,34 +3,36 @@ pragma solidity ^0.8.26;
 
 import "forge-std/Script.sol";
 import {MockERC8004Identity} from "@scalexagents/mocks/MockERC8004Identity.sol";
-import {PolicyFactory} from "@scalexagents/PolicyFactory.sol";
-import {AgentRouter} from "@scalexagents/AgentRouter.sol";
-import {IBalanceManager} from "@scalexcore/interfaces/IBalanceManager.sol";
-import {Currency} from "@scalexcore/libraries/Currency.sol";
-import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 
 /**
  * @title CreateMultipleAgents
- * @notice Create multiple agents using DIFFERENT wallets for fund isolation
- * @dev Each wallet = separate BalanceManager account = isolated funds
+ * @notice Register NFT identities for multiple agent wallets.
+ * @dev Each agent wallet calls IdentityRegistry.register() to mint its own NFT.
+ *      The NFT token ID (strategyAgentId) must then be given to users so they can
+ *      call AgentRouter.authorize(strategyAgentId, policy) to grant the agent
+ *      permission to trade on their behalf.
+ *
+ * Flow:
+ *   1. Run this script  →  each agent wallet gets a strategyAgentId NFT
+ *   2. Note the printed strategyAgentIds
+ *   3. Run user-authorize-agent.sh  →  users authorize those agent IDs
+ *   4. Agent wallets can now call AgentRouter.execute*() on behalf of authorized users
+ *
+ * Required env vars:
+ *   AGENT1_PRIVATE_KEY  — wallet for agent 1
+ *   AGENT2_PRIVATE_KEY  — wallet for agent 2
+ *   AGENT3_PRIVATE_KEY  — wallet for agent 3
  */
 contract CreateMultipleAgents is Script {
-    /// @dev Cached agentRouter address — stored in slot so it is NOT a live Yul stack variable
-    ///      during the authorize() ABI encoding of the 42-field Policy struct.
-    ///      Loading from storage at the CALL opcode costs 1 SLOAD but saves 1 Yul stack slot,
-    ///      keeping peak depth within the EVM's SWAP16 window.
-    address private _agentRouterCache;
-
     struct AgentSetup {
         address wallet;
         uint256 privateKey;
         uint256 agentId;
-        uint256 capitalAllocation; // In quote token base units
         string name;
     }
 
     function run() external {
-        console.log("=== CREATING MULTIPLE AGENTS WITH ISOLATED FUNDS ===");
+        console.log("=== REGISTER AGENT IDENTITIES ===");
         console.log("");
 
         // Load deployment addresses
@@ -40,246 +42,60 @@ contract CreateMultipleAgents is Script {
         string memory json = vm.readFile(deploymentPath);
 
         address identityRegistry = _extractAddress(json, "IdentityRegistry");
-        address agentRouter      = _extractAddress(json, "AgentRouter");
-        address balanceManager   = _extractAddress(json, "BalanceManager");
 
-        string memory quoteSymbol = vm.envString("QUOTE_SYMBOL");
-        address quoteToken = _extractAddress(json, quoteSymbol);
-
-        console.log("Loaded addresses:");
-        console.log("  IdentityRegistry:", identityRegistry);
-        console.log("  AgentRouter:     ", agentRouter);
-        console.log("  BalanceManager:  ", balanceManager);
-        console.log("  Quote Token:     ", quoteToken);
+        console.log("IdentityRegistry:", identityRegistry);
         console.log("");
 
-        // Define 3 agents with different wallets and capital
         AgentSetup[] memory agents = new AgentSetup[](3);
 
-        // Agent 1: Conservative trader (1,000 USDC/IDRX)
         agents[0] = AgentSetup({
             wallet: address(0),
             privateKey: vm.envUint("AGENT1_PRIVATE_KEY"),
             agentId: 0,
-            capitalAllocation: 1000e6, // 1,000 quote tokens
-            name: "Conservative Agent"
+            name: "Agent 1"
         });
-
-        // Agent 2: Aggressive trader (5,000 USDC/IDRX)
         agents[1] = AgentSetup({
             wallet: address(0),
             privateKey: vm.envUint("AGENT2_PRIVATE_KEY"),
             agentId: 0,
-            capitalAllocation: 5000e6, // 5,000 quote tokens
-            name: "Aggressive Agent"
+            name: "Agent 2"
         });
-
-        // Agent 3: Test agent (500 USDC/IDRX)
         agents[2] = AgentSetup({
             wallet: address(0),
             privateKey: vm.envUint("AGENT3_PRIVATE_KEY"),
             agentId: 0,
-            capitalAllocation: 500e6, // 500 quote tokens
-            name: "Test Agent"
+            name: "Agent 3"
         });
 
-        // Derive wallet addresses from private keys
         for (uint256 i = 0; i < agents.length; i++) {
             agents[i].wallet = vm.addr(agents[i].privateKey);
         }
 
-        console.log("=== AGENT CONFIGURATION ===");
-        console.log("");
+        // Register each agent wallet
         for (uint256 i = 0; i < agents.length; i++) {
-            console.log(string.concat("Agent ", vm.toString(i + 1), " - ", agents[i].name));
+            console.log(string.concat("Registering ", agents[i].name, "..."));
             console.log("  Wallet:", agents[i].wallet);
-            console.log("  Capital:", agents[i].capitalAllocation / 1e6, quoteSymbol);
+
+            vm.startBroadcast(agents[i].privateKey);
+            agents[i].agentId = MockERC8004Identity(identityRegistry).register();
+            vm.stopBroadcast();
+
+            console.log("  [OK] strategyAgentId:", agents[i].agentId);
             console.log("");
         }
 
-        // Setup each agent
+        console.log("=== SUMMARY ===");
+        console.log("");
+        console.log("Agent wallets registered. Share these IDs with users:");
+        console.log("");
         for (uint256 i = 0; i < agents.length; i++) {
-            console.log(string.concat("=== Setting up ", agents[i].name, " ==="));
-            _setupAgent(
-                agents[i],
-                identityRegistry,
-                agentRouter,
-                balanceManager,
-                quoteToken
-            );
+            console.log(string.concat(agents[i].name, ":"));
+            console.log("  Wallet:          ", agents[i].wallet);
+            console.log("  strategyAgentId: ", agents[i].agentId);
             console.log("");
         }
-
-        console.log("=== VERIFICATION ===");
-        console.log("");
-        for (uint256 i = 0; i < agents.length; i++) {
-            _verifyAgent(agents[i], balanceManager, quoteToken);
-        }
-
-        console.log("");
-        console.log("[SUCCESS] All agents created with isolated funds!");
-        console.log("");
-        console.log("Summary:");
-        console.log("--------");
-        for (uint256 i = 0; i < agents.length; i++) {
-            console.log(string.concat("Agent ", vm.toString(i + 1), ":"));
-            console.log("  Wallet:", agents[i].wallet);
-            console.log("  Agent ID:", agents[i].agentId);
-            console.log("  Capital:", agents[i].capitalAllocation / 1e6, quoteSymbol);
-        }
-    }
-
-    function _setupAgent(
-        AgentSetup memory agent,
-        address identityRegistry,
-        address agentRouter,
-        address balanceManager,
-        address quoteToken
-    ) internal {
-        vm.startBroadcast(agent.privateKey);
-
-        // Step 1: Register agent identity (caller = agent.wallet via broadcast)
-        console.log("Step 1: Registering agent identity...");
-        agent.agentId = MockERC8004Identity(identityRegistry).register();
-        console.log("[OK] Agent registered with ID:", agent.agentId);
-
-        // Step 2: Authorize strategy agent with policy (installs policy + grants auth in one tx)
-        console.log("Step 2: Authorizing agent with policy...");
-        _createPolicy(agentRouter, agent);
-        console.log("[OK] Policy installed + agent authorized");
-
-        // Step 3: Deposit capital
-        console.log("Step 3: Depositing capital...");
-        _depositCapital(balanceManager, quoteToken, agent);
-        console.log("[OK] Capital deposited:", agent.capitalAllocation / 1e6, "tokens");
-
-        vm.stopBroadcast();
-    }
-
-    /// @dev Stage 1: cache agentRouter in storage (NOT a live stack slot during ABI encoding),
-    ///      build Policy in an isolated pure frame, then call authorize with only 2 stack params.
-    function _createPolicy(address agentRouter, AgentSetup memory agent) internal {
-        _agentRouterCache = agentRouter;
-        _callAuthorize(agent.agentId, _buildPolicyForAgent(agent.capitalAllocation));
-    }
-
-    /// @dev Stage 2: builds Policy in an isolated pure frame — capitalAllocation is the only
-    ///      live local; it dies at the function boundary before _callAuthorize runs the
-    ///      42-field ABI encoding (~14 internal Yul vars). Named return avoids an extra
-    ///      memory-copy temp on the caller's stack.
-    function _buildPolicyForAgent(uint256 capitalAllocation)
-        private pure returns (PolicyFactory.Policy memory p)
-    {
-        address[] memory empty = new address[](0);
-        p.expiryTimestamp       = type(uint256).max;
-        p.maxOrderSize          = capitalAllocation * 2;
-        p.whitelistedTokens     = empty;
-        p.blacklistedTokens     = empty;
-        p.allowMarketOrders     = true;
-        p.allowLimitOrders      = true;
-        p.allowSwap             = true;
-        p.allowSupplyCollateral = true;
-        p.allowPlaceLimitOrder  = true;
-        p.allowCancelOrder      = true;
-        p.allowBuy              = true;
-        p.allowSell             = true;
-        p.minHealthFactor       = 1e18;
-        if (capitalAllocation == 1000e6) {          // Conservative
-            p.maxSlippageBps        = 300;
-            p.minTimeBetweenTrades  = 120;
-            p.dailyVolumeLimit      = 5000e6;
-            p.maxDailyDrawdown      = 1000;
-        } else if (capitalAllocation == 5000e6) {   // Aggressive
-            p.maxSlippageBps        = 500;
-            p.minTimeBetweenTrades  = 30;
-            p.dailyVolumeLimit      = 50000e6;
-            p.maxDailyDrawdown      = 2500;
-        } else {                                     // Test
-            p.maxSlippageBps        = 200;
-            p.minTimeBetweenTrades  = 300;
-            p.dailyVolumeLimit      = 2000e6;
-            p.maxDailyDrawdown      = 500;
-        }
-    }
-
-    /// @dev Assembly ABI encoder for authorize(uint256, Policy).
-    ///      Policy has 42 fields; whitelistedTokens (field 5) and blacklistedTokens (field 6)
-    ///      are the only dynamic types — always empty in scripts, so lengths are hardcoded 0.
-    ///      Calldata layout: 4 (sel) + 32 (id) + 32 (Policy offset=64) + 1344 (42-word head)
-    ///                       + 32 (wTokens len=0) + 32 (bTokens len=0) = 1476 bytes total.
-    ///      Peak named Yul variables: ~8 — well within the 16-slot SWAP16 window.
-    function _callAuthorize(uint256 agentId, PolicyFactory.Policy memory p) private {
-        bytes4 sel = AgentRouter.authorize.selector;
-        assembly {
-            let router   := sload(_agentRouterCache.slot)
-            let cdStart  := mload(0x40)
-            mstore(0x40, add(cdStart, 1476))
-
-            mstore(cdStart, sel)                    // selector (left-aligned bytes4)
-            mstore(add(cdStart,  4), agentId)      // param 1
-            mstore(add(cdStart, 36), 0x40)         // param 2: offset to Policy tuple = 64
-
-            let base := add(cdStart, 68)           // Policy tuple starts here
-
-            // Copy all 42 head words from struct memory → calldata head
-            for { let i := 0 } lt(i, 42) { i := add(i, 1) } {
-                mstore(add(base, mul(i, 0x20)), mload(add(p, mul(i, 0x20))))
-            }
-
-            // Overwrite field 5 (whitelistedTokens) and field 6 (blacklistedTokens)
-            // with their ABI tail offsets (relative to start of Policy tuple).
-            mstore(add(base, 0xa0), 0x540)  // whitelistedTokens at base+0x540
-            mstore(add(base, 0xc0), 0x560)  // blacklistedTokens at base+0x560
-
-            // Write empty array lengths in the tail
-            mstore(add(base, 0x540), 0)     // whitelistedTokens.length = 0
-            mstore(add(base, 0x560), 0)     // blacklistedTokens.length  = 0
-
-            let ok := call(gas(), router, 0, cdStart, 1476, 0, 0)
-            if iszero(ok) {
-                returndatacopy(0, 0, returndatasize())
-                revert(0, returndatasize())
-            }
-        }
-    }
-
-    function _depositCapital(
-        address balanceManager,
-        address token,
-        AgentSetup memory agent
-    ) internal {
-        // Check token balance
-        uint256 tokenBalance = ERC20(token).balanceOf(agent.wallet);
-        require(tokenBalance >= agent.capitalAllocation, "Insufficient token balance");
-
-        // Approve
-        ERC20(token).approve(balanceManager, type(uint256).max);
-
-        // Deposit
-        IBalanceManager(balanceManager).deposit(Currency.wrap(token), agent.capitalAllocation, agent.wallet, agent.wallet);
-    }
-
-    function _verifyAgent(
-        AgentSetup memory agent,
-        address balanceManager,
-        address token
-    ) internal view {
-        uint256 balance = IBalanceManager(balanceManager).getBalance(
-            agent.wallet,
-            Currency.wrap(token)
-        );
-
-        console.log(string.concat(agent.name, ":"));
-        console.log("  Wallet:", agent.wallet);
-        console.log("  Agent ID:", agent.agentId);
-        console.log("  Balance:", balance / 1e6, "tokens");
-
-        if (balance == agent.capitalAllocation) {
-            console.log("  Status: OK");
-        } else {
-            console.log("  Status: MISMATCH!");
-        }
-        console.log("");
+        console.log("Next step: Users run user-authorize-agent.sh to grant each agent permission.");
+        console.log("  STRATEGY_AGENT_ID=<id> bash shellscripts/user-authorize-agent.sh");
     }
 
     function _extractAddress(string memory json, string memory key) internal pure returns (address) {

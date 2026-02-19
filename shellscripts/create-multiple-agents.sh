@@ -1,7 +1,8 @@
 #!/bin/bash
 
-# Create Multiple Agents with Isolated Funds
-# Each agent uses a different wallet (private key) = separate BalanceManager account
+# Register Agent Identities
+# Each agent wallet mints its own ERC-8004 NFT (strategyAgentId).
+# After this, users run user-authorize-agent.sh to grant each agent permission.
 
 set -e
 
@@ -12,7 +13,7 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m'
 
-echo -e "${BLUE}=== CREATE MULTIPLE AGENTS (ISOLATED FUNDS) ===${NC}"
+echo -e "${BLUE}=== REGISTER AGENT IDENTITIES ===${NC}"
 echo ""
 
 # Check .env
@@ -29,28 +30,13 @@ if [ -z "$SCALEX_CORE_RPC" ]; then
     exit 1
 fi
 
-if [ -z "$QUOTE_SYMBOL" ]; then
-    export QUOTE_SYMBOL="USDC"
-fi
-
-# Check for agent private keys
-if [ -z "$AGENT1_PRIVATE_KEY" ]; then
-    echo -e "${RED}Error: AGENT1_PRIVATE_KEY not set${NC}"
+if [ -z "$AGENT1_PRIVATE_KEY" ] || [ -z "$AGENT2_PRIVATE_KEY" ] || [ -z "$AGENT3_PRIVATE_KEY" ]; then
+    echo -e "${RED}Error: Agent private keys not set${NC}"
     echo ""
     echo "Add to .env:"
-    echo "  AGENT1_PRIVATE_KEY=0x..."
-    echo "  AGENT2_PRIVATE_KEY=0x..."
-    echo "  AGENT3_PRIVATE_KEY=0x..."
-    exit 1
-fi
-
-if [ -z "$AGENT2_PRIVATE_KEY" ]; then
-    echo -e "${RED}Error: AGENT2_PRIVATE_KEY not set${NC}"
-    exit 1
-fi
-
-if [ -z "$AGENT3_PRIVATE_KEY" ]; then
-    echo -e "${RED}Error: AGENT3_PRIVATE_KEY not set${NC}"
+    echo "  AGENT1_PRIVATE_KEY=0x...  # Agent 1 wallet"
+    echo "  AGENT2_PRIVATE_KEY=0x...  # Agent 2 wallet"
+    echo "  AGENT3_PRIVATE_KEY=0x...  # Agent 3 wallet"
     exit 1
 fi
 
@@ -59,22 +45,13 @@ AGENT1_WALLET=$(cast wallet address --private-key $AGENT1_PRIVATE_KEY)
 AGENT2_WALLET=$(cast wallet address --private-key $AGENT2_PRIVATE_KEY)
 AGENT3_WALLET=$(cast wallet address --private-key $AGENT3_PRIVATE_KEY)
 
-echo -e "${BLUE}Configuration:${NC}"
-echo "  RPC: $SCALEX_CORE_RPC"
-echo "  Quote: $QUOTE_SYMBOL"
+echo -e "${BLUE}Agent wallets:${NC}"
+echo "  Agent 1: $AGENT1_WALLET"
+echo "  Agent 2: $AGENT2_WALLET"
+echo "  Agent 3: $AGENT3_WALLET"
 echo ""
-echo -e "${BLUE}Agents:${NC}"
-echo "  Agent 1 (Conservative): $AGENT1_WALLET - 1,000 $QUOTE_SYMBOL"
-echo "  Agent 2 (Aggressive): $AGENT2_WALLET - 5,000 $QUOTE_SYMBOL"
-echo "  Agent 3 (Test): $AGENT3_WALLET - 500 $QUOTE_SYMBOL"
-echo ""
-
-# Warning about fund requirements
-echo -e "${YELLOW}NOTE: Each wallet needs quote tokens:${NC}"
-echo "  Agent 1 needs: 1,000 $QUOTE_SYMBOL"
-echo "  Agent 2 needs: 5,000 $QUOTE_SYMBOL"
-echo "  Agent 3 needs: 500 $QUOTE_SYMBOL"
-echo "  Total: 6,500 $QUOTE_SYMBOL"
+echo "Each wallet will register an ERC-8004 NFT identity."
+echo "The printed strategyAgentId values are needed for user authorization."
 echo ""
 
 read -p "Continue? (y/n) " -n 1 -r
@@ -85,10 +62,9 @@ if [[ ! $REPLY =~ ^[Yy]$ ]]; then
 fi
 
 echo ""
-echo -e "${BLUE}Creating agents...${NC}"
+echo -e "${BLUE}Registering agents...${NC}"
 echo ""
 
-# Run the script
 forge script script/agents/CreateMultipleAgents.s.sol:CreateMultipleAgents \
     --rpc-url "$SCALEX_CORE_RPC" \
     --broadcast \
@@ -96,18 +72,12 @@ forge script script/agents/CreateMultipleAgents.s.sol:CreateMultipleAgents \
     --legacy
 
 echo ""
-echo -e "${GREEN}=== SETUP COMPLETE ===${NC}"
+echo -e "${GREEN}=== REGISTRATION COMPLETE ===${NC}"
 echo ""
-echo -e "${YELLOW}Fund Isolation:${NC}"
-echo "  ✓ Each agent has separate wallet"
-echo "  ✓ Each wallet has separate BalanceManager account"
-echo "  ✓ Agent 1's losses don't affect Agent 2 or 3"
-echo "  ✓ Can track P&L per agent independently"
+echo -e "${YELLOW}Next step:${NC}"
+echo "  Users must authorize each agent before it can trade on their behalf."
 echo ""
-echo -e "${YELLOW}To trade with Agent 1:${NC}"
-echo "  export PRIVATE_KEY=\$AGENT1_PRIVATE_KEY"
-echo "  ./shellscripts/test-agent-order.sh"
+echo "  For each user + agent pair, run:"
+echo "    USER_PRIVATE_KEY=<user_key> STRATEGY_AGENT_ID=<agent_id> bash shellscripts/user-authorize-agent.sh"
 echo ""
-echo -e "${YELLOW}To trade with Agent 2:${NC}"
-echo "  export PRIVATE_KEY=\$AGENT2_PRIVATE_KEY"
-echo "  ./shellscripts/test-agent-order.sh"
+echo "  The strategyAgentId for each agent is printed above."

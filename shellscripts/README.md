@@ -35,19 +35,19 @@ shellscripts/
 - `validate-deployment.sh` - Validate deployment
 
 ### AI Agent Scripts
-- `install-simple-policy.sh` - Install agent policy
-- `encode-policy.sh` - Encode policy parameters
-- `test-agent-install.sh` - Test agent installation
+- `create-multiple-agents.sh` - Register agent NFT identities (step 1 of agent setup)
+- `user-authorize-agent.sh` - User grants an agent permission to trade on their behalf (step 2)
 - `test-agent-order.sh` - Test agent order placement
 - `test-agent-trade-simple.sh` - Simple agent trade test
-- `agent-executor-trade.sh` - Agent executor trading
-- `create-multiple-agents.sh` - Create multiple agents
-- `complete-agent-setup.sh` - Complete agent setup
-- `setup-agent-executors.sh` - Setup agent executors
+- `agent-executor-trade.sh` - Agent trade execution
+- `complete-agent-setup.sh` - Complete agent setup verification
 - `fix-agent-setup-manual.sh` - Fix agent setup manually
 - `check-agent-wallets.sh` - Check agent wallet balances
 - `fund-agent-wallets.sh` - Fund agent wallets
-- `authorize-only.sh` - Authorization only
+- `install-simple-policy.sh` - Install agent policy manually
+- `encode-policy.sh` - Encode policy parameters
+- `test-agent-install.sh` - Test agent installation
+- `authorize-only.sh` - Authorization only (manual)
 
 ### Lending Scripts (in `lending/`)
 - `AchieveAPYGoals.sh` - Achieve APY targets
