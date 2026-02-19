@@ -375,6 +375,9 @@ contract LendingManager is
         position.borrowed += amount;
         $.totalBorrowed[token] += amount;
 
+        // Track that user now has a position in this asset (needed for health factor calculation)
+        _addUserAsset(msg.sender, token);
+
         IERC20(token).safeTransfer(msg.sender, amount);
 
         emit Borrowed(msg.sender, token, amount, block.timestamp, 0, msg.sender);

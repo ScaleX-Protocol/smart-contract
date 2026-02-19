@@ -43,22 +43,31 @@ contract MockTokenRegistry {
 contract MockOrderBook {
     IOracle public oracle;
     bool public shouldAuthorize = true;
-    
+    address public quoteCurrencyAddr;
+
     function setOracle(IOracle _oracle) external {
         oracle = _oracle;
     }
-    
+
     function setShouldAuthorize(bool _shouldAuthorize) external {
         shouldAuthorize = _shouldAuthorize;
     }
-    
+
+    function setQuoteCurrency(address _quoteCurrency) external {
+        quoteCurrencyAddr = _quoteCurrency;
+    }
+
+    function getQuoteCurrency() external view returns (address) {
+        return quoteCurrencyAddr;
+    }
+
     function updatePriceFromTrade(address token, uint128 price, uint256 volume) external {
         // Only update if authorized
         if (shouldAuthorize) {
             oracle.updatePriceFromTrade(token, price, volume);
         }
     }
-    
+
     function getBestPrice(IOrderBook.Side) external pure returns (IOrderBook.PriceVolume memory) {
         return IOrderBook.PriceVolume(2005 * 1e6, 1000 * 1e6);
     }
@@ -101,6 +110,7 @@ contract OracleIntegrationTest is Test {
         // Setup mock OrderBook
         mockOrderBook = new MockOrderBook();
         mockOrderBook.setOracle(oracle);
+        mockOrderBook.setQuoteCurrency(address(token));
         
         // Configure Oracle to trust our mock OrderBook
         vm.startPrank(owner);
@@ -145,16 +155,18 @@ contract OracleIntegrationTest is Test {
     }
     
     function testVolumeFiltering() public {
-        // Try trade below minimum volume (1000 * 1e6)
-        uint256 smallVolume = 500 * 1e6;
-        
-        // This should fail due to insufficient volume
-        vm.expectRevert();
+        // Set minimum trade volume so small trades are filtered
+        vm.prank(owner);
+        oracle.setMinTradeVolume(1000 * 1e6);
+
+        uint256 smallVolume = 500 * 1e6; // Below minimum
+
+        // Oracle silently skips low-volume trades (no revert)
         mockOrderBook.updatePriceFromTrade(address(token), 2005 * 1e6, smallVolume);
-        
-        // Oracle should still have no price
+
+        // Oracle should still have no price since volume was below minimum
         assertEq(oracle.getSpotPrice(address(token)), 0);
-        
+
         console.log("Volume filtering test passed");
     }
     

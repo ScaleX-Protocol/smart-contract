@@ -15,6 +15,28 @@ import {Currency} from "../../src/core/libraries/Currency.sol";
 import {ITokenRegistry} from "../../src/core/interfaces/ITokenRegistry.sol";
 import {TokenRegistry} from "../../src/core/TokenRegistry.sol";
 
+interface IERC20Decimals {
+    function decimals() external view returns (uint8);
+}
+
+contract MockOracle {
+    // 18-decimal tokens (WETH-like) = $4000, 6-decimal tokens (USDC-like) = $1
+    function _priceFor(address token) internal view returns (uint256) {
+        try IERC20Decimals(token).decimals() returns (uint8 dec) {
+            if (dec == 18) return 4000e18;
+        } catch {}
+        return 1e18;
+    }
+
+    function getPriceForCollateral(address token) external view returns (uint256) {
+        return _priceFor(token);
+    }
+
+    function getPriceForBorrowing(address token) external view returns (uint256) {
+        return _priceFor(token);
+    }
+}
+
 /**
  * @title TwoContractArchitectureTest
  * @dev Comprehensive test suite for the simplified two-contract lending architecture
@@ -24,6 +46,7 @@ contract TwoContractArchitectureTest is Test {
     using SafeERC20 for IERC20;
 
     // Test contracts
+    MockOracle public mockOracle;
     IBalanceManager public balanceManager;
     LendingManager public lendingManager;
     SyntheticTokenFactory public tokenFactory;
@@ -53,6 +76,9 @@ contract TwoContractArchitectureTest is Test {
     uint256 public constant SECONDS_PER_YEAR = 31536000;
 
     function setUp() public {
+        // Deploy mock oracle
+        mockOracle = new MockOracle();
+
         // Deploy mock tokens
         usdc = new MockToken("USDC", "USDC", 6);
         weth = new MockToken("WETH", "WETH", 18);
@@ -96,7 +122,7 @@ contract TwoContractArchitectureTest is Test {
                 LendingManager.initialize.selector,
                 owner,
                 address(balanceManager), // Pass BalanceManager address
-                address(0x742d35Cc6634c0532925A3B8d4C9db96c4B3D8B9) // Mock oracle
+                address(mockOracle) // Mock oracle
             )
         );
         lendingManagerProxy = address(lendingProxy);
@@ -357,8 +383,8 @@ contract TwoContractArchitectureTest is Test {
         
         // Setup: borrower takes loan to generate yield
         vm.startPrank(borrower);
-        weth.approve(address(lendingManager), 1 ether);
-        // Note: Real collateral setup needed through BalanceManager deposits
+        weth.approve(address(balanceManager), 1 ether);
+        balanceManager.deposit(Currency.wrap(address(weth)), 1 ether, borrower, borrower);
         lendingManager.borrow(address(usdc), 500 * 1e6);
         vm.stopPrank();
         
@@ -604,8 +630,8 @@ contract TwoContractArchitectureTest is Test {
         
         // Verify BalanceManager handles yield distribution
         vm.startPrank(borrower);
-        weth.approve(address(lendingManager), 1 ether);
-        // Note: Real collateral setup needed through BalanceManager deposits
+        weth.approve(address(balanceManager), 1 ether);
+        balanceManager.deposit(Currency.wrap(address(weth)), 1 ether, borrower, borrower);
         lendingManager.borrow(address(usdc), 500 * 1e6);
         vm.stopPrank();
         

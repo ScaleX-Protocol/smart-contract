@@ -32,7 +32,7 @@ contract LocalDepositTest is Test {
         uint256 syntheticAmount
     );
     
-    event Deposit(address indexed user, uint256 indexed id, uint256 amount);
+    event Deposit(address indexed user, uint256 indexed id, uint256 amount, uint256 agentTokenId, address executor);
     BalanceManager private balanceManager;
     TokenRegistry private tokenRegistry;
     SyntheticTokenFactory private syntheticTokenFactory;
@@ -218,7 +218,7 @@ contract LocalDepositTest is Test {
         
         // Expect Deposit event (from IBalanceManager interface)
         vm.expectEmit(true, true, false, true);
-        emit Deposit(user1, Currency.wrap(address(sxUSDC)).toId(), DEPOSIT_AMOUNT_USDC);
+        emit Deposit(user1, Currency.wrap(address(sxUSDC)).toId(), DEPOSIT_AMOUNT_USDC, 0, user1);
 
         // Perform local deposit
         balanceManager.depositLocal(address(localUSDC), DEPOSIT_AMOUNT_USDC, user1);

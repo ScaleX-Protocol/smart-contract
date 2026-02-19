@@ -29,6 +29,10 @@ contract SimpleOrderBook {
         }
     }
     
+    function getQuoteCurrency() external view returns (address) {
+        return token;
+    }
+
     function getBestPrice(uint8) external pure returns (IOrderBook.PriceVolume memory) {
         return IOrderBook.PriceVolume(2005 * 1e6, 1000 * 1e6);
     }

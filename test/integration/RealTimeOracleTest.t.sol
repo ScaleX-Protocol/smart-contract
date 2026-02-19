@@ -60,10 +60,14 @@ contract MockRealTimeOrderBook {
         }
     }
     
+    function getQuoteCurrency() external view returns (address) {
+        return token;
+    }
+
     function getOrderQueue(uint8 side, uint128 price) external pure returns (uint48 orderCount, uint256 totalVolume) {
         return (1, 1000 * 1e6);
     }
-    
+
     // Minimal implementations for other required functions
     function initialize(address, address, address, address, address) external pure {}
     function placeOrder(address, uint128, uint128, uint128, uint8, uint8, uint48, address) external pure returns (uint48) { return 1; }
@@ -187,12 +191,16 @@ contract RealTimeOracleTest is Test {
     }
     
     function testMinimumTradeVolumeFilter() public {
+        // Set minimum trade volume threshold on the oracle
+        vm.prank(owner);
+        oracle.setMinTradeVolume(1000 * 1e6);
+
         // Try to execute trade below minimum volume
         uint256 smallVolume = 500 * 1e6; // Below MIN_TRADE_VOLUME (1000 * 1e6)
-        
+
         vm.prank(trader);
         mockOrderBook.executeMockTrade(2005 * 1e6, smallVolume);
-        
+
         // Oracle should not be updated (price should still be 0)
         uint256 spotPrice = oracle.getSpotPrice(address(token));
         assertEq(spotPrice, 0);

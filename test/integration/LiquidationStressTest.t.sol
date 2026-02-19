@@ -18,25 +18,37 @@ interface IPriceOracle {
     function getAssetPrice(address asset) external view returns (uint256);
 }
 
+interface IERC20Decimals {
+    function decimals() external view returns (uint8);
+}
+
 contract MockPriceOracle is IPriceOracle {
     mapping(address => uint256) public prices;
-    
+
     function setPrice(address asset, uint256 price) external {
         prices[asset] = price;
     }
-    
-    function getPriceForCollateral(address token) external view returns (uint256) {
-        if (prices[token] == 0) {
-            return 1e18; // $1 with 18 decimals
-        }
-        return prices[token];
+
+    function _fallbackPrice(address token) internal view returns (uint256) {
+        try IERC20Decimals(token).decimals() returns (uint8 dec) {
+            if (dec == 18) return 2000e18;
+        } catch {}
+        return 1e18;
     }
-    
+
+    function getPriceForCollateral(address token) external view returns (uint256) {
+        if (prices[token] != 0) return prices[token];
+        return _fallbackPrice(token);
+    }
+
+    function getPriceForBorrowing(address token) external view returns (uint256) {
+        if (prices[token] != 0) return prices[token];
+        return _fallbackPrice(token);
+    }
+
     function getAssetPrice(address asset) external view override returns (uint256) {
-        if (prices[asset] == 0) {
-            return 1e18; // $1 with 18 decimals
-        }
-        return prices[asset];
+        if (prices[asset] != 0) return prices[asset];
+        return _fallbackPrice(asset);
     }
 }
 
@@ -49,9 +61,15 @@ contract LiquidationStressTest is Test {
     
     // Test tokens with different decimals
     MockToken public weth;      // 18 decimals
-    MockToken public usdc;      // 6 decimals  
+    MockToken public usdc;      // 6 decimals
     MockToken public dai;       // 18 decimals
     MockToken public wbtc;      // 8 decimals
+
+    // Synthetic token addresses (set in setUp, used for oracle price setup)
+    address public wethSynthetic;
+    address public usdcSynthetic;
+    address public daiSynthetic;
+    address public wbtcSynthetic;
     
     address public owner = address(0x1);
     address public provider = address(0x2);
@@ -145,11 +163,17 @@ contract LiquidationStressTest is Test {
         
         // Create synthetic tokens and set up TokenRegistry
         vm.startPrank(owner);
-        address wethSynthetic = tokenFactory.createSyntheticToken(address(weth));
-        address usdcSynthetic = tokenFactory.createSyntheticToken(address(usdc));
-        address daiSynthetic = tokenFactory.createSyntheticToken(address(dai));
-        address wbtcSynthetic = tokenFactory.createSyntheticToken(address(wbtc));
-        
+        wethSynthetic = tokenFactory.createSyntheticToken(address(weth));
+        usdcSynthetic = tokenFactory.createSyntheticToken(address(usdc));
+        daiSynthetic = tokenFactory.createSyntheticToken(address(dai));
+        wbtcSynthetic = tokenFactory.createSyntheticToken(address(wbtc));
+
+        // Set oracle prices for synthetic tokens (LendingManager queries with synthetic addresses)
+        mockOracle.setPrice(wethSynthetic, 2000e18);
+        mockOracle.setPrice(usdcSynthetic, 1e18);
+        mockOracle.setPrice(daiSynthetic, 1e18);
+        mockOracle.setPrice(wbtcSynthetic, 50000e18);
+
         balanceManager.addSupportedAsset(address(weth), wethSynthetic);
         balanceManager.addSupportedAsset(address(usdc), usdcSynthetic);
         balanceManager.addSupportedAsset(address(dai), daiSynthetic);
@@ -220,16 +244,18 @@ contract LiquidationStressTest is Test {
             // Each borrows USDC, pushing close to liquidation threshold
             uint256 borrowAmount;
             if (i % 2 == 0) {
-                // WETH borrowers: 10 WETH ($20k) -> borrow 18k-22k USDC (close to 85% threshold)
-                borrowAmount = 18000e6 + (i * 1000e6);
+                // WETH borrowers: 10 WETH ($20k), CF=80% max=$16k, LT=85%
+                // Borrow within CF limit but close enough that hf < 1.2
+                borrowAmount = 14500e6 + ((i / 2) * 500e6); // i=0:14500, i=2:15000, i=4:15500
             } else {
-                // WBTC borrowers: 1 WBTC ($50k) -> borrow 45k-49k USDC (close to 85% threshold)  
-                borrowAmount = 45000e6 + (i * 1000e6);
+                // WBTC borrowers: 1 WBTC ($50k), CF=75% max=$37.5k, LT=80%
+                // Borrow within CF limit but close enough that hf < 1.2
+                borrowAmount = 33500e6 + ((i / 2) * 1500e6); // i=1:33500, i=3:35000
             }
             lendingManager.borrow(address(usdc), borrowAmount);
             vm.stopPrank();
         }
-        
+
         // Check initial health factors
         console.log("--- Initial Health Factors ---");
         for (uint256 i = 0; i < borrowers.length; i++) {
@@ -305,18 +331,24 @@ contract LiquidationStressTest is Test {
     function test_ConcurrentLiquidationCompetition() public {
         console.log("\n=== CONCURRENT LIQUIDATION COMPETITION TEST ===");
         
-        // Setup a highly undercollateralized position
+        // Setup a position that will become undercollateralized after a price drop
         vm.startPrank(borrower);
         weth.mint(borrower, 20e18);
         weth.approve(address(balanceManager), 20e18);
         balanceManager.deposit(Currency.wrap(address(weth)), 20e18, borrower, borrower);
-        
-        uint256 largeBorrow = 35000e6; // Very large borrowing relative to collateral
+
+        // 20 WETH at $2000, CF=80%: max borrow = $32k. Borrow $31k (within limit).
+        uint256 largeBorrow = 31000e6;
         lendingManager.borrow(address(usdc), largeBorrow);
         vm.stopPrank();
-        
+
         vm.warp(block.timestamp + 30 days);
-        
+
+        // Simulate WETH price drop from $2000 → $1800 to make position undercollateralized
+        // At $1800: hf = (20 * 1800 * 0.85) / 31000 = 30600/31000 = 0.987 < 1
+        // Health factor uses underlying token address for oracle queries
+        mockOracle.setPrice(address(weth), 1800e18);
+
         // Verify position is liquidatable
         uint256 hf = lendingManager.getHealthFactor(borrower);
         assertTrue(hf < 1e18, "Position should be liquidatable");
@@ -324,7 +356,7 @@ contract LiquidationStressTest is Test {
         
         // Multiple liquidators compete to liquidate the same position
         address[3] memory liquidators = [liquidator1, liquidator2, liquidator3];
-        uint256[3] memory liquidationAmounts = [uint256(15000e6), uint256(10000e6), uint256(8000e6)];
+        uint256[3] memory liquidationAmounts = [uint256(15000e6), uint256(8000e6), uint256(5000e6)];
         
         (uint256 collateralBefore,,) = lendingManager.getUserPosition(borrower, address(weth));
         (, uint256 debtBefore,) = lendingManager.getUserPosition(borrower, address(usdc));

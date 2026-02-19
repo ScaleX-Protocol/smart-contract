@@ -42,6 +42,9 @@ contract AutoRepayTest is Test, IPriceOracle {
     address public trader = address(0x2);
     address public borrower = address(0x3);
     address public router = address(0x4);
+
+    address public wethSynthetic;
+    address public usdcSynthetic;
     
     uint256 public constant USDC_PRICE = 1000 * 1e6;  // $1000 per USDC in base units
     
@@ -94,8 +97,8 @@ contract AutoRepayTest is Test, IPriceOracle {
         balanceManager.setLendingManager(address(lendingManager));
         
         // Create synthetic tokens and set up TokenRegistry
-        address wethSynthetic = tokenFactory.createSyntheticToken(address(weth));
-        address usdcSynthetic = tokenFactory.createSyntheticToken(address(usdc));
+        wethSynthetic = tokenFactory.createSyntheticToken(address(weth));
+        usdcSynthetic = tokenFactory.createSyntheticToken(address(usdc));
         
         balanceManager.addSupportedAsset(address(weth), wethSynthetic);
         balanceManager.addSupportedAsset(address(usdc), usdcSynthetic);
@@ -126,6 +129,7 @@ contract AutoRepayTest is Test, IPriceOracle {
         lendingManager.setBalanceManager(address(balanceManager));
         lendingManager.configureAsset(address(usdc), 7500, 8500, 500, 1000);
         lendingManager.configureAsset(address(weth), 8000, 8500, 500, 1000);
+        lendingManager.setOracle(address(this)); // this test contract implements IOracle
         
         // Deploy OrderBook beacon and PoolManager using BeaconDeployer
         UpgradeableBeacon orderBookBeacon = new UpgradeableBeacon(address(new OrderBook()), owner);
@@ -483,14 +487,14 @@ contract AutoRepayTest is Test, IPriceOracle {
 
     // Additional oracle functions required by LendingManager (IOracle interface)
     function getPriceForCollateral(address token) external view returns (uint256) {
-        if (token == address(weth)) return 2000e18;
-        if (token == address(usdc)) return 1e18;
+        if (token == address(weth) || token == wethSynthetic) return 2000e18;
+        if (token == address(usdc) || token == usdcSynthetic) return 1e18;
         return 1e18;
     }
 
     function getPriceForBorrowing(address token) external view returns (uint256) {
-        if (token == address(weth)) return 2000e18;
-        if (token == address(usdc)) return 1e18;
+        if (token == address(weth) || token == wethSynthetic) return 2000e18;
+        if (token == address(usdc) || token == usdcSynthetic) return 1e18;
         return 1e18;
     }
 

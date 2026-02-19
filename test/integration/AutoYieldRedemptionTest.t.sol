@@ -16,12 +16,34 @@ import {BeaconDeployer} from "../core/helpers/BeaconDeployer.t.sol";
 import "@openzeppelin/contracts/proxy/beacon/BeaconProxy.sol";
 
 
+interface IERC20Decimals {
+    function decimals() external view returns (uint8);
+}
+
+contract MockOracle {
+    function _priceFor(address token) internal view returns (uint256) {
+        try IERC20Decimals(token).decimals() returns (uint8 dec) {
+            if (dec == 18) return 2000e18;
+        } catch {}
+        return 1e18;
+    }
+
+    function getPriceForCollateral(address token) external view returns (uint256) {
+        return _priceFor(token);
+    }
+
+    function getPriceForBorrowing(address token) external view returns (uint256) {
+        return _priceFor(token);
+    }
+}
+
 contract AutoYieldRedemptionTest is Test {
     // Events from BalanceManager
     event YieldAutoClaimed(address indexed user, uint256 indexed currencyId, uint256 timestamp);
     event SyntheticTokenSwitched(address indexed user, address indexed newToken, uint256 amount);
     event Unlock(address indexed user, uint256 indexed currencyId, uint256 amount);
 
+    MockOracle public mockOracle;
     BalanceManager public balanceManager;
     LendingManager public lendingManager;
     SyntheticTokenFactory public tokenFactory;
@@ -43,6 +65,9 @@ contract AutoYieldRedemptionTest is Test {
     event TestLog(string message);
     
     function setUp() public {
+        // Deploy mock oracle
+        mockOracle = new MockOracle();
+
         // Deploy mock tokens with proper decimals
         usdc = new MockToken("USDC", "USDC", 6);
         weth = new MockToken("WETH", "WETH", 18);
@@ -80,7 +105,7 @@ contract AutoYieldRedemptionTest is Test {
         (BeaconProxy lendingProxy,) = beaconDeployer.deployUpgradeableContract(
             address(new LendingManager()),
             owner,
-            abi.encodeCall(LendingManager.initialize, (owner, address(this), address(0x742d35Cc6634c0532925A3B8d4C9db96c4B3D8B9)))
+            abi.encodeCall(LendingManager.initialize, (owner, address(this), address(mockOracle)))
         );
         lendingManager = LendingManager(address(lendingProxy));
         

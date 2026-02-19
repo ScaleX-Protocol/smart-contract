@@ -440,10 +440,10 @@ contract LendingManagerTest is Test {
         balanceManager.depositLocal(address(weth), collateralAmount, borrower1);
         vm.stopPrank();
 
-        // Borrow via router (Router -> BalanceManager -> LendingManager)
+        // Borrow directly via LendingManager (tokens go to borrower's wallet)
         uint256 borrowAmount = 5_000 * 1e6; // 5K USDC
         vm.startPrank(borrower1);
-        router.borrow(address(usdc), borrowAmount);
+        lendingManager.borrow(address(usdc), borrowAmount);
         vm.stopPrank();
 
         // Verify borrowing
@@ -571,19 +571,19 @@ contract LendingManagerTest is Test {
         balanceManager.depositLocal(address(weth), 15 ether, borrower1);
         
         vm.startPrank(borrower1);
-        router.borrow(address(usdc), borrowAmount);
+        lendingManager.borrow(address(usdc), borrowAmount);
         vm.stopPrank();
 
         // Advance time to accrue interest
         vm.warp(block.timestamp + 30 days);
 
-        // Repay loan
+        // Repay loan directly via LendingManager (borrower has real USDC in wallet)
         uint256 usdcBalanceBefore = usdc.balanceOf(borrower1);
         uint256 totalDebtBefore = lendingManager.getUserDebt(borrower1, address(usdc));
-        
+
         vm.startPrank(borrower1);
-        usdc.approve(address(router), totalDebtBefore);
-        router.repay(address(usdc), totalDebtBefore);
+        usdc.approve(address(lendingManager), totalDebtBefore);
+        lendingManager.repay(address(usdc), totalDebtBefore);
         vm.stopPrank();
 
         // Verify repayment
@@ -815,7 +815,7 @@ contract LendingManagerTest is Test {
         vm.startPrank(borrower1);
         weth.approve(address(balanceManager), 20 ether);
         balanceManager.depositLocal(address(weth), 20 ether, borrower1);
-        router.borrow(address(usdc), 29000 * 1e6); // Borrow $29,000 (under $30K limit with 75% LT)
+        lendingManager.borrow(address(usdc), 29000 * 1e6); // Borrow $29,000 (under $30K limit with 75% LT)
         vm.stopPrank();
 
         // Now drop WETH price to make user undercollateralized
@@ -824,7 +824,8 @@ contract LendingManagerTest is Test {
         // With 75% LT: $20,000 * 0.75 = $15,000 max borrow
         // But user owes $29,000 -> liquidatable!
         address wethSynthetic = balanceManager.getSyntheticToken(address(weth));
-        mockOracle.setPrice(wethSynthetic, 1000 * 1e18); // Drop to $1000
+        mockOracle.setPrice(wethSynthetic, 1000 * 1e18); // Drop synthetic WETH to $1000
+        mockOracle.setPrice(address(weth), 1000 * 1e18); // Also drop underlying WETH (used by getHealthFactor)
 
         // Check health factor
         uint256 healthFactor = lendingManager.getHealthFactor(borrower1);
@@ -875,12 +876,13 @@ contract LendingManagerTest is Test {
         vm.startPrank(borrower1);
         weth.approve(address(balanceManager), 20 ether);
         balanceManager.depositLocal(address(weth), 20 ether, borrower1);
-        router.borrow(address(usdc), 29000 * 1e6); // Borrow up to safe limit
+        lendingManager.borrow(address(usdc), 29000 * 1e6); // Borrow up to safe limit
         vm.stopPrank();
 
         // Drop WETH price to make user liquidatable
         address wethSynthetic = balanceManager.getSyntheticToken(address(weth));
-        mockOracle.setPrice(wethSynthetic, 1000 * 1e18); // Drop to $1000
+        mockOracle.setPrice(wethSynthetic, 1000 * 1e18); // Drop synthetic WETH to $1000
+        mockOracle.setPrice(address(weth), 1000 * 1e18); // Also drop underlying WETH (used by getHealthFactor)
 
         vm.warp(block.timestamp + 15 days);
         
@@ -923,7 +925,7 @@ contract LendingManagerTest is Test {
         vm.startPrank(borrower1);
         weth.approve(address(balanceManager), 25 ether);
         balanceManager.depositLocal(address(weth), 25 ether, borrower1);
-        router.borrow(address(usdc), 8000 * 1e6);
+        lendingManager.borrow(address(usdc), 8000 * 1e6);
         vm.stopPrank();
 
         // Drop WETH price to make user liquidatable
@@ -931,7 +933,8 @@ contract LendingManagerTest is Test {
         // With 75% LT: $10,000 * 0.75 = $7,500 max borrow
         // User owes $8,000 -> liquidatable!
         address wethSynthetic = balanceManager.getSyntheticToken(address(weth));
-        mockOracle.setPrice(wethSynthetic, 400 * 1e18); // Drop to $400
+        mockOracle.setPrice(wethSynthetic, 400 * 1e18); // Drop synthetic WETH to $400
+        mockOracle.setPrice(address(weth), 400 * 1e18); // Also drop underlying WETH (used by getHealthFactor)
 
         vm.warp(block.timestamp + 10 days);
 
@@ -1037,7 +1040,7 @@ contract LendingManagerTest is Test {
         vm.startPrank(borrower1);
         weth.approve(address(balanceManager), 15 ether);
         balanceManager.depositLocal(address(weth), 15 ether, borrower1);
-        router.borrow(address(usdc), 5500 * 1e6); // Borrow $5,500
+        lendingManager.borrow(address(usdc), 5500 * 1e6); // Borrow $5,500
         vm.stopPrank();
 
         // Drop WETH price to make user liquidatable
@@ -1045,7 +1048,8 @@ contract LendingManagerTest is Test {
         // With 75% LT: $6,750 * 0.75 = $5,062 max borrow
         // User owes $5,500 -> liquidatable!
         address wethSynthetic = balanceManager.getSyntheticToken(address(weth));
-        mockOracle.setPrice(wethSynthetic, 450 * 1e18); // Drop to $450
+        mockOracle.setPrice(wethSynthetic, 450 * 1e18); // Drop synthetic WETH to $450
+        mockOracle.setPrice(address(weth), 450 * 1e18); // Also drop underlying WETH (used by getHealthFactor)
 
         vm.warp(block.timestamp + 7 days);
         

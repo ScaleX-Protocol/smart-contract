@@ -14,7 +14,29 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import {MockToken} from "../../src/mocks/MockToken.sol";
 
+interface IERC20Decimals {
+    function decimals() external view returns (uint8);
+}
+
+contract MockOracle {
+    function _priceFor(address token) internal view returns (uint256) {
+        try IERC20Decimals(token).decimals() returns (uint8 dec) {
+            if (dec == 18) return 2000e18;
+        } catch {}
+        return 1e18;
+    }
+
+    function getPriceForCollateral(address token) external view returns (uint256) {
+        return _priceFor(token);
+    }
+
+    function getPriceForBorrowing(address token) external view returns (uint256) {
+        return _priceFor(token);
+    }
+}
+
 contract WeightedCheckpointTest is Test {
+    MockOracle public mockOracle;
     IBalanceManager public balanceManager;
     ITokenRegistry public tokenRegistry;
     SyntheticToken public syntheticToken;
@@ -35,6 +57,9 @@ contract WeightedCheckpointTest is Test {
     uint256 constant BASIS_POINTS = 10000;
     
     function setUp() public {
+        // Deploy mock oracle
+        mockOracle = new MockOracle();
+
         // Deploy mock tokens
         usdc = new MockToken("USDC", "USDC", 6);
         weth = new MockToken("WETH", "WETH", 18);
@@ -68,7 +93,7 @@ contract WeightedCheckpointTest is Test {
                 LendingManager.initialize.selector,
                 owner,
                 address(balanceProxy), // Pass BalanceManager address
-                address(0x742d35Cc6634c0532925A3B8d4C9db96c4B3D8B9) // Mock oracle address
+                address(mockOracle) // Mock oracle
             )
         );
         lendingManager = LendingManager(address(lendingProxy));

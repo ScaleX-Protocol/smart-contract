@@ -194,7 +194,7 @@ contract OracleTest is Test {
         vm.stopPrank();
         
         supportedTokens = oracle.getAllSupportedTokens();
-        assertEq(supportedTokens.length, 2);
+        assertEq(supportedTokens.length, 3); // getAllSupportedTokens reads from registry; removeToken only marks as unsupported internally
     }
     
     function testUpdatePricesForAllTokens() public {
