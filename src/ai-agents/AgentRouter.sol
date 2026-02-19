@@ -1,11 +1,15 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.20;
+pragma solidity ^0.8.26;
 
+import {OwnableUpgradeable} from "../../lib/openzeppelin-contracts-upgradeable/contracts/access/OwnableUpgradeable.sol";
+import {ReentrancyGuardUpgradeable} from "../../lib/openzeppelin-contracts-upgradeable/contracts/utils/ReentrancyGuardUpgradeable.sol";
 import "./interfaces/IERC8004Identity.sol";
 import "./interfaces/IERC8004Reputation.sol";
 import "./interfaces/IERC8004Validation.sol";
 import "./PolicyFactory.sol";
+import {PolicyFactoryStorage} from "./storages/PolicyFactoryStorage.sol";
 import "./ChainlinkMetricsConsumer.sol";
+import {AgentRouterStorage} from "./storages/AgentRouterStorage.sol";
 import "../core/interfaces/IOrderBook.sol";
 import "../core/interfaces/IBalanceManager.sol";
 import "../core/interfaces/ILendingManager.sol";
@@ -25,27 +29,10 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
  *      AgentRouter verifies: msg.sender == ownerOf(strategyAgentId)
  *                            authorizedStrategyAgents[user][strategyAgentId] == true
  *                            policy limits are respected
+ *
+ * @dev Upgradeable via Beacon Proxy + Diamond Storage (ERC-7201).
  */
-contract AgentRouter {
-    // ============ State Variables ============
-
-    IERC8004Identity public immutable identityRegistry;
-    IERC8004Reputation public immutable reputationRegistry;
-    IERC8004Validation public immutable validationRegistry;
-    PolicyFactory public immutable policyFactory;
-    ChainlinkMetricsConsumer public metricsConsumer;
-
-    IPoolManager public immutable poolManager;
-    IBalanceManager public immutable balanceManager;
-    ILendingManager public immutable lendingManager;
-
-    // Circuit-breaker tracking (keyed by strategyAgentId — reputation is per strategy)
-    mapping(address => mapping(uint256 => uint256)) public dayStartValues;  // user => day => value
-    mapping(uint256 => uint256) public lastTradeTime;                        // strategyAgentId => timestamp
-    mapping(uint256 => mapping(uint256 => uint256)) public dailyVolumes;    // strategyAgentId => day => volume
-
-    // user => strategyAgentId => authorized
-    mapping(address => mapping(uint256 => bool)) public authorizedStrategyAgents;
+contract AgentRouter is AgentRouterStorage, OwnableUpgradeable, ReentrancyGuardUpgradeable {
 
     // ============ Events ============
 
@@ -147,9 +134,15 @@ contract AgentRouter {
         uint256 timestamp
     );
 
-    // ============ Constructor ============
+    // ============ Constructor / Initializer ============
 
-    constructor(
+    /// @custom:oz-upgrades-unsafe-allow constructor
+    constructor() {
+        _disableInitializers();
+    }
+
+    function initialize(
+        address _owner,
         address _identityRegistry,
         address _reputationRegistry,
         address _validationRegistry,
@@ -157,19 +150,73 @@ contract AgentRouter {
         address _poolManager,
         address _balanceManager,
         address _lendingManager
-    ) {
-        identityRegistry = IERC8004Identity(_identityRegistry);
-        reputationRegistry = IERC8004Reputation(_reputationRegistry);
-        validationRegistry = IERC8004Validation(_validationRegistry);
-        policyFactory = PolicyFactory(_policyFactory);
-        poolManager = IPoolManager(_poolManager);
-        balanceManager = IBalanceManager(_balanceManager);
-        lendingManager = ILendingManager(_lendingManager);
+    ) public initializer {
+        __Ownable_init(_owner);
+        __ReentrancyGuard_init();
+        Storage storage $ = getStorage();
+        $.identityRegistry = _identityRegistry;
+        $.reputationRegistry = _reputationRegistry;
+        $.validationRegistry = _validationRegistry;
+        $.policyFactory = _policyFactory;
+        $.poolManager = _poolManager;
+        $.balanceManager = _balanceManager;
+        $.lendingManager = _lendingManager;
     }
 
-    function setMetricsConsumer(address _metricsConsumer) external {
-        require(address(metricsConsumer) == address(0), "Already set");
-        metricsConsumer = ChainlinkMetricsConsumer(_metricsConsumer);
+    // ============ Public getters (replaces public immutable getters) ============
+
+    function identityRegistry() external view returns (address) {
+        return getStorage().identityRegistry;
+    }
+
+    function reputationRegistry() external view returns (address) {
+        return getStorage().reputationRegistry;
+    }
+
+    function validationRegistry() external view returns (address) {
+        return getStorage().validationRegistry;
+    }
+
+    function policyFactory() external view returns (address) {
+        return getStorage().policyFactory;
+    }
+
+    function metricsConsumer() external view returns (address) {
+        return getStorage().metricsConsumer;
+    }
+
+    function poolManager() external view returns (address) {
+        return getStorage().poolManager;
+    }
+
+    function balanceManager() external view returns (address) {
+        return getStorage().balanceManager;
+    }
+
+    function lendingManager() external view returns (address) {
+        return getStorage().lendingManager;
+    }
+
+    function dayStartValues(address user, uint256 day) external view returns (uint256) {
+        return getStorage().dayStartValues[user][day];
+    }
+
+    function lastTradeTime(uint256 strategyAgentId) external view returns (uint256) {
+        return getStorage().lastTradeTime[strategyAgentId];
+    }
+
+    function dailyVolumes(uint256 strategyAgentId, uint256 day) external view returns (uint256) {
+        return getStorage().dailyVolumes[strategyAgentId][day];
+    }
+
+    function authorizedStrategyAgents(address user, uint256 strategyAgentId) external view returns (bool) {
+        return getStorage().authorizedStrategyAgents[user][strategyAgentId];
+    }
+
+    // ============ Admin ============
+
+    function setMetricsConsumer(address _metricsConsumer) external onlyOwner {
+        getStorage().metricsConsumer = _metricsConsumer;
     }
 
     // ============ Authorization ============
@@ -182,10 +229,11 @@ contract AgentRouter {
      */
     function authorize(
         uint256 strategyAgentId,
-        PolicyFactory.Policy calldata policy
+        PolicyFactoryStorage.Policy calldata policy
     ) external {
-        policyFactory.installPolicyFor(msg.sender, strategyAgentId, policy);
-        authorizedStrategyAgents[msg.sender][strategyAgentId] = true;
+        Storage storage $ = getStorage();
+        PolicyFactory($.policyFactory).installPolicyFor(msg.sender, strategyAgentId, policy);
+        $.authorizedStrategyAgents[msg.sender][strategyAgentId] = true;
         emit StrategyAgentAuthorized(msg.sender, strategyAgentId, block.timestamp);
     }
 
@@ -193,8 +241,9 @@ contract AgentRouter {
      * @notice Revoke a strategy agent's authorization and remove its policy.
      */
     function revoke(uint256 strategyAgentId) external {
-        authorizedStrategyAgents[msg.sender][strategyAgentId] = false;
-        policyFactory.uninstallPolicyFor(msg.sender, strategyAgentId);
+        Storage storage $ = getStorage();
+        $.authorizedStrategyAgents[msg.sender][strategyAgentId] = false;
+        PolicyFactory($.policyFactory).uninstallPolicyFor(msg.sender, strategyAgentId);
         emit StrategyAgentRevoked(msg.sender, strategyAgentId, block.timestamp);
     }
 
@@ -202,7 +251,7 @@ contract AgentRouter {
      * @notice Check if a strategy agent is authorized by a user.
      */
     function isAuthorized(address user, uint256 strategyAgentId) external view returns (bool) {
-        return authorizedStrategyAgents[user][strategyAgentId];
+        return getStorage().authorizedStrategyAgents[user][strategyAgentId];
     }
 
     // ============ Internal Auth Helper ============
@@ -210,17 +259,18 @@ contract AgentRouter {
     function _verifyAndGetPolicy(
         address user,
         uint256 strategyAgentId
-    ) internal view returns (PolicyFactory.Policy memory policy) {
+    ) internal view returns (PolicyFactoryStorage.Policy memory policy) {
+        Storage storage $ = getStorage();
         require(
-            msg.sender == identityRegistry.ownerOf(strategyAgentId),
+            msg.sender == IERC8004Identity($.identityRegistry).ownerOf(strategyAgentId),
             "Not strategy agent owner"
         );
         require(
-            authorizedStrategyAgents[user][strategyAgentId],
+            $.authorizedStrategyAgents[user][strategyAgentId],
             "Strategy agent not authorized"
         );
 
-        policy = policyFactory.getPolicy(user, strategyAgentId);
+        policy = PolicyFactory($.policyFactory).getPolicy(user, strategyAgentId);
         require(policy.enabled, "Agent disabled");
         require(block.timestamp < policy.expiryTimestamp, "Agent expired");
     }
@@ -242,7 +292,7 @@ contract AgentRouter {
         bool autoRepay,
         bool autoBorrow
     ) external returns (uint48 orderId, uint128 filled) {
-        PolicyFactory.Policy memory policy = _verifyAndGetPolicy(user, strategyAgentId);
+        PolicyFactoryStorage.Policy memory policy = _verifyAndGetPolicy(user, strategyAgentId);
 
         require(!policy.requiresChainlinkFunctions, "Use executeMarketOrderWithMetrics");
 
@@ -280,7 +330,7 @@ contract AgentRouter {
         bool autoRepay,
         bool autoBorrow
     ) external returns (uint48 orderId) {
-        PolicyFactory.Policy memory policy = _verifyAndGetPolicy(user, strategyAgentId);
+        PolicyFactoryStorage.Policy memory policy = _verifyAndGetPolicy(user, strategyAgentId);
 
         require(policy.allowLimitOrders, "Limit orders not allowed");
         require(policy.allowPlaceLimitOrder, "Placing limit orders not allowed");
@@ -314,7 +364,7 @@ contract AgentRouter {
         IPoolManager.Pool calldata pool,
         uint48 orderId
     ) external {
-        PolicyFactory.Policy memory policy = _verifyAndGetPolicy(user, strategyAgentId);
+        PolicyFactoryStorage.Policy memory policy = _verifyAndGetPolicy(user, strategyAgentId);
         require(policy.allowCancelOrder, "Cancelling orders not allowed");
 
         pool.orderBook.cancelOrder(orderId, user, strategyAgentId, msg.sender);
@@ -337,18 +387,19 @@ contract AgentRouter {
         address token,
         uint256 amount
     ) external {
-        PolicyFactory.Policy memory policy = _verifyAndGetPolicy(user, strategyAgentId);
+        Storage storage $ = getStorage();
+        PolicyFactoryStorage.Policy memory policy = _verifyAndGetPolicy(user, strategyAgentId);
 
         require(policy.allowBorrow, "Borrowing not allowed");
         require(amount <= policy.maxAutoBorrowAmount, "Borrow amount exceeds limit");
-        require(policyFactory.isTokenAllowed(user, strategyAgentId, token), "Token not allowed");
+        require(PolicyFactory($.policyFactory).isTokenAllowed(user, strategyAgentId, token), "Token not allowed");
 
-        uint256 currentHF = lendingManager.getHealthFactor(user);
+        uint256 currentHF = ILendingManager($.lendingManager).getHealthFactor(user);
         require(currentHF >= policy.minHealthFactor, "Health factor too low");
 
-        balanceManager.borrowForUser(user, token, amount);
+        IBalanceManager($.balanceManager).borrowForUser(user, token, amount);
 
-        uint256 newHF = lendingManager.getHealthFactor(user);
+        uint256 newHF = ILendingManager($.lendingManager).getHealthFactor(user);
         require(newHF >= policy.minHealthFactor, "Borrow would harm health factor");
 
         _recordBorrowToReputation(strategyAgentId, token, amount);
@@ -365,12 +416,13 @@ contract AgentRouter {
         address token,
         uint256 amount
     ) external {
-        PolicyFactory.Policy memory policy = _verifyAndGetPolicy(user, strategyAgentId);
+        Storage storage $ = getStorage();
+        PolicyFactoryStorage.Policy memory policy = _verifyAndGetPolicy(user, strategyAgentId);
         require(policy.allowRepay, "Repaying not allowed");
 
-        balanceManager.repayForUser(user, token, amount);
+        IBalanceManager($.balanceManager).repayForUser(user, token, amount);
 
-        uint256 newHF = lendingManager.getHealthFactor(user);
+        uint256 newHF = ILendingManager($.lendingManager).getHealthFactor(user);
         _recordRepayToReputation(strategyAgentId, token, amount);
 
         emit AgentRepayExecuted(user, strategyAgentId, msg.sender, token, amount, newHF, block.timestamp);
@@ -385,13 +437,14 @@ contract AgentRouter {
         address token,
         uint256 amount
     ) external {
-        PolicyFactory.Policy memory policy = _verifyAndGetPolicy(user, strategyAgentId);
+        Storage storage $ = getStorage();
+        PolicyFactoryStorage.Policy memory policy = _verifyAndGetPolicy(user, strategyAgentId);
         require(policy.allowSupplyCollateral, "Supplying collateral not allowed");
-        require(policyFactory.isTokenAllowed(user, strategyAgentId, token), "Token not allowed");
+        require(PolicyFactory($.policyFactory).isTokenAllowed(user, strategyAgentId, token), "Token not allowed");
 
         IERC20(token).transferFrom(user, address(this), amount);
-        IERC20(token).approve(address(balanceManager), amount);
-        balanceManager.depositLocal(token, amount, user);
+        IERC20(token).approve($.balanceManager, amount);
+        IBalanceManager($.balanceManager).depositLocal(token, amount, user);
 
         emit AgentCollateralSupplied(user, strategyAgentId, msg.sender, token, amount, block.timestamp);
     }
@@ -405,15 +458,16 @@ contract AgentRouter {
         address token,
         uint256 amount
     ) external {
-        PolicyFactory.Policy memory policy = _verifyAndGetPolicy(user, strategyAgentId);
+        Storage storage $ = getStorage();
+        PolicyFactoryStorage.Policy memory policy = _verifyAndGetPolicy(user, strategyAgentId);
         require(policy.allowWithdrawCollateral, "Withdrawing collateral not allowed");
 
-        uint256 currentHF = lendingManager.getHealthFactor(user);
+        uint256 currentHF = ILendingManager($.lendingManager).getHealthFactor(user);
         require(currentHF >= policy.minHealthFactor, "Health factor too low");
 
-        balanceManager.withdraw(Currency.wrap(token), amount, user);
+        IBalanceManager($.balanceManager).withdraw(Currency.wrap(token), amount, user);
 
-        uint256 newHF = lendingManager.getHealthFactor(user);
+        uint256 newHF = ILendingManager($.lendingManager).getHealthFactor(user);
         require(newHF >= policy.minHealthFactor, "Withdrawal would harm health factor");
 
         emit AgentCollateralWithdrawn(user, strategyAgentId, msg.sender, token, amount, block.timestamp);
@@ -422,7 +476,7 @@ contract AgentRouter {
     // ============ Permission Enforcement ============
 
     function _enforceMarketOrderPermissions(
-        PolicyFactory.Policy memory policy,
+        PolicyFactoryStorage.Policy memory policy,
         address user,
         uint256 strategyAgentId,
         IPoolManager.Pool calldata pool,
@@ -431,11 +485,12 @@ contract AgentRouter {
         bool autoRepay,
         bool autoBorrow
     ) internal view {
+        Storage storage $ = getStorage();
         require(quantity <= policy.maxOrderSize, "Order too large");
         if (policy.minOrderSize > 0) require(quantity >= policy.minOrderSize, "Order too small");
 
-        require(policyFactory.isTokenAllowed(user, strategyAgentId, Currency.unwrap(pool.baseCurrency)), "Base token not allowed");
-        require(policyFactory.isTokenAllowed(user, strategyAgentId, Currency.unwrap(pool.quoteCurrency)), "Quote token not allowed");
+        require(PolicyFactory($.policyFactory).isTokenAllowed(user, strategyAgentId, Currency.unwrap(pool.baseCurrency)), "Base token not allowed");
+        require(PolicyFactory($.policyFactory).isTokenAllowed(user, strategyAgentId, Currency.unwrap(pool.quoteCurrency)), "Quote token not allowed");
 
         require(policy.allowSwap, "Swap not allowed");
         require(policy.allowMarketOrders, "Market orders not allowed");
@@ -446,18 +501,18 @@ contract AgentRouter {
         if (autoBorrow) require(policy.allowAutoBorrow, "Auto-borrow not allowed");
         if (autoRepay)  require(policy.allowAutoRepay,  "Auto-repay not allowed");
 
-        require(lendingManager.getHealthFactor(user) >= policy.minHealthFactor, "Health factor too low");
+        require(ILendingManager($.lendingManager).getHealthFactor(user) >= policy.minHealthFactor, "Health factor too low");
 
         if (policy.minTimeBetweenTrades > 0) {
             require(
-                block.timestamp >= lastTradeTime[strategyAgentId] + policy.minTimeBetweenTrades,
+                block.timestamp >= $.lastTradeTime[strategyAgentId] + policy.minTimeBetweenTrades,
                 "Cooldown period active"
             );
         }
     }
 
     function _enforceLimitOrderPermissions(
-        PolicyFactory.Policy memory policy,
+        PolicyFactoryStorage.Policy memory policy,
         address user,
         uint256 strategyAgentId,
         IPoolManager.Pool calldata pool,
@@ -466,11 +521,12 @@ contract AgentRouter {
         bool autoRepay,
         bool autoBorrow
     ) internal view {
+        Storage storage $ = getStorage();
         require(quantity <= policy.maxOrderSize, "Order too large");
         if (policy.minOrderSize > 0) require(quantity >= policy.minOrderSize, "Order too small");
 
-        require(policyFactory.isTokenAllowed(user, strategyAgentId, Currency.unwrap(pool.baseCurrency)), "Base token not allowed");
-        require(policyFactory.isTokenAllowed(user, strategyAgentId, Currency.unwrap(pool.quoteCurrency)), "Quote token not allowed");
+        require(PolicyFactory($.policyFactory).isTokenAllowed(user, strategyAgentId, Currency.unwrap(pool.baseCurrency)), "Base token not allowed");
+        require(PolicyFactory($.policyFactory).isTokenAllowed(user, strategyAgentId, Currency.unwrap(pool.quoteCurrency)), "Quote token not allowed");
 
         require(policy.allowLimitOrders, "Limit orders not allowed");
         require(policy.allowPlaceLimitOrder, "Placing limit orders not allowed");
@@ -481,11 +537,11 @@ contract AgentRouter {
         if (autoBorrow) require(policy.allowAutoBorrow, "Auto-borrow not allowed");
         if (autoRepay)  require(policy.allowAutoRepay,  "Auto-repay not allowed");
 
-        require(lendingManager.getHealthFactor(user) >= policy.minHealthFactor, "Health factor too low");
+        require(ILendingManager($.lendingManager).getHealthFactor(user) >= policy.minHealthFactor, "Health factor too low");
 
         if (policy.minTimeBetweenTrades > 0) {
             require(
-                block.timestamp >= lastTradeTime[strategyAgentId] + policy.minTimeBetweenTrades,
+                block.timestamp >= $.lastTradeTime[strategyAgentId] + policy.minTimeBetweenTrades,
                 "Cooldown period active"
             );
         }
@@ -496,25 +552,26 @@ contract AgentRouter {
     function _checkCircuitBreaker(
         address user,
         uint256 strategyAgentId,
-        PolicyFactory.Policy memory policy
+        PolicyFactoryStorage.Policy memory policy
     ) internal {
         if (policy.maxDailyDrawdown == 0) return;
 
+        Storage storage $ = getStorage();
         uint256 today = block.timestamp / 1 days;
         uint256 currentValue = _getPortfolioValue(user);
 
-        if (dayStartValues[user][today] == 0) {
-            dayStartValues[user][today] = currentValue;
+        if ($.dayStartValues[user][today] == 0) {
+            $.dayStartValues[user][today] = currentValue;
             return;
         }
 
-        uint256 startValue = dayStartValues[user][today];
+        uint256 startValue = $.dayStartValues[user][today];
         if (currentValue < startValue) {
             uint256 drawdownBps = ((startValue - currentValue) * 10000) / startValue;
             if (drawdownBps > policy.maxDailyDrawdown) {
-                policyFactory.emergencyDisable(user, strategyAgentId, "CIRCUIT_BREAKER_DRAWDOWN");
+                PolicyFactory($.policyFactory).emergencyDisable(user, strategyAgentId, "CIRCUIT_BREAKER_DRAWDOWN");
 
-                validationRegistry.requestValidation(
+                IERC8004Validation($.validationRegistry).requestValidation(
                     strategyAgentId,
                     IERC8004Validation.ValidationTask.CIRCUIT_BREAKER,
                     abi.encode(currentValue, startValue, drawdownBps, block.timestamp)
@@ -533,9 +590,10 @@ contract AgentRouter {
     // ============ Tracking ============
 
     function _updateTracking(uint256 strategyAgentId, uint256 amountIn) internal {
-        lastTradeTime[strategyAgentId] = block.timestamp;
+        Storage storage $ = getStorage();
+        $.lastTradeTime[strategyAgentId] = block.timestamp;
         uint256 today = block.timestamp / 1 days;
-        dailyVolumes[strategyAgentId][today] += amountIn;
+        $.dailyVolumes[strategyAgentId][today] += amountIn;
     }
 
     // ============ Reputation Recording ============
@@ -548,7 +606,7 @@ contract AgentRouter {
         uint256 amountOut
     ) internal {
         int256 pnl = int256(amountOut) - int256(amountIn);
-        reputationRegistry.submitFeedback(
+        IERC8004Reputation(getStorage().reputationRegistry).submitFeedback(
             strategyAgentId,
             IERC8004Reputation.FeedbackType.TRADE_EXECUTION,
             abi.encode(pnl, amountIn, amountOut, block.timestamp)
@@ -556,7 +614,7 @@ contract AgentRouter {
     }
 
     function _recordBorrowToReputation(uint256 strategyAgentId, address token, uint256 amount) internal {
-        reputationRegistry.submitFeedback(
+        IERC8004Reputation(getStorage().reputationRegistry).submitFeedback(
             strategyAgentId,
             IERC8004Reputation.FeedbackType.BORROW,
             abi.encode(token, amount, block.timestamp)
@@ -564,7 +622,7 @@ contract AgentRouter {
     }
 
     function _recordRepayToReputation(uint256 strategyAgentId, address token, uint256 amount) internal {
-        reputationRegistry.submitFeedback(
+        IERC8004Reputation(getStorage().reputationRegistry).submitFeedback(
             strategyAgentId,
             IERC8004Reputation.FeedbackType.REPAY,
             abi.encode(token, amount, block.timestamp)
@@ -574,14 +632,14 @@ contract AgentRouter {
     // ============ View Functions ============
 
     function getDailyVolume(uint256 strategyAgentId) external view returns (uint256) {
-        return dailyVolumes[strategyAgentId][block.timestamp / 1 days];
+        return getStorage().dailyVolumes[strategyAgentId][block.timestamp / 1 days];
     }
 
     function getLastTradeTime(uint256 strategyAgentId) external view returns (uint256) {
-        return lastTradeTime[strategyAgentId];
+        return getStorage().lastTradeTime[strategyAgentId];
     }
 
     function getDayStartValue(address user) external view returns (uint256) {
-        return dayStartValues[user][block.timestamp / 1 days];
+        return getStorage().dayStartValues[user][block.timestamp / 1 days];
     }
 }

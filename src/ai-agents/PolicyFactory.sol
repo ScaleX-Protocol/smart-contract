@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.20;
+pragma solidity ^0.8.26;
 
+import {OwnableUpgradeable} from "../../lib/openzeppelin-contracts-upgradeable/contracts/access/OwnableUpgradeable.sol";
 import "./interfaces/IERC8004Identity.sol";
+import {PolicyFactoryStorage} from "./storages/PolicyFactoryStorage.sol";
 
 /**
  * @title PolicyFactory
@@ -14,119 +16,12 @@ import "./interfaces/IERC8004Identity.sol";
  * Users never need to register an NFT. Only strategy agents need one.
  * Use AgentRouter.authorize(strategyAgentId, policy) to install a policy and
  * grant authorization in a single transaction.
+ *
+ * @dev Upgradeable via Beacon Proxy + Diamond Storage (ERC-7201).
  */
-contract PolicyFactory {
-    // ============ State Variables ============
+contract PolicyFactory is PolicyFactoryStorage, OwnableUpgradeable {
 
-    IERC8004Identity public immutable identityRegistry;
-
-    // user => strategyAgentId => Policy
-    mapping(address => mapping(uint256 => Policy)) public policies;
-
-    // user => list of authorised strategy agent IDs
-    mapping(address => uint256[]) public installedAgents;
-
-    // Policy templates
-    mapping(string => PolicyTemplate) public templates;
-
-    // Authorized routers (AgentRouter) - can call installPolicyFor / uninstallPolicyFor
-    mapping(address => bool) public authorizedRouters;
-
-    address public owner;
-
-    // ============ Structs ============
-
-    struct Policy {
-        // ============ Metadata ============
-        bool enabled;
-        uint256 installedAt;
-        uint256 expiryTimestamp;
-        // Note: strategyAgentId is NOT stored here — it is the mapping key
-
-        // ============ SIMPLE PERMISSIONS (No external compute) ============
-
-        // Order Size
-        uint256 maxOrderSize;
-        uint256 minOrderSize;
-
-        // Allowed Markets
-        address[] whitelistedTokens;
-        address[] blacklistedTokens;
-
-        // Order Types
-        bool allowMarketOrders;
-        bool allowLimitOrders;
-
-        // Operations
-        bool allowSwap;
-        bool allowBorrow;
-        bool allowRepay;
-        bool allowSupplyCollateral;
-        bool allowWithdrawCollateral;
-        bool allowPlaceLimitOrder;
-        bool allowCancelOrder;
-
-        // Buy/Sell Direction
-        bool allowBuy;
-        bool allowSell;
-
-        // Auto-Borrow
-        bool allowAutoBorrow;
-        uint256 maxAutoBorrowAmount;
-
-        // Auto-Repay
-        bool allowAutoRepay;
-        uint256 minDebtToRepay;
-
-        // Safety
-        uint256 minHealthFactor;       // e.g., 1.5e18 = 150%
-        uint256 maxSlippageBps;        // e.g., 100 = 1%
-        uint256 minTimeBetweenTrades;  // seconds
-        address emergencyRecipient;
-
-        // ============ COMPLEX PERMISSIONS (Chainlink/AVS Required) ============
-
-        // Volume Limits
-        uint256 dailyVolumeLimit;
-        uint256 weeklyVolumeLimit;
-
-        // Drawdown Limits
-        uint256 maxDailyDrawdown;      // Basis points
-        uint256 maxWeeklyDrawdown;     // Basis points
-
-        // Market Depth
-        uint256 maxTradeVsTVLBps;
-
-        // Performance Requirements
-        uint256 minWinRateBps;
-        int256 minSharpeRatio;         // scaled by 1e18
-
-        // Position Management
-        uint256 maxPositionConcentrationBps;
-        uint256 maxCorrelationBps;
-
-        // Trade Frequency
-        uint256 maxTradesPerDay;
-        uint256 maxTradesPerHour;
-
-        // Trading Hours
-        uint256 tradingStartHour;      // UTC hour (0-23)
-        uint256 tradingEndHour;        // UTC hour (0-23)
-
-        // Reputation
-        uint256 minReputationScore;
-        bool useReputationMultiplier;
-
-        // ============ Optimization Flag ============
-        bool requiresChainlinkFunctions;
-    }
-
-    struct PolicyTemplate {
-        string name;
-        string description;
-        Policy basePolicy;
-        bool active;
-    }
+    // ============ Structs (calldata-only, not stored) ============
 
     struct PolicyCustomization {
         uint256 maxOrderSize;
@@ -176,24 +71,25 @@ contract PolicyFactory {
         uint256 timestamp
     );
 
-    // ============ Constructor ============
+    // ============ Constructor / Initializer ============
 
-    constructor(address _identityRegistry) {
-        identityRegistry = IERC8004Identity(_identityRegistry);
-        owner = msg.sender;
-        authorizedRouters[msg.sender] = true;
+    /// @custom:oz-upgrades-unsafe-allow constructor
+    constructor() {
+        _disableInitializers();
+    }
+
+    function initialize(address _owner, address _identityRegistry) public initializer {
+        __Ownable_init(_owner);
+        Storage storage $ = getStorage();
+        $.identityRegistry = _identityRegistry;
+        $.authorizedRouters[_owner] = true;
         _initializeTemplates();
     }
 
     // ============ Modifiers ============
 
-    modifier onlyOwner() {
-        require(msg.sender == owner, "Only owner");
-        _;
-    }
-
     modifier onlyAuthorizedRouter() {
-        require(authorizedRouters[msg.sender], "Not authorized router");
+        require(getStorage().authorizedRouters[msg.sender], "Not authorized router");
         _;
     }
 
@@ -208,12 +104,13 @@ contract PolicyFactory {
         uint256 strategyAgentId,
         Policy calldata policy
     ) external {
+        Storage storage $ = getStorage();
         // Verify strategy agent NFT exists (reverts on invalid token)
-        identityRegistry.ownerOf(strategyAgentId);
+        IERC8004Identity($.identityRegistry).ownerOf(strategyAgentId);
 
         require(
-            !policies[msg.sender][strategyAgentId].enabled &&
-                policies[msg.sender][strategyAgentId].installedAt == 0,
+            !$.policies[msg.sender][strategyAgentId].enabled &&
+                $.policies[msg.sender][strategyAgentId].installedAt == 0,
             "Policy already installed"
         );
 
@@ -229,15 +126,16 @@ contract PolicyFactory {
         string calldata templateName,
         PolicyCustomization calldata customizations
     ) external {
-        identityRegistry.ownerOf(strategyAgentId);
+        Storage storage $ = getStorage();
+        IERC8004Identity($.identityRegistry).ownerOf(strategyAgentId);
 
         require(
-            !policies[msg.sender][strategyAgentId].enabled,
+            !$.policies[msg.sender][strategyAgentId].enabled,
             "Policy already installed"
         );
 
         // Use storage reference to avoid copying PolicyTemplate memory (strings + Policy arrays = 4+ Yul loops)
-        PolicyTemplate storage tmpl = templates[templateName];
+        PolicyTemplate storage tmpl = $.templates[templateName];
         require(tmpl.active, "Template not found or inactive");
 
         _installFromTemplate(msg.sender, strategyAgentId, tmpl, customizations, templateName);
@@ -248,13 +146,14 @@ contract PolicyFactory {
      *         Use AgentRouter.revoke() to remove both authorization and policy at once.
      */
     function uninstallPolicy(uint256 strategyAgentId) external {
+        Storage storage $ = getStorage();
         require(
-            policies[msg.sender][strategyAgentId].enabled ||
-                policies[msg.sender][strategyAgentId].installedAt > 0,
+            $.policies[msg.sender][strategyAgentId].enabled ||
+                $.policies[msg.sender][strategyAgentId].installedAt > 0,
             "Policy not installed"
         );
 
-        delete policies[msg.sender][strategyAgentId];
+        delete $.policies[msg.sender][strategyAgentId];
         _removeFromInstalledList(msg.sender, strategyAgentId);
 
         emit PolicyUninstalled(msg.sender, strategyAgentId, block.timestamp);
@@ -271,11 +170,12 @@ contract PolicyFactory {
         uint256 strategyAgentId,
         Policy calldata policy
     ) external onlyAuthorizedRouter {
-        identityRegistry.ownerOf(strategyAgentId);
+        Storage storage $ = getStorage();
+        IERC8004Identity($.identityRegistry).ownerOf(strategyAgentId);
 
         require(
-            !policies[user][strategyAgentId].enabled &&
-                policies[user][strategyAgentId].installedAt == 0,
+            !$.policies[user][strategyAgentId].enabled &&
+                $.policies[user][strategyAgentId].installedAt == 0,
             "Policy already installed"
         );
 
@@ -290,9 +190,10 @@ contract PolicyFactory {
         address user,
         uint256 strategyAgentId
     ) external onlyAuthorizedRouter {
-        if (policies[user][strategyAgentId].installedAt == 0) return; // already gone
+        Storage storage $ = getStorage();
+        if ($.policies[user][strategyAgentId].installedAt == 0) return; // already gone
 
-        delete policies[user][strategyAgentId];
+        delete $.policies[user][strategyAgentId];
         _removeFromInstalledList(user, strategyAgentId);
 
         emit PolicyUninstalled(user, strategyAgentId, block.timestamp);
@@ -382,7 +283,7 @@ contract PolicyFactory {
         uint256 strategyAgentId,
         string calldata reason
     ) external onlyAuthorizedRouter {
-        Policy storage policy = policies[user][strategyAgentId];
+        Policy storage policy = getStorage().policies[user][strategyAgentId];
         require(policy.enabled, "Already disabled");
         policy.enabled = false;
         emit PolicyDisabled(user, strategyAgentId, reason, block.timestamp);
@@ -394,19 +295,19 @@ contract PolicyFactory {
         address user,
         uint256 strategyAgentId
     ) external view returns (Policy memory) {
-        return policies[user][strategyAgentId];
+        return getStorage().policies[user][strategyAgentId];
     }
 
     function isAgentEnabled(
         address user,
         uint256 strategyAgentId
     ) external view returns (bool) {
-        Policy storage policy = policies[user][strategyAgentId];
+        Policy storage policy = getStorage().policies[user][strategyAgentId];
         return policy.enabled && block.timestamp < policy.expiryTimestamp;
     }
 
     function getInstalledAgents(address user) external view returns (uint256[] memory) {
-        return installedAgents[user];
+        return getStorage().installedAgents[user];
     }
 
     function isTokenAllowed(
@@ -415,7 +316,7 @@ contract PolicyFactory {
         address token
     ) external view returns (bool) {
         // Use storage ref to avoid copying large struct to memory (prevents Yul stack-too-deep)
-        Policy storage policy = policies[user][strategyAgentId];
+        Policy storage policy = getStorage().policies[user][strategyAgentId];
 
         for (uint256 i = 0; i < policy.blacklistedTokens.length; i++) {
             if (policy.blacklistedTokens[i] == token) return false;
@@ -430,10 +331,32 @@ contract PolicyFactory {
         return false;
     }
 
+    // ============ Public getters (replaces public state variable getters) ============
+
+    function policies(address user, uint256 strategyAgentId) external view returns (Policy memory) {
+        return getStorage().policies[user][strategyAgentId];
+    }
+
+    function installedAgents(address user, uint256 index) external view returns (uint256) {
+        return getStorage().installedAgents[user][index];
+    }
+
+    function templates(string calldata name) external view returns (PolicyTemplate memory) {
+        return getStorage().templates[name];
+    }
+
+    function authorizedRouters(address router) external view returns (bool) {
+        return getStorage().authorizedRouters[router];
+    }
+
+    function identityRegistry() external view returns (address) {
+        return getStorage().identityRegistry;
+    }
+
     // ============ Internal ============
 
     function _getPolicy(address user, uint256 strategyAgentId) internal view returns (Policy storage) {
-        Policy storage policy = policies[user][strategyAgentId];
+        Policy storage policy = getStorage().policies[user][strategyAgentId];
         require(policy.installedAt > 0, "Policy not installed");
         return policy;
     }
@@ -448,24 +371,8 @@ contract PolicyFactory {
         require(policy.maxSlippageBps <= 10000, "Slippage > 100%");
     }
 
-    function _requiresChainlink(Policy memory policy) internal pure returns (bool) {
-        return (
-            policy.dailyVolumeLimit > 0 ||
-            policy.weeklyVolumeLimit > 0 ||
-            policy.maxDailyDrawdown > 0 ||
-            policy.maxWeeklyDrawdown > 0 ||
-            policy.maxTradeVsTVLBps > 0 ||
-            policy.minWinRateBps > 0 ||
-            policy.minSharpeRatio > 0 ||
-            policy.maxPositionConcentrationBps > 0 ||
-            policy.maxTradesPerDay > 0 ||
-            policy.maxTradesPerHour > 0 ||
-            policy.tradingStartHour > 0
-        );
-    }
-
     function _removeFromInstalledList(address user, uint256 strategyAgentId) internal {
-        uint256[] storage agents = installedAgents[user];
+        uint256[] storage agents = getStorage().installedAgents[user];
         for (uint256 i = 0; i < agents.length; i++) {
             if (agents[i] == strategyAgentId) {
                 agents[i] = agents[agents.length - 1];
@@ -485,8 +392,9 @@ contract PolicyFactory {
         Policy calldata policy,
         string memory templateName
     ) internal {
-        policies[user][agentId] = policy;
-        Policy storage s = policies[user][agentId];
+        Storage storage $ = getStorage();
+        $.policies[user][agentId] = policy;
+        Policy storage s = $.policies[user][agentId];
         s.installedAt = block.timestamp;
         s.enabled = true;
         s.requiresChainlinkFunctions = (
@@ -497,7 +405,7 @@ contract PolicyFactory {
             s.maxTradesPerDay > 0 || s.maxTradesPerHour > 0 ||
             s.tradingStartHour > 0
         );
-        installedAgents[user].push(agentId);
+        $.installedAgents[user].push(agentId);
         emit PolicyInstalled(user, agentId, templateName, block.timestamp);
     }
 
@@ -529,10 +437,11 @@ contract PolicyFactory {
     ) internal {
         policy.installedAt = block.timestamp;
         policy.enabled = true;
-        policies[user][agentId] = policy;
+        Storage storage $ = getStorage();
+        $.policies[user][agentId] = policy;
         // Read requiresChainlink from storage after write (avoids holding memory Policy
         // live simultaneously with the storage slot computation vars)
-        Policy storage s = policies[user][agentId];
+        Policy storage s = $.policies[user][agentId];
         s.requiresChainlinkFunctions = (
             s.dailyVolumeLimit > 0 || s.weeklyVolumeLimit > 0 ||
             s.maxDailyDrawdown > 0 || s.maxWeeklyDrawdown > 0 ||
@@ -541,7 +450,7 @@ contract PolicyFactory {
             s.maxTradesPerDay > 0 || s.maxTradesPerHour > 0 ||
             s.tradingStartHour > 0
         );
-        installedAgents[user].push(agentId);
+        $.installedAgents[user].push(agentId);
         emit PolicyInstalled(user, agentId, templateName, block.timestamp);
     }
 
@@ -556,7 +465,7 @@ contract PolicyFactory {
     }
 
     function _initConservativeTemplate() private {
-        PolicyTemplate storage t = templates["conservative"];
+        PolicyTemplate storage t = getStorage().templates["conservative"];
         t.name = "Conservative";
         t.description = "Low risk, strict limits";
         t.active = true;
@@ -586,7 +495,7 @@ contract PolicyFactory {
     }
 
     function _initModerateTemplate() private {
-        PolicyTemplate storage t = templates["moderate"];
+        PolicyTemplate storage t = getStorage().templates["moderate"];
         t.name = "Moderate";
         t.description = "Balanced risk and limits";
         t.active = true;
@@ -622,7 +531,7 @@ contract PolicyFactory {
     }
 
     function _initAggressiveTemplate() private {
-        PolicyTemplate storage t = templates["aggressive"];
+        PolicyTemplate storage t = getStorage().templates["aggressive"];
         t.name = "Aggressive";
         t.description = "High risk, loose limits";
         t.active = true;
@@ -659,11 +568,6 @@ contract PolicyFactory {
     // ============ Access Control ============
 
     function setAuthorizedRouter(address router, bool authorized) external onlyOwner {
-        authorizedRouters[router] = authorized;
-    }
-
-    function transferOwnership(address newOwner) external onlyOwner {
-        require(newOwner != address(0), "Zero address");
-        owner = newOwner;
+        getStorage().authorizedRouters[router] = authorized;
     }
 }

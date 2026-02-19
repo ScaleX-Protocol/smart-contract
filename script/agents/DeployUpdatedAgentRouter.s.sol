@@ -30,21 +30,15 @@ contract DeployUpdatedAgentRouter is Script {
 
         vm.startBroadcast(deployerKey);
 
-        AgentRouter newRouter = new AgentRouter(
-            identityRegistry,
-            reputationRegistry,
-            validationRegistry,
-            policyFactory,
-            poolManager,
-            balanceManager,
-            lendingManager
-        );
+        // Deploy new implementation only (Beacon Proxy pattern)
+        // Upgrade by calling: UpgradeableBeacon(agentRouterBeacon).upgradeTo(address(newRouterImpl))
+        AgentRouter newRouterImpl = new AgentRouter();
 
         vm.stopBroadcast();
 
-        console.log("New AgentRouter deployed at:", address(newRouter));
+        console.log("New AgentRouter implementation deployed at:", address(newRouterImpl));
         console.log("");
-        console.log("IMPORTANT: Update deployments/84532.json with new address");
-        console.log("IMPORTANT: Authorize new router on all OrderBooks via PoolManager");
+        console.log("To upgrade: call UpgradeableBeacon.upgradeTo(address(newRouterImpl))");
+        console.log("Proxy address and all authorizations are preserved - no re-authorization needed");
     }
 }

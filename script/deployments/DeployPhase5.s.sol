@@ -8,6 +8,8 @@ import {IdentityRegistryUpgradeable} from "@scalexagents/registries/IdentityRegi
 import {ReputationRegistryUpgradeable} from "@scalexagents/registries/ReputationRegistryUpgradeable.sol";
 import {ValidationRegistryUpgradeable} from "@scalexagents/registries/ValidationRegistryUpgradeable.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
+import {UpgradeableBeacon} from "@openzeppelin/contracts/proxy/beacon/UpgradeableBeacon.sol";
+import {BeaconProxy} from "@openzeppelin/contracts/proxy/beacon/BeaconProxy.sol";
 import {BalanceManager} from "@scalexcore/BalanceManager.sol";
 import {LendingManager} from "@scalex/yield/LendingManager.sol";
 import {IPoolManager} from "@scalexcore/interfaces/IPoolManager.sol";
@@ -18,8 +20,9 @@ import {Oracle} from "@scalexcore/Oracle.sol";
 /**
  * @title DeployPhase5
  * @notice Deploys and configures AI Agent Infrastructure using ERC-8004 contracts
- * @dev Uses upgradeable ERC-8004 registries with UUPS proxy pattern
- *      Includes all necessary authorizations to prevent deployment issues
+ * @dev Uses upgradeable ERC-8004 registries with UUPS proxy pattern.
+ *      PolicyFactory and AgentRouter use Beacon Proxy + Diamond Storage (ERC-7201),
+ *      consistent with BalanceManager and ScaleXRouter.
  */
 contract DeployPhase5 is Script {
     struct Phase5Deployment {
@@ -30,7 +33,11 @@ contract DeployPhase5 is Script {
         address validationRegistry;
         address validationImplementation;
         address policyFactory;
+        address policyFactoryImplementation;
+        address policyFactoryBeacon;
         address agentRouter;
+        address agentRouterImplementation;
+        address agentRouterBeacon;
         address deployer;
         uint256 timestamp;
         uint256 blockNumber;
@@ -82,36 +89,27 @@ contract DeployPhase5 is Script {
 
         vm.startBroadcast(deployerPrivateKey);
 
-        // Step 1: Deploy IdentityRegistry (Upgradeable)
+        // Step 1: Deploy IdentityRegistry (Upgradeable via UUPS + ERC1967Proxy)
         console.log("Step 1: Deploying IdentityRegistry (ERC-8004 Upgradeable)...");
 
         IdentityRegistryUpgradeable identityImpl = new IdentityRegistryUpgradeable();
         console.log("[OK] IdentityRegistry Implementation:", address(identityImpl));
 
-        // Deploy proxy WITHOUT initialization (initialize manually after)
-        ERC1967Proxy identityProxy = new ERC1967Proxy(
-            address(identityImpl),
-            ""  // Empty init data
-        );
+        ERC1967Proxy identityProxy = new ERC1967Proxy(address(identityImpl), "");
         console.log("[OK] IdentityRegistry Proxy:", address(identityProxy));
 
         IdentityRegistryUpgradeable identityRegistry = IdentityRegistryUpgradeable(address(identityProxy));
-
-        // Initialize through the proxy
         identityRegistry.initialize();
         console.log("[OK] IdentityRegistry initialized");
         console.log("");
 
-        // Step 2: Deploy ReputationRegistry (Upgradeable)
+        // Step 2: Deploy ReputationRegistry (Upgradeable via UUPS + ERC1967Proxy)
         console.log("Step 2: Deploying ReputationRegistry (ERC-8004 Upgradeable)...");
 
         ReputationRegistryUpgradeable reputationImpl = new ReputationRegistryUpgradeable();
         console.log("[OK] ReputationRegistry Implementation:", address(reputationImpl));
 
-        ERC1967Proxy reputationProxy = new ERC1967Proxy(
-            address(reputationImpl),
-            ""  // Empty init data
-        );
+        ERC1967Proxy reputationProxy = new ERC1967Proxy(address(reputationImpl), "");
         console.log("[OK] ReputationRegistry Proxy:", address(reputationProxy));
 
         ReputationRegistryUpgradeable reputationRegistry = ReputationRegistryUpgradeable(address(reputationProxy));
@@ -119,16 +117,13 @@ contract DeployPhase5 is Script {
         console.log("[OK] ReputationRegistry initialized");
         console.log("");
 
-        // Step 3: Deploy ValidationRegistry (Upgradeable)
+        // Step 3: Deploy ValidationRegistry (Upgradeable via UUPS + ERC1967Proxy)
         console.log("Step 3: Deploying ValidationRegistry (ERC-8004 Upgradeable)...");
 
         ValidationRegistryUpgradeable validationImpl = new ValidationRegistryUpgradeable();
         console.log("[OK] ValidationRegistry Implementation:", address(validationImpl));
 
-        ERC1967Proxy validationProxy = new ERC1967Proxy(
-            address(validationImpl),
-            ""  // Empty init data
-        );
+        ERC1967Proxy validationProxy = new ERC1967Proxy(address(validationImpl), "");
         console.log("[OK] ValidationRegistry Proxy:", address(validationProxy));
 
         ValidationRegistryUpgradeable validationRegistry = ValidationRegistryUpgradeable(address(validationProxy));
@@ -136,24 +131,47 @@ contract DeployPhase5 is Script {
         console.log("[OK] ValidationRegistry initialized");
         console.log("");
 
-        // Step 4: Deploy PolicyFactory
-        console.log("Step 4: Deploying PolicyFactory...");
-        PolicyFactory policyFactory = new PolicyFactory(address(identityRegistry));
-        console.log("[OK] PolicyFactory deployed:", address(policyFactory));
+        // Step 4: Deploy PolicyFactory (Beacon Proxy + Diamond Storage)
+        console.log("Step 4: Deploying PolicyFactory (Beacon Proxy)...");
+
+        PolicyFactory policyFactoryImpl = new PolicyFactory();
+        console.log("[OK] PolicyFactory Implementation:", address(policyFactoryImpl));
+
+        UpgradeableBeacon policyFactoryBeacon = new UpgradeableBeacon(address(policyFactoryImpl), deployer);
+        console.log("[OK] PolicyFactory Beacon:", address(policyFactoryBeacon));
+
+        BeaconProxy policyFactoryProxy = new BeaconProxy(
+            address(policyFactoryBeacon),
+            abi.encodeCall(PolicyFactory.initialize, (deployer, address(identityRegistry)))
+        );
+        PolicyFactory policyFactory = PolicyFactory(address(policyFactoryProxy));
+        console.log("[OK] PolicyFactory Proxy:", address(policyFactory));
         console.log("");
 
-        // Step 5: Deploy AgentRouter
-        console.log("Step 5: Deploying AgentRouter...");
-        AgentRouter agentRouter = new AgentRouter(
-            address(identityRegistry),
-            address(reputationRegistry),
-            address(validationRegistry),
-            address(policyFactory),
-            poolManager,
-            balanceManager,
-            lendingManager
+        // Step 5: Deploy AgentRouter (Beacon Proxy + Diamond Storage)
+        console.log("Step 5: Deploying AgentRouter (Beacon Proxy)...");
+
+        AgentRouter agentRouterImpl = new AgentRouter();
+        console.log("[OK] AgentRouter Implementation:", address(agentRouterImpl));
+
+        UpgradeableBeacon agentRouterBeacon = new UpgradeableBeacon(address(agentRouterImpl), deployer);
+        console.log("[OK] AgentRouter Beacon:", address(agentRouterBeacon));
+
+        BeaconProxy agentRouterProxy = new BeaconProxy(
+            address(agentRouterBeacon),
+            abi.encodeCall(AgentRouter.initialize, (
+                deployer,
+                address(identityRegistry),
+                address(reputationRegistry),
+                address(validationRegistry),
+                address(policyFactory),
+                poolManager,
+                balanceManager,
+                lendingManager
+            ))
         );
-        console.log("[OK] AgentRouter deployed:", address(agentRouter));
+        AgentRouter agentRouter = AgentRouter(address(agentRouterProxy));
+        console.log("[OK] AgentRouter Proxy:", address(agentRouter));
         console.log("");
 
         // Step 6: Authorize AgentRouter in PolicyFactory
@@ -184,9 +202,8 @@ contract DeployPhase5 is Script {
         console.log("");
 
         // Step 9: Configure Oracle prices for IDRX and sxIDRX
-        console.log("Step 10: Configuring Oracle prices for IDRX and sxIDRX...");
+        console.log("Step 9: Configuring Oracle prices for IDRX and sxIDRX...");
 
-        // Register IDRX and sxIDRX in Oracle if not already added (priceId=0 for manual/fixed price)
         try Oracle(oracle).addToken(IDRX, 0) {
             console.log("[OK] IDRX registered in Oracle");
         } catch {
@@ -217,8 +234,6 @@ contract DeployPhase5 is Script {
 
         vm.stopBroadcast();
 
-        console.log("");
-
         console.log("[SUCCESS] Phase 5 completed with official ERC-8004 contracts!");
         console.log("");
         console.log("Agent Infrastructure addresses:");
@@ -228,8 +243,12 @@ contract DeployPhase5 is Script {
         console.log("  ReputationRegistry (Impl):", address(reputationImpl));
         console.log("  ValidationRegistry (Proxy):", address(validationRegistry));
         console.log("  ValidationRegistry (Impl):", address(validationImpl));
-        console.log("  PolicyFactory:", address(policyFactory));
-        console.log("  AgentRouter:", address(agentRouter));
+        console.log("  PolicyFactory (Proxy):", address(policyFactory));
+        console.log("  PolicyFactory (Impl):", address(policyFactoryImpl));
+        console.log("  PolicyFactory (Beacon):", address(policyFactoryBeacon));
+        console.log("  AgentRouter (Proxy):", address(agentRouter));
+        console.log("  AgentRouter (Impl):", address(agentRouterImpl));
+        console.log("  AgentRouter (Beacon):", address(agentRouterBeacon));
         console.log("");
         console.log("Authorizations completed:");
         console.log("  [OK] AgentRouter authorized in PolicyFactory");
@@ -242,7 +261,6 @@ contract DeployPhase5 is Script {
         console.log("");
         console.log("Ready for marketplace deployment!");
 
-        // Return deployment info
         deployment = Phase5Deployment({
             identityRegistry: address(identityRegistry),
             identityImplementation: address(identityImpl),
@@ -251,7 +269,11 @@ contract DeployPhase5 is Script {
             validationRegistry: address(validationRegistry),
             validationImplementation: address(validationImpl),
             policyFactory: address(policyFactory),
+            policyFactoryImplementation: address(policyFactoryImpl),
+            policyFactoryBeacon: address(policyFactoryBeacon),
             agentRouter: address(agentRouter),
+            agentRouterImplementation: address(agentRouterImpl),
+            agentRouterBeacon: address(agentRouterBeacon),
             deployer: deployer,
             timestamp: block.timestamp,
             blockNumber: block.number
@@ -259,7 +281,6 @@ contract DeployPhase5 is Script {
     }
 
     function _extractAddress(string memory json, string memory key) internal pure returns (address) {
-        // Find the key in the JSON
         bytes memory jsonBytes = bytes(json);
         bytes memory keyBytes = bytes(string.concat('"', key, '": "'));
 
@@ -268,7 +289,6 @@ contract DeployPhase5 is Script {
             return address(0);
         }
 
-        // Extract address (42 characters: 0x + 40 hex digits)
         uint256 addressStart = keyPos + keyBytes.length;
         bytes memory addressBytes = new bytes(42);
         for (uint256 i = 0; i < 42; i++) {
@@ -297,7 +317,7 @@ contract DeployPhase5 is Script {
             if (found) return i;
         }
 
-        return type(uint256).max; // Not found
+        return type(uint256).max;
     }
 
     function _bytesToAddress(bytes memory data) internal pure returns (address) {
@@ -312,15 +332,14 @@ contract DeployPhase5 is Script {
             if (byteValue >= 48 && byteValue <= 57) {
                 digit = uint256(byteValue) - 48;
             } else if (byteValue >= 97 && byteValue <= 102) {
-                digit = uint256(byteValue) - 87; // a-f
+                digit = uint256(byteValue) - 87;
             } else if (byteValue >= 65 && byteValue <= 70) {
-                digit = uint256(byteValue) - 55; // A-F
+                digit = uint256(byteValue) - 55;
             } else {
-                continue; // Skip non-hex characters
+                continue;
             }
             result = result * 16 + digit;
         }
         return result;
     }
-
 }

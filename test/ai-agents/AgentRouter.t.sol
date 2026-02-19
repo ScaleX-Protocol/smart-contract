@@ -4,7 +4,10 @@ pragma solidity ^0.8.28;
 import "forge-std/Test.sol";
 import "../../src/ai-agents/AgentRouter.sol";
 import "../../src/ai-agents/PolicyFactory.sol";
+import {PolicyFactoryStorage} from "../../src/ai-agents/storages/PolicyFactoryStorage.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {UpgradeableBeacon} from "@openzeppelin/contracts/proxy/beacon/UpgradeableBeacon.sol";
+import {BeaconProxy} from "@openzeppelin/contracts/proxy/beacon/BeaconProxy.sol";
 import "../../src/ai-agents/mocks/MockERC8004Identity.sol";
 import "../../src/ai-agents/mocks/MockERC8004Reputation.sol";
 import "../../src/ai-agents/mocks/MockERC8004Validation.sol";
@@ -61,8 +64,14 @@ contract AgentRouterTest is Test {
         reputationRegistry = new MockERC8004Reputation();
         validationRegistry = new MockERC8004Validation();
 
-        // Deploy PolicyFactory
-        policyFactory = new PolicyFactory(address(identityRegistry));
+        // Deploy PolicyFactory through BeaconProxy
+        PolicyFactory policyFactoryImpl = new PolicyFactory();
+        UpgradeableBeacon pfBeacon = new UpgradeableBeacon(address(policyFactoryImpl), address(this));
+        BeaconProxy pfProxy = new BeaconProxy(
+            address(pfBeacon),
+            abi.encodeCall(PolicyFactory.initialize, (address(this), address(identityRegistry)))
+        );
+        policyFactory = PolicyFactory(address(pfProxy));
 
         // Deploy mocks
         poolManager = new MockPoolManager();
@@ -80,16 +89,23 @@ contract AgentRouterTest is Test {
         // Setup pool manager to return this pool
         poolManager.setPool(wethUsdcPool);
 
-        // Deploy AgentRouter
-        agentRouter = new AgentRouter(
-            address(identityRegistry),
-            address(reputationRegistry),
-            address(validationRegistry),
-            address(policyFactory),
-            address(poolManager),
-            address(balanceManager),
-            address(lendingManager)
+        // Deploy AgentRouter through BeaconProxy
+        AgentRouter agentRouterImpl = new AgentRouter();
+        UpgradeableBeacon arBeacon = new UpgradeableBeacon(address(agentRouterImpl), address(this));
+        BeaconProxy arProxy = new BeaconProxy(
+            address(arBeacon),
+            abi.encodeCall(AgentRouter.initialize, (
+                address(this),
+                address(identityRegistry),
+                address(reputationRegistry),
+                address(validationRegistry),
+                address(policyFactory),
+                address(poolManager),
+                address(balanceManager),
+                address(lendingManager)
+            ))
         );
+        agentRouter = AgentRouter(address(arProxy));
 
         // Authorize AgentRouter in PolicyFactory
         policyFactory.setAuthorizedRouter(address(agentRouter), true);
@@ -120,13 +136,13 @@ contract AgentRouterTest is Test {
         assertFalse(agentRouter.isAuthorized(user1, agent1));
 
         // Attempting to get policy for non-installed agent should return default/empty policy
-        PolicyFactory.Policy memory emptyPolicy = policyFactory.getPolicy(user1, agent1);
+        PolicyFactoryStorage.Policy memory emptyPolicy = policyFactory.getPolicy(user1, agent1);
         assertEq(emptyPolicy.installedAt, 0);
         assertFalse(emptyPolicy.enabled);
 
         // 2. Authorize agent with custom policy (maxOrderSize = 10000e6)
         vm.startPrank(user1);
-        PolicyFactory.Policy memory p = _createCustomPolicy();
+        PolicyFactoryStorage.Policy memory p = _createCustomPolicy();
         p.maxOrderSize = 10000e6;
         agentRouter.authorize(agent1, p);
         vm.stopPrank();
@@ -136,7 +152,7 @@ contract AgentRouterTest is Test {
         assertTrue(policyFactory.isAgentEnabled(user1, agent1));
 
         // 4. Verify policy details are correct
-        PolicyFactory.Policy memory policy = policyFactory.getPolicy(user1, agent1);
+        PolicyFactoryStorage.Policy memory policy = policyFactory.getPolicy(user1, agent1);
         assertTrue(policy.enabled);
         assertEq(policy.maxOrderSize, 10000e6);
         assertGt(policy.installedAt, 0); // Installation timestamp recorded
@@ -449,7 +465,7 @@ contract AgentRouterTest is Test {
         assertTrue(agentRouter.isAuthorized(user1, agent1));
         assertTrue(policyFactory.isAgentEnabled(user1, agent1));
 
-        PolicyFactory.Policy memory policy = policyFactory.getPolicy(user1, agent1);
+        PolicyFactoryStorage.Policy memory policy = policyFactory.getPolicy(user1, agent1);
         assertTrue(policy.enabled);
         console.log("    [OK] Policy is enabled");
 
@@ -516,7 +532,7 @@ contract AgentRouterTest is Test {
 
     function test_ExecuteMarketOrder() public {
         vm.prank(user1);
-        PolicyFactory.Policy memory p = _createCustomPolicy();
+        PolicyFactoryStorage.Policy memory p = _createCustomPolicy();
         p.maxOrderSize = 5000e6;
         p.minTimeBetweenTrades = 0;
         agentRouter.authorize(agent1, p);
@@ -554,7 +570,7 @@ contract AgentRouterTest is Test {
 
     function test_RevertMarketOrderAgentExpired() public {
         vm.startPrank(user1);
-        PolicyFactory.Policy memory p = _createCustomPolicy();
+        PolicyFactoryStorage.Policy memory p = _createCustomPolicy();
         p.expiryTimestamp = block.timestamp + 1 days;
         agentRouter.authorize(agent1, p);
 
@@ -586,7 +602,7 @@ contract AgentRouterTest is Test {
 
     function test_RevertMarketOrderRequiresChainlink() public {
         vm.startPrank(user1);
-        PolicyFactory.Policy memory p = _createCustomPolicy();
+        PolicyFactoryStorage.Policy memory p = _createCustomPolicy();
         p.dailyVolumeLimit = 10000e6; // triggers requiresChainlinkFunctions
         agentRouter.authorize(agent1, p);
 
@@ -601,7 +617,7 @@ contract AgentRouterTest is Test {
 
     function test_RevertMarketOrderSizeTooLarge() public {
         vm.startPrank(user1);
-        PolicyFactory.Policy memory p = _createCustomPolicy();
+        PolicyFactoryStorage.Policy memory p = _createCustomPolicy();
         p.maxOrderSize = 100e6;
         agentRouter.authorize(agent1, p);
 
@@ -616,7 +632,7 @@ contract AgentRouterTest is Test {
 
     function test_RevertMarketOrderSizeTooSmall() public {
         vm.startPrank(user1);
-        PolicyFactory.Policy memory p = _createCustomPolicy();
+        PolicyFactoryStorage.Policy memory p = _createCustomPolicy();
         p.minOrderSize = 1000e6;
         agentRouter.authorize(agent1, p);
 
@@ -631,7 +647,7 @@ contract AgentRouterTest is Test {
 
     function test_RevertMarketOrderTokenNotAllowed() public {
         vm.startPrank(user1);
-        PolicyFactory.Policy memory p = _createCustomPolicy();
+        PolicyFactoryStorage.Policy memory p = _createCustomPolicy();
         address[] memory whitelist = new address[](1);
         whitelist[0] = WBTC;
         p.whitelistedTokens = whitelist;
@@ -649,7 +665,7 @@ contract AgentRouterTest is Test {
 
     function test_RevertMarketOrderSwapNotAllowed() public {
         vm.startPrank(user1);
-        PolicyFactory.Policy memory p = _createCustomPolicy();
+        PolicyFactoryStorage.Policy memory p = _createCustomPolicy();
         p.allowSwap = false;
         agentRouter.authorize(agent1, p);
 
@@ -664,7 +680,7 @@ contract AgentRouterTest is Test {
 
     function test_RevertMarketOrderBuyNotAllowed() public {
         vm.startPrank(user1);
-        PolicyFactory.Policy memory p = _createCustomPolicy();
+        PolicyFactoryStorage.Policy memory p = _createCustomPolicy();
         p.allowBuy = false;
         agentRouter.authorize(agent1, p);
 
@@ -679,7 +695,7 @@ contract AgentRouterTest is Test {
 
     function test_RevertMarketOrderSellNotAllowed() public {
         vm.startPrank(user1);
-        PolicyFactory.Policy memory p = _createCustomPolicy();
+        PolicyFactoryStorage.Policy memory p = _createCustomPolicy();
         p.allowSell = false;
         agentRouter.authorize(agent1, p);
 
@@ -694,7 +710,7 @@ contract AgentRouterTest is Test {
 
     function test_RevertMarketOrderAutoBorrowNotAllowed() public {
         vm.startPrank(user1);
-        PolicyFactory.Policy memory p = _createCustomPolicy();
+        PolicyFactoryStorage.Policy memory p = _createCustomPolicy();
         p.allowAutoBorrow = false;
         agentRouter.authorize(agent1, p);
 
@@ -710,7 +726,7 @@ contract AgentRouterTest is Test {
 
     function test_RevertMarketOrderAutoRepayNotAllowed() public {
         vm.startPrank(user1);
-        PolicyFactory.Policy memory p = _createCustomPolicy();
+        PolicyFactoryStorage.Policy memory p = _createCustomPolicy();
         p.allowAutoRepay = false;
         agentRouter.authorize(agent1, p);
 
@@ -743,7 +759,7 @@ contract AgentRouterTest is Test {
 
     function test_RevertMarketOrderCooldownActive() public {
         vm.startPrank(user1);
-        PolicyFactory.Policy memory p = _createCustomPolicy();
+        PolicyFactoryStorage.Policy memory p = _createCustomPolicy();
         p.minTimeBetweenTrades = 60; // 60 second cooldown
         agentRouter.authorize(agent1, p);
 
@@ -770,7 +786,7 @@ contract AgentRouterTest is Test {
 
     function test_MarketOrderAfterCooldown() public {
         vm.startPrank(user1);
-        PolicyFactory.Policy memory p = _createCustomPolicy();
+        PolicyFactoryStorage.Policy memory p = _createCustomPolicy();
         p.minTimeBetweenTrades = 60;
         agentRouter.authorize(agent1, p);
 
@@ -842,7 +858,7 @@ contract AgentRouterTest is Test {
 
     function test_ExecuteLimitOrder() public {
         vm.prank(user1);
-        PolicyFactory.Policy memory p = _createCustomPolicy();
+        PolicyFactoryStorage.Policy memory p = _createCustomPolicy();
         p.maxOrderSize = 5000e6;
         p.minTimeBetweenTrades = 0;
         agentRouter.authorize(agent1, p);
@@ -864,7 +880,7 @@ contract AgentRouterTest is Test {
 
     function test_RevertLimitOrderNotAllowed() public {
         vm.startPrank(user1);
-        PolicyFactory.Policy memory p = _createCustomPolicy();
+        PolicyFactoryStorage.Policy memory p = _createCustomPolicy();
         p.allowLimitOrders = false;
         agentRouter.authorize(agent1, p);
 
@@ -919,7 +935,7 @@ contract AgentRouterTest is Test {
 
     function test_RevertCancelOrderNotAllowed() public {
         vm.startPrank(user1);
-        PolicyFactory.Policy memory p = _createCustomPolicy();
+        PolicyFactoryStorage.Policy memory p = _createCustomPolicy();
         p.allowCancelOrder = false;
         agentRouter.authorize(agent1, p);
 
@@ -961,7 +977,7 @@ contract AgentRouterTest is Test {
 
     function test_RevertBorrowNotAllowed() public {
         vm.startPrank(user1);
-        PolicyFactory.Policy memory p = _createCustomPolicy();
+        PolicyFactoryStorage.Policy memory p = _createCustomPolicy();
         p.allowBorrow = false;
         agentRouter.authorize(agent1, p);
 
@@ -982,7 +998,7 @@ contract AgentRouterTest is Test {
 
     function test_RevertBorrowTokenNotAllowed() public {
         vm.startPrank(user1);
-        PolicyFactory.Policy memory p = _createCustomPolicy();
+        PolicyFactoryStorage.Policy memory p = _createCustomPolicy();
         address[] memory whitelist = new address[](1);
         whitelist[0] = WETH;
         p.whitelistedTokens = whitelist;
@@ -1054,7 +1070,7 @@ contract AgentRouterTest is Test {
 
     function test_RevertRepayNotAllowed() public {
         vm.startPrank(user1);
-        PolicyFactory.Policy memory p = _createCustomPolicy();
+        PolicyFactoryStorage.Policy memory p = _createCustomPolicy();
         p.allowRepay = false;
         agentRouter.authorize(agent1, p);
 
@@ -1101,7 +1117,7 @@ contract AgentRouterTest is Test {
 
     function test_RevertSupplyCollateralNotAllowed() public {
         vm.startPrank(user1);
-        PolicyFactory.Policy memory p = _createCustomPolicy();
+        PolicyFactoryStorage.Policy memory p = _createCustomPolicy();
         p.allowSupplyCollateral = false;
         agentRouter.authorize(agent1, p);
 
@@ -1148,7 +1164,7 @@ contract AgentRouterTest is Test {
 
     function test_RevertWithdrawCollateralNotAllowed() public {
         vm.startPrank(user1);
-        PolicyFactory.Policy memory p = _createCustomPolicy();
+        PolicyFactoryStorage.Policy memory p = _createCustomPolicy();
         p.allowWithdrawCollateral = false;
         agentRouter.authorize(agent1, p);
 
@@ -1219,10 +1235,10 @@ contract AgentRouterTest is Test {
 
     /// @dev Build a default custom policy for tests.
     ///      All Chainlink-requiring fields are 0, requiresChainlinkFunctions is auto-set to false.
-    function _createCustomPolicy() internal view returns (PolicyFactory.Policy memory) {
+    function _createCustomPolicy() internal view returns (PolicyFactoryStorage.Policy memory) {
         address[] memory emptyArray = new address[](0);
 
-        return PolicyFactory.Policy({
+        return PolicyFactoryStorage.Policy({
             enabled: true,
             installedAt: 0,
             expiryTimestamp: block.timestamp + 90 days,

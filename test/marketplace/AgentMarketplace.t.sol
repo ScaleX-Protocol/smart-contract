@@ -4,6 +4,9 @@ pragma solidity ^0.8.28;
 import "forge-std/Test.sol";
 import "../../src/ai-agents/AgentRouter.sol";
 import "../../src/ai-agents/PolicyFactory.sol";
+import {PolicyFactoryStorage} from "../../src/ai-agents/storages/PolicyFactoryStorage.sol";
+import {UpgradeableBeacon} from "@openzeppelin/contracts/proxy/beacon/UpgradeableBeacon.sol";
+import {BeaconProxy} from "@openzeppelin/contracts/proxy/beacon/BeaconProxy.sol";
 import "../../src/ai-agents/mocks/MockERC8004Identity.sol";
 import "../../src/ai-agents/mocks/MockERC8004Reputation.sol";
 import "../../src/ai-agents/mocks/MockERC8004Validation.sol";
@@ -58,8 +61,14 @@ contract AgentMarketplaceTest is Test {
         reputationRegistry = new MockERC8004Reputation();
         validationRegistry = new MockERC8004Validation();
 
-        // Deploy PolicyFactory
-        policyFactory = new PolicyFactory(address(identityRegistry));
+        // Deploy PolicyFactory through BeaconProxy
+        PolicyFactory policyFactoryImpl = new PolicyFactory();
+        UpgradeableBeacon pfBeacon = new UpgradeableBeacon(address(policyFactoryImpl), address(this));
+        BeaconProxy pfProxy = new BeaconProxy(
+            address(pfBeacon),
+            abi.encodeCall(PolicyFactory.initialize, (address(this), address(identityRegistry)))
+        );
+        policyFactory = PolicyFactory(address(pfProxy));
 
         // Deploy mocks
         poolManager = new MockPoolManager();
@@ -75,16 +84,23 @@ contract AgentMarketplaceTest is Test {
         });
         poolManager.setPool(wethIdrxPool);
 
-        // Deploy AgentRouter
-        agentRouter = new AgentRouter(
-            address(identityRegistry),
-            address(reputationRegistry),
-            address(validationRegistry),
-            address(policyFactory),
-            address(poolManager),
-            address(balanceManager),
-            address(lendingManager)
+        // Deploy AgentRouter through BeaconProxy
+        AgentRouter agentRouterImpl = new AgentRouter();
+        UpgradeableBeacon arBeacon = new UpgradeableBeacon(address(agentRouterImpl), address(this));
+        BeaconProxy arProxy = new BeaconProxy(
+            address(arBeacon),
+            abi.encodeCall(AgentRouter.initialize, (
+                address(this),
+                address(identityRegistry),
+                address(reputationRegistry),
+                address(validationRegistry),
+                address(policyFactory),
+                address(poolManager),
+                address(balanceManager),
+                address(lendingManager)
+            ))
         );
+        agentRouter = AgentRouter(address(arProxy));
 
         policyFactory.setAuthorizedRouter(address(agentRouter), true);
         reputationRegistry.setAuthorizedSubmitter(address(agentRouter), true);
@@ -226,9 +242,9 @@ contract AgentMarketplaceTest is Test {
 
     // ============ Helpers ============
 
-    function _makePolicy(uint256 maxOrderSize) internal view returns (PolicyFactory.Policy memory) {
+    function _makePolicy(uint256 maxOrderSize) internal view returns (PolicyFactoryStorage.Policy memory) {
         address[] memory empty = new address[](0);
-        return PolicyFactory.Policy({
+        return PolicyFactoryStorage.Policy({
             enabled: true,
             installedAt: 0,
             expiryTimestamp: block.timestamp + 365 days,

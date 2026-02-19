@@ -51,25 +51,18 @@ contract UpgradeAgentRouterWithDelegation is Script {
 
         vm.startBroadcast(deployerPrivateKey);
 
-        // Deploy new AgentRouter
-        AgentRouter newAgentRouter = new AgentRouter(
-            identityRegistry,
-            reputationRegistry,
-            validationRegistry,
-            policyFactory,
-            poolManager,
-            balanceManager,
-            lendingManager
-        );
-
-        console.log("New AgentRouter deployed:", address(newAgentRouter));
+        // Deploy new AgentRouter implementation (Beacon Proxy pattern)
+        // To upgrade: call beacon.upgradeTo(address(newAgentRouterImpl))
+        AgentRouter newAgentRouterImpl = new AgentRouter();
+        console.log("New AgentRouter implementation deployed:", address(newAgentRouterImpl));
+        console.log("To upgrade: call UpgradeableBeacon(agentRouterBeacon).upgradeTo(address(newAgentRouterImpl))");
         console.log("");
         console.log("=== NEXT STEPS ===");
-        console.log("1. Update deployments/84532.json with new AgentRouter address");
-        console.log("2. Update OrderBook router authorization (FixAgentRouterAuth.s.sol)");
-        console.log("3. Existing agent authorizations will be lost - owners must re-authorize agent wallets");
+        console.log("1. Call UpgradeableBeacon(agentRouterBeacon).upgradeTo(address(newAgentRouterImpl))");
+        console.log("2. Existing proxy address and authorizations are preserved");
+        console.log("3. No need to re-authorize OrderBooks or update deployment JSON");
         console.log("");
-        console.log("New AgentRouter address:", address(newAgentRouter));
+        console.log("New AgentRouter implementation:", address(newAgentRouterImpl));
 
         vm.stopBroadcast();
     }
