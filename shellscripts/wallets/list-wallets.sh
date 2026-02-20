@@ -12,7 +12,7 @@ export PATH="$HOME/.foundry/bin:$PATH"
 
 # Load environment variables
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ENV_FILE="$SCRIPT_DIR/../.env"
+ENV_FILE="$SCRIPT_DIR/../../.env"
 
 # Parse .env file manually to avoid issues with special characters
 if [ -f "$ENV_FILE" ]; then

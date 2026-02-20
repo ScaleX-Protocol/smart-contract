@@ -4,7 +4,7 @@ set -e
 
 # Source quote currency configuration module
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-source "${SCRIPT_DIR}/lib/quote-currency-config.sh"
+source "${SCRIPT_DIR}/../lib/quote-currency-config.sh"
 
 CHAIN_ID="${CORE_CHAIN_ID:-4202}"
 DEPLOYMENT_FILE="deployments/${CHAIN_ID}.json"

@@ -6,7 +6,7 @@
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ENV_FILE="$SCRIPT_DIR/../.env"
+ENV_FILE="$SCRIPT_DIR/../../.env"
 
 # Load environment
 if [ -f "$ENV_FILE" ]; then
@@ -19,7 +19,7 @@ RPC_URL=${RPC_URL:-"https://sepolia.base.org"}
 CORE_CHAIN_ID=${CORE_CHAIN_ID:-"84532"}
 
 # Load addresses from deployments
-DEPLOYMENTS_FILE="$SCRIPT_DIR/../deployments/${CORE_CHAIN_ID}.json"
+DEPLOYMENTS_FILE="$SCRIPT_DIR/../../deployments/${CORE_CHAIN_ID}.json"
 if [ ! -f "$DEPLOYMENTS_FILE" ]; then
     echo "Error: Deployments file not found at $DEPLOYMENTS_FILE"
     exit 1

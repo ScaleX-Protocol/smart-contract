@@ -49,7 +49,7 @@ AGENT_WALLET=$(cast wallet address --private-key $AGENT_PRIVATE_KEY)
 
 # Load deployment addresses
 CORE_CHAIN_ID=${CORE_CHAIN_ID:-84532}
-DEPLOYMENTS_FILE="$SCRIPT_DIR/../deployments/${CORE_CHAIN_ID}.json"
+DEPLOYMENTS_FILE="$SCRIPT_DIR/../../deployments/${CORE_CHAIN_ID}.json"
 BALANCE_MANAGER_ADDRESS=$(grep -o '"BalanceManager": "[^"]*"' "$DEPLOYMENTS_FILE" | cut -d'"' -f4)
 QUOTE_SYMBOL=${QUOTE_SYMBOL:-IDRX}
 QUOTE_ADDRESS=$(grep -o "\"$QUOTE_SYMBOL\": \"[^\"]*\"" "$DEPLOYMENTS_FILE" | cut -d'"' -f4)
@@ -82,7 +82,7 @@ if [ -z "$USER_BM_BALANCE" ] || [ "$USER_BM_BALANCE" = "0" ]; then
     if [[ $REPLY =~ ^[Yy]$ ]]; then
         echo ""
         echo -e "${BLUE}Minting and depositing tokens...${NC}"
-        bash "$SCRIPT_DIR/send-tokens.sh" --deposit
+        bash "$SCRIPT_DIR/../wallets/send-tokens.sh" --deposit
         echo ""
     fi
 fi

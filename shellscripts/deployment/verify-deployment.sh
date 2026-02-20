@@ -75,7 +75,7 @@ if [[ -z "$CHAIN_NAME" ]]; then
 fi
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_ROOT="$SCRIPT_DIR/.."
+PROJECT_ROOT="$SCRIPT_DIR/../.."
 DEPLOYMENT_FILE="$PROJECT_ROOT/deployments/${CHAIN_ID}.json"
 INDEXER_ENV="$PROJECT_ROOT/../clob-indexer/ponder/.env.$CHAIN_NAME"
 

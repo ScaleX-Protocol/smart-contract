@@ -52,7 +52,7 @@ NC='\033[0m' # No Color
 
 # Source quote currency configuration module
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-source "${SCRIPT_DIR}/lib/quote-currency-config.sh"
+source "${SCRIPT_DIR}/../lib/quote-currency-config.sh"
 
 # Function to load .env file
 load_env_file() {

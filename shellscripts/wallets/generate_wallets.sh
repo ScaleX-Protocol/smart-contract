@@ -13,7 +13,7 @@ export PATH="$HOME/.foundry/bin:$PATH"
 
 # Load environment variables
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ENV_FILE="$SCRIPT_DIR/../.env"
+ENV_FILE="$SCRIPT_DIR/../../.env"
 
 # Parse .env file manually to avoid issues with special characters
 if [ -f "$ENV_FILE" ]; then
@@ -34,7 +34,7 @@ if [ -z "$CORE_CHAIN_ID" ]; then
 fi
 
 # Load token addresses from deployments
-DEPLOYMENTS_FILE="$SCRIPT_DIR/../deployments/${CORE_CHAIN_ID}.json"
+DEPLOYMENTS_FILE="$SCRIPT_DIR/../../deployments/${CORE_CHAIN_ID}.json"
 if [ -f "$DEPLOYMENTS_FILE" ]; then
     WETH_ADDRESS=$(cat "$DEPLOYMENTS_FILE" | grep -o '"WETH": "[^"]*"' | cut -d'"' -f4)
     USDC_ADDRESS=$(cat "$DEPLOYMENTS_FILE" | grep -o '"USDC": "[^"]*"' | cut -d'"' -f4)

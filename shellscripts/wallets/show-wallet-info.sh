@@ -2,7 +2,7 @@
 
 # Source quote currency configuration module
 SCRIPT_DIR_EARLY="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-source "${SCRIPT_DIR_EARLY}/lib/quote-currency-config.sh"
+source "${SCRIPT_DIR_EARLY}/../lib/quote-currency-config.sh"
 
 # Display comprehensive wallet information including balances and deposits
 # Usage: ./shellscripts/show-wallet-info.sh [indices] [OPTIONS]
@@ -19,7 +19,7 @@ export PATH="$HOME/.foundry/bin:$PATH"
 
 # Load environment variables
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ENV_FILE="$SCRIPT_DIR/../.env"
+ENV_FILE="$SCRIPT_DIR/../../.env"
 
 # Parse .env file manually to avoid issues with special characters
 if [ -f "$ENV_FILE" ]; then
@@ -49,7 +49,7 @@ load_quote_currency_config
 QUOTE_TOKEN_KEY=$(get_quote_token_key)
 
 # Load token addresses from deployments
-DEPLOYMENTS_FILE="$SCRIPT_DIR/../deployments/${CORE_CHAIN_ID}.json"
+DEPLOYMENTS_FILE="$SCRIPT_DIR/../../deployments/${CORE_CHAIN_ID}.json"
 if [ -f "$DEPLOYMENTS_FILE" ]; then
     # Crypto tokens
     WETH_ADDRESS=$(cat "$DEPLOYMENTS_FILE" | grep -o '"WETH": "[^"]*"' | cut -d'"' -f4)

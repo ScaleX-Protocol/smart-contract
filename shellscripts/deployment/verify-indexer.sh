@@ -38,7 +38,7 @@ fi
 
 # ─── Config ───────────────────────────────────────────────────────────────────
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_ROOT="$SCRIPT_DIR/.."
+PROJECT_ROOT="$SCRIPT_DIR/../.."
 INDEXER_DIR="$PROJECT_ROOT/../clob-indexer/ponder"
 ENV_FILE="$INDEXER_DIR/.env.$CHAIN_NAME"
 
