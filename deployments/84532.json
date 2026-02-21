@@ -48,6 +48,6 @@
     "deploymentComplete": true,
     "PolicyFactoryImpl": "0x76D5FdBCDD9a593957ee170C43fE54CE7FF41b93",
     "PolicyFactoryBeacon": "0x71b590446817203FA0B94C7a49fB5098374Afed0",
-    "AgentRouterImpl": "0xB98Da80993dfA442fcC76E6F21967f495b16f18e",
+    "AgentRouterImpl": "0xd418D2B66d3bE965f16dF5f52DcF0252CF858c5D",
     "AgentRouterBeacon": "0xD15D0A268c4EEBDD377d81509C47ed6E23acE88e"
 }

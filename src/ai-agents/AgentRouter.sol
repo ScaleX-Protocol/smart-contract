@@ -134,6 +134,46 @@ contract AgentRouter is AgentRouterStorage, OwnableUpgradeable, ReentrancyGuardU
         uint256 timestamp
     );
 
+    event AgentSelfTradeExecuted(
+        uint256 indexed strategyAgentId,
+        address indexed agentWallet,
+        address indexed orderBook,
+        IOrderBook.Side side,
+        uint128 quantity,
+        uint128 filled
+    );
+
+    event AgentSelfLimitOrderPlaced(
+        uint256 indexed strategyAgentId,
+        address indexed agentWallet,
+        address indexed orderBook,
+        IOrderBook.Side side,
+        uint128 price,
+        uint128 quantity,
+        uint48 orderId
+    );
+
+    event AgentSelfOrderCancelled(
+        uint256 indexed strategyAgentId,
+        address indexed agentWallet,
+        address indexed orderBook,
+        uint48 orderId
+    );
+
+    event AgentSelfBorrowExecuted(
+        uint256 indexed strategyAgentId,
+        address indexed agentWallet,
+        address token,
+        uint256 amount
+    );
+
+    event AgentSelfRepayExecuted(
+        uint256 indexed strategyAgentId,
+        address indexed agentWallet,
+        address token,
+        uint256 amount
+    );
+
     // ============ Constructor / Initializer ============
 
     /// @custom:oz-upgrades-unsafe-allow constructor
@@ -374,6 +414,105 @@ contract AgentRouter is AgentRouterStorage, OwnableUpgradeable, ReentrancyGuardU
             bytes32(uint256(orderId)),
             block.timestamp
         );
+    }
+
+    // ============ Self-Funded Trading (No Policy Constraints) ============
+
+    /**
+     * @notice Execute a market order using the agent's own BalanceManager balance.
+     * @dev No policy checks — agent is both operator and user. Only NFT ownership verified.
+     */
+    function executeSelfMarketOrder(
+        uint256 strategyAgentId,
+        IPoolManager.Pool calldata pool,
+        IOrderBook.Side side,
+        uint128 quantity,
+        uint128 minOutAmount
+    ) external returns (uint48 orderId, uint128 filled) {
+        Storage storage $ = getStorage();
+        require(
+            msg.sender == IERC8004Identity($.identityRegistry).ownerOf(strategyAgentId),
+            "Not strategy agent owner"
+        );
+
+        (orderId, filled) = pool.orderBook.placeMarketOrder(
+            quantity, side, msg.sender, false, false, strategyAgentId, msg.sender
+        );
+
+        emit AgentSelfTradeExecuted(strategyAgentId, msg.sender, address(pool.orderBook), side, quantity, filled);
+    }
+
+    /**
+     * @notice Place a limit order using the agent's own BalanceManager balance.
+     * @dev No policy checks — agent is both operator and user. Only NFT ownership verified.
+     */
+    function executeSelfLimitOrder(
+        uint256 strategyAgentId,
+        IPoolManager.Pool calldata pool,
+        uint128 price,
+        uint128 quantity,
+        IOrderBook.Side side,
+        IOrderBook.TimeInForce timeInForce
+    ) external returns (uint48 orderId) {
+        Storage storage $ = getStorage();
+        require(
+            msg.sender == IERC8004Identity($.identityRegistry).ownerOf(strategyAgentId),
+            "Not strategy agent owner"
+        );
+
+        orderId = pool.orderBook.placeOrder(
+            price, quantity, side, msg.sender, timeInForce, false, false, strategyAgentId, msg.sender
+        );
+
+        emit AgentSelfLimitOrderPlaced(strategyAgentId, msg.sender, address(pool.orderBook), side, price, quantity, orderId);
+    }
+
+    /**
+     * @notice Cancel a limit order placed by the agent itself.
+     * @dev No policy checks — agent is both operator and user. Only NFT ownership verified.
+     */
+    function cancelSelfOrder(
+        uint256 strategyAgentId,
+        IPoolManager.Pool calldata pool,
+        uint48 orderId
+    ) external {
+        Storage storage $ = getStorage();
+        require(
+            msg.sender == IERC8004Identity($.identityRegistry).ownerOf(strategyAgentId),
+            "Not strategy agent owner"
+        );
+
+        pool.orderBook.cancelOrder(orderId, msg.sender, strategyAgentId, msg.sender);
+
+        emit AgentSelfOrderCancelled(strategyAgentId, msg.sender, address(pool.orderBook), orderId);
+    }
+
+    /**
+     * @notice Borrow tokens against the agent's own collateral.
+     * @dev No policy checks — agent manages its own position.
+     */
+    function selfBorrow(uint256 strategyAgentId, address token, uint256 amount) external {
+        Storage storage $ = getStorage();
+        require(
+            msg.sender == IERC8004Identity($.identityRegistry).ownerOf(strategyAgentId),
+            "Not strategy agent owner"
+        );
+        IBalanceManager($.balanceManager).borrowForUser(msg.sender, token, amount);
+        emit AgentSelfBorrowExecuted(strategyAgentId, msg.sender, token, amount);
+    }
+
+    /**
+     * @notice Repay borrowed tokens on the agent's own position.
+     * @dev No policy checks — agent manages its own position.
+     */
+    function selfRepay(uint256 strategyAgentId, address token, uint256 amount) external {
+        Storage storage $ = getStorage();
+        require(
+            msg.sender == IERC8004Identity($.identityRegistry).ownerOf(strategyAgentId),
+            "Not strategy agent owner"
+        );
+        IBalanceManager($.balanceManager).repayForUser(msg.sender, token, amount);
+        emit AgentSelfRepayExecuted(strategyAgentId, msg.sender, token, amount);
     }
 
     // ============ Lending Functions ============
