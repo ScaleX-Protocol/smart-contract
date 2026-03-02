@@ -1962,6 +1962,46 @@ ORACLE_ADDRESS=$(cat ./deployments/${CORE_CHAIN_ID}.json | jq -r '.Oracle // "0x
 
         print_success "✅ OrderBook authorization and Oracle configuration verification completed"
 
+# ---------------------------------------------------------------
+# Phase 6: PricePrediction Markets (optional — requires KEYSTONE_FORWARDER)
+# ---------------------------------------------------------------
+if [[ -n "${KEYSTONE_FORWARDER:-}" ]] && [[ "${DEPLOY_PRICE_PREDICTION:-true}" == "true" ]]; then
+    print_step "Phase 6: Deploying PricePrediction Markets..."
+    echo "⏳ Waiting 10 seconds before Phase 6 deployment..."
+    sleep 10
+
+    PROTOCOL_FEE_BPS=${PROTOCOL_FEE_BPS:-200}
+    MIN_STAKE_AMOUNT=${MIN_STAKE_AMOUNT:-10000000}
+    MAX_MARKET_TVL=${MAX_MARKET_TVL:-0}
+
+    echo "  📈 Configuration:"
+    echo "    - KeystoneForwarder: $KEYSTONE_FORWARDER"
+    echo "    - Protocol fee (bps): $PROTOCOL_FEE_BPS"
+    echo "    - Min stake amount: $MIN_STAKE_AMOUNT"
+
+    FORGE_FLAGS="--rpc-url \"${SCALEX_CORE_RPC}\" --broadcast --private-key \$PRIVATE_KEY --gas-estimate-multiplier 120 \$SLOW_FLAG --legacy"
+    if [[ -n "${VERIFY_FLAGS:-}" ]]; then
+        FORGE_FLAGS="$FORGE_FLAGS $VERIFY_FLAGS"
+    fi
+
+    if eval "KEYSTONE_FORWARDER=$KEYSTONE_FORWARDER \
+        PROTOCOL_FEE_BPS=$PROTOCOL_FEE_BPS \
+        MIN_STAKE_AMOUNT=$MIN_STAKE_AMOUNT \
+        MAX_MARKET_TVL=$MAX_MARKET_TVL \
+        forge script script/deployments/DeployPricePrediction.s.sol:DeployPricePrediction \
+        $FORGE_FLAGS"; then
+        print_success "Phase 6: PricePrediction deployed successfully"
+        PRICE_PREDICTION=$(cat ./deployments/${CORE_CHAIN_ID}.json | jq -r '.PricePrediction // "0x0000000000000000000000000000000000000000"')
+        echo "  🎯 PricePrediction: $PRICE_PREDICTION"
+    else
+        print_warning "Phase 6: PricePrediction deployment failed (non-critical — rest of deployment is complete)"
+        echo "  To retry manually: KEYSTONE_FORWARDER=<addr> forge script script/deployments/DeployPricePrediction.s.sol:DeployPricePrediction --rpc-url <rpc> --broadcast --private-key <key> --legacy"
+    fi
+else
+    echo ""
+    echo "  ℹ️  Skipping Phase 6 (PricePrediction): set KEYSTONE_FORWARDER env var to enable."
+    echo "  To deploy later: bash shellscripts/deployment/deploy-price-prediction.sh"
+fi
 
 # Step 5: Comprehensive Verification
 print_step "Step 5: Comprehensive Verification..."

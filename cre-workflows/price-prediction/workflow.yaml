@@ -1,0 +1,40 @@
+# Chainlink CRE Workflow: PricePrediction Settlement
+# Deploy this workflow to Chainlink CRE to enable trustless on-chain settlement.
+#
+# This workflow:
+# 1. Listens for SettlementRequested events on PricePrediction contract
+# 2. Reads Oracle.getTWAP(baseToken, 300) at settlement time
+# 3. Computes binary outcome (UP/DOWN or Above/Below)
+# 4. Submits signed report to PricePrediction.onReport()
+
+name: price-prediction-settlement
+version: "1.0.0"
+
+triggers:
+  - type: evm-log
+    name: settlement-requested
+    config:
+      # Set PRICE_PREDICTION_ADDRESS in CRE workflow environment
+      contractAddress: "${PRICE_PREDICTION_ADDRESS}"
+      eventSignature: "SettlementRequested(uint64,address,uint256,uint256)"
+      chainId: 84532  # Base Sepolia
+
+workflow:
+  runtime: typescript
+  entry: src/index.ts
+  environment:
+    PRICE_PREDICTION_ADDRESS: "${PRICE_PREDICTION_ADDRESS}"
+    ORACLE_ADDRESS: "${ORACLE_ADDRESS}"
+
+# Consensus: BFT quorum of DON nodes sign the report before submission
+# The KeystoneForwarder contract verifies signatures and calls onReport()
+consensus:
+  type: bft-quorum
+  threshold: 2/3
+
+# Report destination: PricePrediction.onReport(bytes metadata, bytes report)
+report:
+  destination:
+    contractAddress: "${PRICE_PREDICTION_ADDRESS}"
+    functionSelector: "onReport(bytes,bytes)"
+    chainId: 84532
