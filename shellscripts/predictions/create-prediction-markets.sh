@@ -27,9 +27,18 @@ if [[ ! -f "$DEPLOYMENT_FILE" ]]; then
 fi
 
 # ─── Load addresses ──────────────────────────────────────────────────────────
+# Note: Oracle tracks sxTokens (synthetic), not underlying tokens.
+# Always use sxToken addresses as baseToken for prediction markets.
 PRICE_PREDICTION=$(jq -r '.PricePrediction // ""' "$DEPLOYMENT_FILE")
-WETH=$(jq -r '.WETH // ""' "$DEPLOYMENT_FILE")
-WBTC=$(jq -r '.WBTC // ""' "$DEPLOYMENT_FILE")
+sxWETH=$(jq -r '.sxWETH // ""' "$DEPLOYMENT_FILE")
+sxWBTC=$(jq -r '.sxWBTC // ""' "$DEPLOYMENT_FILE")
+sxGOLD=$(jq -r '.sxGOLD // ""' "$DEPLOYMENT_FILE")
+sxSILVER=$(jq -r '.sxSILVER // ""' "$DEPLOYMENT_FILE")
+sxGOOGLE=$(jq -r '.sxGOOGLE // ""' "$DEPLOYMENT_FILE")
+sxNVIDIA=$(jq -r '.sxNVIDIA // ""' "$DEPLOYMENT_FILE")
+sxMNT=$(jq -r '.sxMNT // ""' "$DEPLOYMENT_FILE")
+sxAPPLE=$(jq -r '.sxAPPLE // ""' "$DEPLOYMENT_FILE")
+ORACLE=$(jq -r '.Oracle // ""' "$DEPLOYMENT_FILE")
 
 if [[ -z "$PRICE_PREDICTION" || "$PRICE_PREDICTION" == "null" ]]; then
     echo "❌ PricePrediction not found in $DEPLOYMENT_FILE. Run deploy-price-prediction.sh first."
@@ -47,6 +56,12 @@ DURATION=${MARKET_DURATION:-300}  # Default: 5 minutes
 # Market type values:
 #   0 = Directional (UP/DOWN vs opening TWAP)
 #   1 = Absolute (Above/Below strike price)
+
+# Returns the TWAP for a token (to use as strike reference)
+get_twap() {
+    cast call "$ORACLE" "getTWAP(address,uint256)(uint256)" "$1" "$DURATION" \
+        --rpc-url "$SCALEX_CORE_RPC" 2>/dev/null || echo "0"
+}
 
 create_market() {
     local base_token="$1"
@@ -77,19 +92,22 @@ create_market() {
 
 # ─── Create markets ──────────────────────────────────────────────────────────
 
-# Directional markets (UP/DOWN)
-if [[ -n "$WETH" && "$WETH" != "null" ]]; then
-    create_market "$WETH" "0" "0" "WETH/IDRX UP/DOWN (${DURATION}s)"
+# Directional markets (UP/DOWN vs opening TWAP)
+[[ -n "$sxWETH"   && "$sxWETH"   != "null" ]] && create_market "$sxWETH"   "0" "0" "sxWETH UP/DOWN (${DURATION}s)"
+[[ -n "$sxWBTC"   && "$sxWBTC"   != "null" ]] && create_market "$sxWBTC"   "0" "0" "sxWBTC UP/DOWN (${DURATION}s)"
+[[ -n "$sxGOLD"   && "$sxGOLD"   != "null" ]] && create_market "$sxGOLD"   "0" "0" "sxGOLD UP/DOWN (${DURATION}s)"
+[[ -n "$sxNVIDIA" && "$sxNVIDIA" != "null" ]] && create_market "$sxNVIDIA" "0" "0" "sxNVIDIA UP/DOWN (${DURATION}s)"
+[[ -n "$sxAPPLE"  && "$sxAPPLE"  != "null" ]] && create_market "$sxAPPLE"  "0" "0" "sxAPPLE UP/DOWN (${DURATION}s)"
+
+# Absolute markets (Above/Below strike price, using current TWAP as strike)
+if [[ -n "$sxWETH" && "$sxWETH" != "null" ]]; then
+    WETH_STRIKE=${WETH_STRIKE_PRICE:-$(get_twap "$sxWETH")}
+    [[ "$WETH_STRIKE" != "0" ]] && create_market "$sxWETH" "1" "$WETH_STRIKE" "sxWETH Above/Below $WETH_STRIKE (${DURATION}s)"
 fi
 
-if [[ -n "$WBTC" && "$WBTC" != "null" ]]; then
-    create_market "$WBTC" "0" "0" "WBTC/IDRX UP/DOWN (${DURATION}s)"
-fi
-
-# Absolute market (Above/Below strike) — use current price as reference
-# Strike price should be provided via env var for precise control
-if [[ -n "${WETH_STRIKE_PRICE:-}" ]] && [[ -n "$WETH" && "$WETH" != "null" ]]; then
-    create_market "$WETH" "1" "$WETH_STRIKE_PRICE" "WETH/IDRX Above/Below $WETH_STRIKE_PRICE (${DURATION}s)"
+if [[ -n "$sxGOLD" && "$sxGOLD" != "null" ]]; then
+    GOLD_STRIKE=${GOLD_STRIKE_PRICE:-$(get_twap "$sxGOLD")}
+    [[ "$GOLD_STRIKE" != "0" ]] && create_market "$sxGOLD" "1" "$GOLD_STRIKE" "sxGOLD Above/Below $GOLD_STRIKE (${DURATION}s)"
 fi
 
 echo ""
@@ -98,5 +116,5 @@ echo ""
 echo "Next steps:"
 echo "  1. Users can now call predict(marketId, predictUp, amount) on $PRICE_PREDICTION"
 echo "  2. After ${DURATION}s, anyone can call requestSettlement(marketId)"
-echo "  3. Chainlink CRE will automatically settle the market"
+echo "  3. Chainlink CRE will automatically settle the market, or owner can call onReport() for testing"
 echo "  4. Winners can call claim(marketId) to receive payouts"

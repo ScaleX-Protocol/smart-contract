@@ -240,10 +240,11 @@ contract PricePrediction is
 
     /// @notice Chainlink CRE callback — settles the market with verified outcome.
     /// @dev Called by KeystoneForwarder after BFT quorum verification.
+    ///      The owner may also call directly (testing / emergency override).
     ///      Report payload: abi.encode(uint64 marketId, bool outcome)
     function onReport(bytes calldata /*metadata*/, bytes calldata report) external override {
         Storage storage $ = getStorage();
-        if (msg.sender != $.keystoneForwarder) revert UnauthorizedForwarder(msg.sender);
+        if (msg.sender != $.keystoneForwarder && msg.sender != owner()) revert UnauthorizedForwarder(msg.sender);
 
         (uint64 marketId, bool outcome) = abi.decode(report, (uint64, bool));
 
