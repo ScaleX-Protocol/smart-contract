@@ -1,7 +1,7 @@
 ---
 title: "feat: Add Yield-Bearing Price Prediction Markets"
 type: feat
-status: active
+status: completed
 date: 2026-03-03
 brainstorm: docs/brainstorms/2026-03-03-price-prediction-markets-brainstorm.md
 ---
@@ -197,12 +197,12 @@ const onSettlementRequested = (runtime: Runtime<Config>, log: EVMLog) => {
 - `src/core/interfaces/IPricePrediction.sol`
 
 **Tasks:**
-- [ ] Compute ERC-7201 storage slot for `"scalex.clob.storage.priceprediction"`
-- [ ] Define all structs: `Market`, `Position`
-- [ ] Define all events: `MarketCreated`, `PredictionPlaced`, `SettlementRequested`, `MarketSettled`, `PrizeClaimed`, `MarketCancelled`
-- [ ] Define all errors: `MarketNotOpen`, `MarketNotExpired`, `AlreadyClaimed`, `InsufficientStake`, `OraclePriceStale`, `ZeroSidePool`, `TVLExceeded`, `NotForwarder`
-- [ ] Import `IReceiver` from Chainlink (or vendor locally at `src/core/interfaces/chainlink/IReceiver.sol`)
-- [ ] Define `IPricePrediction.sol` interface
+- [x] Compute ERC-7201 storage slot for `"scalex.clob.storage.priceprediction"`
+- [x] Define all structs: `Market`, `Position`
+- [x] Define all events: `MarketCreated`, `PredictionPlaced`, `SettlementRequested`, `MarketSettled`, `PrizeClaimed`, `MarketCancelled`
+- [x] Define all errors: `MarketNotOpen`, `MarketNotExpired`, `AlreadyClaimed`, `InsufficientStake`, `OraclePriceStale`, `ZeroSidePool`, `TVLExceeded`, `NotForwarder`
+- [x] Import `IReceiver` from Chainlink (or vendor locally at `src/core/interfaces/chainlink/IReceiver.sol`)
+- [x] Define `IPricePrediction.sol` interface
 
 **Critical note — IReceiver vendoring**: Chainlink's `IReceiver` requires `IERC165`. Vendor both under `src/core/interfaces/chainlink/` to avoid npm dependency in Foundry. The interface is:
 ```solidity
@@ -478,31 +478,31 @@ claim() — loser
 ## Acceptance Criteria
 
 ### Functional Requirements
-- [ ] Admin can create directional and absolute prediction markets on any supported pool
-- [ ] Users can stake sxUSDC (min 10 USDC) on UP/YES or DOWN/NO
-- [ ] Locked funds remain in BalanceManager and earn lending yield during prediction window
-- [ ] Chainlink CRE automatically resolves markets using Oracle.getTWAP() at endTime
-- [ ] Winners receive proportional share of losers' principal (minus 2% protocol fee)
-- [ ] All participants (winners and losers) receive accrued yield on claim
-- [ ] Markets with zero participants on one side auto-cancel on requestSettlement()
-- [ ] Stale oracle price at settlement time causes market cancellation (full refund)
-- [ ] Re-settlement request available after grace period if CRE fails
+- [x] Admin can create directional and absolute prediction markets on any supported pool
+- [x] Users can stake sxUSDC (min 10 USDC) on UP/YES or DOWN/NO
+- [x] Locked funds remain in BalanceManager and earn lending yield during prediction window
+- [x] Chainlink CRE automatically resolves markets using Oracle.getTWAP() at endTime
+- [x] Winners receive proportional share of losers' principal (minus 2% protocol fee)
+- [x] All participants (winners and losers) receive accrued yield on claim
+- [x] Markets with zero participants on one side auto-cancel on requestSettlement()
+- [x] Stale oracle price at settlement time causes market cancellation (full refund)
+- [x] Re-settlement request available after grace period if CRE fails
 
 ### Non-Functional Requirements
-- [ ] `predict()` gas cost < 150k gas
-- [ ] `claim()` gas cost < 100k gas
-- [ ] Contract is upgradeable (Beacon Proxy + ERC-7201)
-- [ ] All admin functions protected by `onlyOwner`
-- [ ] `onReport()` protected by `msg.sender == keystoneForwarder` check
-- [ ] Reentrancy protection on `predict()` and `claim()`
-- [ ] No raw ECDSA signature verification needed on-chain (KeystoneForwarder handles it)
+- [x] `predict()` gas cost < 150k gas
+- [x] `claim()` gas cost < 100k gas
+- [x] Contract is upgradeable (Beacon Proxy + ERC-7201)
+- [x] All admin functions protected by `onlyOwner`
+- [x] `onReport()` protected by `msg.sender == keystoneForwarder` check
+- [x] Reentrancy protection on `predict()` and `claim()`
+- [x] No raw ECDSA signature verification needed on-chain (KeystoneForwarder handles it)
 
 ### Quality Gates
-- [ ] Foundry test suite with ≥90% line coverage on `PricePrediction.sol`
-- [ ] Integration test covering full market lifecycle
-- [ ] `addAuthorizedOperator` call included in deployment script
-- [ ] Contract deployed as Beacon Proxy (upgradeable)
-- [ ] CRE workflow simulated locally against testnet events before deployment
+- [x] Foundry test suite with ≥90% line coverage on `PricePrediction.sol`
+- [x] Integration test covering full market lifecycle
+- [x] `addAuthorizedOperator` call included in deployment script
+- [x] Contract deployed as Beacon Proxy (upgradeable)
+- [x] CRE workflow simulated locally against testnet events before deployment
 
 ---
 
