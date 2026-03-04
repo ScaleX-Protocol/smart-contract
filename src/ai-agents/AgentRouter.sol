@@ -744,28 +744,51 @@ contract AgentRouter is AgentRouterStorage, OwnableUpgradeable, ReentrancyGuardU
         uint256 amountIn,
         uint256 amountOut
     ) internal {
-        int256 pnl = int256(amountOut) - int256(amountIn);
-        IERC8004Reputation(getStorage().reputationRegistry).submitFeedback(
+        int256 pnlRaw = int256(amountOut) - int256(amountIn);
+        // Bounds check: prevent silent truncation on int128 narrowing cast
+        require(pnlRaw >= type(int128).min && pnlRaw <= type(int128).max, "PnL overflow");
+        int128 pnl = int128(pnlRaw);
+
+        try IERC8004Reputation(getStorage().reputationRegistry).giveFeedback(
             strategyAgentId,
-            IERC8004Reputation.FeedbackType.TRADE_EXECUTION,
-            abi.encode(pnl, amountIn, amountOut, block.timestamp)
-        );
+            pnl,
+            18,
+            "trade",
+            "swap",
+            "",
+            "",
+            bytes32(0)
+        ) {} catch {}
     }
 
     function _recordBorrowToReputation(uint256 strategyAgentId, address token, uint256 amount) internal {
-        IERC8004Reputation(getStorage().reputationRegistry).submitFeedback(
+        int128 value = amount <= uint128(type(int128).max) ? int128(int256(amount)) : type(int128).max;
+
+        try IERC8004Reputation(getStorage().reputationRegistry).giveFeedback(
             strategyAgentId,
-            IERC8004Reputation.FeedbackType.BORROW,
-            abi.encode(token, amount, block.timestamp)
-        );
+            value,
+            18,
+            "trade",
+            "borrow",
+            "",
+            "",
+            bytes32(0)
+        ) {} catch {}
     }
 
     function _recordRepayToReputation(uint256 strategyAgentId, address token, uint256 amount) internal {
-        IERC8004Reputation(getStorage().reputationRegistry).submitFeedback(
+        int128 value = amount <= uint128(type(int128).max) ? int128(int256(amount)) : type(int128).max;
+
+        try IERC8004Reputation(getStorage().reputationRegistry).giveFeedback(
             strategyAgentId,
-            IERC8004Reputation.FeedbackType.REPAY,
-            abi.encode(token, amount, block.timestamp)
-        );
+            value,
+            18,
+            "trade",
+            "repay",
+            "",
+            "",
+            bytes32(0)
+        ) {} catch {}
     }
 
     // ============ View Functions ============

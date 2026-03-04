@@ -110,8 +110,8 @@ contract AgentRouterTest is Test {
         // Authorize AgentRouter in PolicyFactory
         policyFactory.setAuthorizedRouter(address(agentRouter), true);
 
-        // Authorize AgentRouter in reputation registry
-        reputationRegistry.setAuthorizedSubmitter(address(agentRouter), true);
+        // No need to authorize AgentRouter in reputation registry for mock
+        // (canonical registry uses self-feedback guard, not authorization)
 
         // Mint strategy agent NFTs (user1 owns agent1, user2 owns agent2)
         vm.prank(user1);
@@ -849,9 +849,29 @@ contract AgentRouterTest is Test {
             1000e6, 950e6, false, false
         );
 
-        // Verify reputation was updated
-        (uint256 totalTrades,,,) = reputationRegistry.getMetrics(agent1);
-        assertEq(totalTrades, 1);
+        // Verify reputation feedback was recorded via giveFeedback()
+        assertEq(reputationRegistry.feedbackCount(agent1), 1);
+    }
+
+    function test_MarketOrderSucceedsWhenReputationReverts() public {
+        // Simulate self-feedback guard or other reputation revert
+        reputationRegistry.setRevert(true, "Self-feedback not allowed");
+
+        vm.prank(user1);
+        agentRouter.authorize(agent1, _createCustomPolicy());
+
+        orderBook.setNextOrderResponse(1, 1000e6);
+
+        // Trade should succeed despite reputation revert (try/catch)
+        vm.prank(user1);
+        agentRouter.executeMarketOrder(
+            user1, agent1, wethUsdcPool,
+            IOrderBook.Side.BUY,
+            1000e6, 950e6, false, false
+        );
+
+        // Reputation was NOT recorded due to revert
+        assertEq(reputationRegistry.feedbackCount(agent1), 0);
     }
 
     // ============ Limit Order Tests ============
@@ -1047,11 +1067,8 @@ contract AgentRouterTest is Test {
         vm.prank(user1);
         agentRouter.executeBorrow(user1, agent1, USDC, 1000e6);
 
-        IERC8004Reputation.Feedback[] memory feedbacks =
-            reputationRegistry.getFeedbackHistory(agent1, 0, 10);
-
-        assertEq(feedbacks.length, 1);
-        assertEq(uint256(feedbacks[0].feedbackType), uint256(IERC8004Reputation.FeedbackType.BORROW));
+        // Verify reputation feedback was recorded via giveFeedback()
+        assertEq(reputationRegistry.feedbackCount(agent1), 1);
     }
 
     // ============ Repay Tests ============

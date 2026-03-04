@@ -103,7 +103,8 @@ contract AgentMarketplaceTest is Test {
         agentRouter = AgentRouter(address(arProxy));
 
         policyFactory.setAuthorizedRouter(address(agentRouter), true);
-        reputationRegistry.setAuthorizedSubmitter(address(agentRouter), true);
+        // No need to authorize AgentRouter in reputation registry for mock
+        // (canonical registry uses self-feedback guard, not authorization)
 
         // Developer registers their strategy agent NFT
         vm.prank(developer);

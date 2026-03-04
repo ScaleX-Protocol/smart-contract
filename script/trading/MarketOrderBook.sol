@@ -143,23 +143,17 @@ contract MarketOrderBook is Script, DeployHelpers {
        console.log(string.concat("- 1 market BUY order (buying ETH with ", quoteCurrency, ")"));
    }
 
-   function _setupFunds(uint256 ethAmount, uint256 quoteAmount) private {
-       // Note: Using existing synthetic token balances in BalanceManager
-       // These tokens are already available from previous local deposits
+   function _setupFunds(uint256 ethAmount, uint256 quoteAmount) private view {
        console.log("Using existing synthetic token balances in BalanceManager");
-       console.log("Expected sxWETH amount:", ethAmount);
-       console.log(string.concat("Expected sx", quoteCurrency, " amount:"), quoteAmount);
 
-       // Check current balances in BalanceManager
        uint256 currentWETHBalance = balanceManager.getBalance(deployerAddress, Currency.wrap(address(synthWETH)));
        uint256 currentQuoteBalance = balanceManager.getBalance(deployerAddress, Currency.wrap(address(synthQuote)));
 
-       console.log("Current sxWETH balance in BalanceManager:", currentWETHBalance);
-       console.log(string.concat("Current sx", quoteCurrency, " balance in BalanceManager:"), currentQuoteBalance);
+       console.log("Current sxWETH balance:", currentWETHBalance);
+       console.log("Current quote balance:", currentQuoteBalance);
 
-       // Verify we have sufficient balances
-       require(currentWETHBalance >= ethAmount, "Insufficient sxWETH balance in BalanceManager");
-       require(currentQuoteBalance >= quoteAmount, string.concat("Insufficient sx", quoteCurrency, " balance in BalanceManager"));
+       require(currentWETHBalance >= ethAmount, "Insufficient sxWETH balance");
+       require(currentQuoteBalance >= quoteAmount, "Insufficient quote balance");
    }
 
    function _placeMarketBuyOrders(
@@ -178,28 +172,17 @@ contract MarketOrderBook is Script, DeployHelpers {
 
        for (uint8 i = 0; i < numOrders; i++) {
            uint128 quantity = quantities[i % 5];
-           
-           // Calculate proper deposit amount for buy orders (need quote currency)
-           // Estimate price at ~2000 quote currency per ETH for deposit calculation
-           uint128 estimatedPrice = 2000e6;
-           uint128 depositAmount = (estimatedPrice * quantity) / 1e18;
-           
-           // Calculate minimum output amount with 5% slippage tolerance
+
            uint128 minOutAmount = scalexRouter.calculateMinOutAmountForMarket(
-               pool, 0, IOrderBook.Side.BUY, 500 // 5% slippage - use 0 since using BalanceManager funds
+               pool, 0, IOrderBook.Side.BUY, 500
            );
-           
+
            (uint48 orderId, uint128 filled) = scalexRouter.placeMarketOrder(
-               pool,
-               quantity,
-               IOrderBook.Side.BUY,
-               0, // Use 0 deposit amount since balances are already in BalanceManager
-               minOutAmount
+               pool, quantity, IOrderBook.Side.BUY, 0, minOutAmount
            );
 
            console.log("Placed market BUY order ID:", orderId);
-           console.log("Quantity:", quantity, "ETH");
-           console.log("Filled:", filled, "ETH");
+           console.log("Filled:", filled);
            marketBuyOrderIds.push(orderId);
        }
    }
@@ -220,26 +203,17 @@ contract MarketOrderBook is Script, DeployHelpers {
 
        for (uint8 i = 0; i < numOrders; i++) {
            uint128 quantity = quantities[i % 5];
-           
-           // For sell orders, deposit the base currency (WETH) quantity
-           uint128 depositAmount = quantity;
-           
-           // Calculate minimum output amount with 5% slippage tolerance
+
            uint128 minOutAmount = scalexRouter.calculateMinOutAmountForMarket(
-               pool, 0, IOrderBook.Side.SELL, 500 // 5% slippage - use 0 since using BalanceManager funds
+               pool, 0, IOrderBook.Side.SELL, 500
            );
-           
+
            (uint48 orderId, uint128 filled) = scalexRouter.placeMarketOrder(
-               pool,
-               quantity,
-               IOrderBook.Side.SELL,
-               0, // Use 0 deposit amount since balances are already in BalanceManager
-               minOutAmount
+               pool, quantity, IOrderBook.Side.SELL, 0, minOutAmount
            );
 
            console.log("Placed market SELL order ID:", orderId);
-           console.log("Quantity:", quantity, "ETH");
-           console.log("Filled:", filled, "ETH");
+           console.log("Filled:", filled);
            marketSellOrderIds.push(orderId);
        }
    }
@@ -263,53 +237,46 @@ contract MarketOrderBook is Script, DeployHelpers {
            _checkOrderDetails(weth, quote, marketSellOrderIds[i], string(abi.encodePacked("Market SELL #", uint2str(i + 1))));
        }
 
-       // Check orderbook state after market orders
-       console.log("\n--- Order Book State After Market Orders ---");
-
-       // Check best prices
-       IOrderBook.PriceVolume memory bestBuy = scalexRouter.getBestPrice(weth, quote, IOrderBook.Side.BUY);
-       IOrderBook.PriceVolume memory bestSell = scalexRouter.getBestPrice(weth, quote, IOrderBook.Side.SELL);
-
-       console.log("Best BUY price:", bestBuy.price, quoteCurrency);
-       console.log("Volume at best BUY:", bestBuy.volume, "ETH\n");
-
-       console.log("Best SELL price:", bestSell.price, quoteCurrency);
-       console.log("Volume at best SELL:", bestSell.volume, "ETH\n");
-
-       // Check balance changes
+       // Check orderbook state and balances
+       _logBestPrices(weth, quote);
        _checkBalances();
    }
 
-   function _checkOrderDetails(Currency base, Currency quote, uint48 orderId, string memory label) private {
+   function _logBestPrices(Currency weth, Currency quote) private view {
+       console.log("\n--- Order Book State After Market Orders ---");
+       IOrderBook.PriceVolume memory bestBuy = scalexRouter.getBestPrice(weth, quote, IOrderBook.Side.BUY);
+       IOrderBook.PriceVolume memory bestSell = scalexRouter.getBestPrice(weth, quote, IOrderBook.Side.SELL);
+       console.log("Best BUY price:", bestBuy.price);
+       console.log("Best BUY volume:", bestBuy.volume);
+       console.log("Best SELL price:", bestSell.price);
+       console.log("Best SELL volume:", bestSell.volume);
+   }
+
+   function _checkOrderDetails(Currency base, Currency quote, uint48 orderId, string memory label) private view {
        IOrderBook.Order memory order = scalexRouter.getOrder(base, quote, orderId);
 
        console.log("\nOrder details for", label);
        console.log("Order ID:", orderId);
        console.log("User:", order.user);
-       console.log("Side:", order.side == IOrderBook.Side.BUY ? "BUY" : "SELL");
-       console.log("Type:", order.orderType == IOrderBook.OrderType.LIMIT ? "LIMIT" : "MARKET");
-       console.log("Price:", order.price, quoteCurrency);
-       console.log("Quantity:", order.quantity, "ETH");
-       console.log("Filled:", order.filled, "ETH");
-       console.log("---");
+       console.log("Price:", order.price);
+       console.log("Quantity:", order.quantity);
+       console.log("Filled:", order.filled);
    }
 
-   function _checkBalances() private {
+   function _checkBalances() private view {
        console.log("\n--- Balance Check ---");
 
-       // Check BalanceManager balances
        uint256 bmEthBalance = balanceManager.getBalance(deployerAddress, Currency.wrap(address(synthWETH)));
        uint256 bmQuoteBalance = balanceManager.getBalance(deployerAddress, Currency.wrap(address(synthQuote)));
 
-       console.log("BalanceManager sxWETH balance:", bmEthBalance, "wei");
-       console.log(string.concat("BalanceManager sx", quoteCurrency, " balance:"), bmQuoteBalance, "units");
+       console.log("BalanceManager sxWETH balance:", bmEthBalance);
+       console.log("BalanceManager quote balance:", bmQuoteBalance);
 
-       // Check token balances directly
        uint256 ethTokenBalance = synthWETH.balanceOf(deployerAddress);
        uint256 quoteTokenBalance = synthQuote.balanceOf(deployerAddress);
 
-       console.log("Direct sxWETH token balance:", ethTokenBalance, "wei");
-       console.log(string.concat("Direct sx", quoteCurrency, " token balance:"), quoteTokenBalance, "units");
+       console.log("Direct sxWETH token balance:", ethTokenBalance);
+       console.log("Direct quote token balance:", quoteTokenBalance);
    }
 
    // Utility function to convert uint to string
@@ -352,89 +319,70 @@ contract MarketOrderBook is Script, DeployHelpers {
        console.log("All market order execution verifications passed!");
    }
    
-   function _verifyMarketOrdersExecuted() private {
+   function _verifyMarketOrdersExecuted() private view {
        console.log("Checking market order execution...");
-       
-       // Verify we attempted to place market orders
+
        require(marketBuyOrderIds.length > 0 || marketSellOrderIds.length > 0, "No market orders were attempted");
-       
-       // For market orders that were successfully placed, verify they have valid IDs
+
        for (uint256 i = 0; i < marketBuyOrderIds.length; i++) {
            require(marketBuyOrderIds[i] > 0, "Invalid market BUY order ID");
        }
-       
+
        for (uint256 i = 0; i < marketSellOrderIds.length; i++) {
            require(marketSellOrderIds[i] > 0, "Invalid market SELL order ID");
        }
-       
+
        console.log("Market orders execution verified");
    }
    
-   function _verifyBalanceChanges(Currency weth, Currency usdc) private {
+   function _verifyBalanceChanges(Currency, Currency) private view {
        console.log("Checking balance changes...");
-       
-       // Get current balances from BalanceManager
+
        uint256 userWethBalance = balanceManager.getBalance(deployerAddress, Currency.wrap(address(synthWETH)));
-       uint256 userUsdcBalance = balanceManager.getBalance(deployerAddress, Currency.wrap(address(synthQuote)));
-       uint256 bmWethBalance = userWethBalance; // Same as user balance in BalanceManager
-       uint256 bmUsdcBalance = userUsdcBalance; // Same as user balance in BalanceManager
-       
-       // Market orders should have transferred tokens to/from balance manager
+       uint256 userQuoteBalance = balanceManager.getBalance(deployerAddress, Currency.wrap(address(synthQuote)));
+
        if (marketBuyOrderIds.length > 0) {
-           // BUY orders should have used USDC and possibly received WETH
-           require(bmUsdcBalance > 0, "No USDC transferred to BalanceManager for BUY orders");
+           require(userQuoteBalance > 0, "No quote transferred for BUY orders");
        }
-       
+
        if (marketSellOrderIds.length > 0) {
-           // SELL orders should have used WETH and received USDC  
-           // After selling WETH, user should have received USDC (balance should increase)
-           require(bmUsdcBalance > 0, "No USDC received from SELL orders");
+           require(userQuoteBalance > 0, "No quote received from SELL orders");
        }
-       
-       // Verify user still has reasonable balances (not completely drained)
-       uint256 initialWeth = 2e18; // From _setupFunds  
-       uint256 initialUsdc = 2000e6; // From _setupFunds (updated)
-       
-       require(userWethBalance <= initialWeth, "User WETH balance increased unexpectedly beyond initial amount");
-       // For SELL orders, USDC balance should increase, so remove this check
-       // require(userUsdcBalance <= initialUsdc, "User USDC balance increased unexpectedly");
-       
+
+       require(userWethBalance <= 2e18, "WETH balance exceeded initial amount");
+
        console.log("Balance changes verification passed");
    }
    
    function _verifyOrderBookAfterMarketOrders(Currency base, Currency quote) private {
        console.log("Checking orderbook state after market orders...");
-       
-       // Market orders execute against existing limit orders, so:
-       // 1. Some limit orders might be filled/removed
-       // 2. Market orders themselves might be filled and removed
-       // 3. Orderbook should still be in valid state
-       
+
+       _verifySpread(base, quote);
+       _verifyMarketOrderStates(base, quote);
+
+       console.log("Orderbook state verification passed");
+   }
+
+   function _verifySpread(Currency base, Currency quote) private {
        IOrderBook.PriceVolume memory bestBuy = scalexRouter.getBestPrice(base, quote, IOrderBook.Side.BUY);
        IOrderBook.PriceVolume memory bestSell = scalexRouter.getBestPrice(base, quote, IOrderBook.Side.SELL);
-       
-       // If there are any orders left, they should be valid
+
        if (bestBuy.price > 0) {
            require(bestBuy.volume > 0, "BUY side has price but no volume");
        }
-       
        if (bestSell.price > 0) {
            require(bestSell.volume > 0, "SELL side has price but no volume");
        }
-       
-       // If both sides exist, spread should be positive
        if (bestBuy.price > 0 && bestSell.price > 0) {
            require(bestSell.price > bestBuy.price, "Invalid spread after market orders");
        }
-       
-       // Verify placed market orders are in reasonable state
+   }
+
+   function _verifyMarketOrderStates(Currency base, Currency quote) private {
        for (uint256 i = 0; i < marketBuyOrderIds.length; i++) {
            IOrderBook.Order memory order = scalexRouter.getOrder(base, quote, marketBuyOrderIds[i]);
-           // Market orders should either be filled (and removed) or partially filled
            require(order.user == deployerAddress || order.id == 0, "Market order has wrong user or invalid state");
        }
-       
-       console.log("Orderbook state verification passed");
    }
 
    function _makeLocalDeposits(uint256 ethAmount, uint256 quoteAmount) private {
