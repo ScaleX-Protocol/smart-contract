@@ -14,6 +14,7 @@ import "../core/interfaces/IOrderBook.sol";
 import "../core/interfaces/IBalanceManager.sol";
 import "../core/interfaces/ILendingManager.sol";
 import "../core/interfaces/IPoolManager.sol";
+import "../core/interfaces/IPricePrediction.sol";
 import {Currency} from "../core/libraries/Currency.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
@@ -174,6 +175,52 @@ contract AgentRouter is AgentRouterStorage, OwnableUpgradeable, ReentrancyGuardU
         uint256 amount
     );
 
+    event AgentListedOnMarketplace(
+        uint256 indexed strategyAgentId,
+        address indexed owner,
+        uint256 timestamp
+    );
+
+    event AgentDelistedFromMarketplace(
+        uint256 indexed strategyAgentId,
+        address indexed owner,
+        uint256 timestamp
+    );
+
+    event AgentPredictionPlaced(
+        address indexed user,
+        uint256 indexed strategyAgentId,
+        address indexed executor,
+        uint64 marketId,
+        bool predictUp,
+        uint256 amount,
+        uint256 timestamp
+    );
+
+    event AgentPredictionClaimed(
+        address indexed user,
+        uint256 indexed strategyAgentId,
+        address indexed executor,
+        uint64 marketId,
+        uint256 payout,
+        uint256 timestamp
+    );
+
+    event AgentSelfPredictionPlaced(
+        uint256 indexed strategyAgentId,
+        address indexed agentWallet,
+        uint64 marketId,
+        bool predictUp,
+        uint256 amount
+    );
+
+    event AgentSelfPredictionClaimed(
+        uint256 indexed strategyAgentId,
+        address indexed agentWallet,
+        uint64 marketId,
+        uint256 payout
+    );
+
     // ============ Constructor / Initializer ============
 
     /// @custom:oz-upgrades-unsafe-allow constructor
@@ -237,6 +284,10 @@ contract AgentRouter is AgentRouterStorage, OwnableUpgradeable, ReentrancyGuardU
         return getStorage().lendingManager;
     }
 
+    function pricePrediction() external view returns (address) {
+        return getStorage().pricePrediction;
+    }
+
     function dayStartValues(address user, uint256 day) external view returns (uint256) {
         return getStorage().dayStartValues[user][day];
     }
@@ -257,6 +308,10 @@ contract AgentRouter is AgentRouterStorage, OwnableUpgradeable, ReentrancyGuardU
 
     function setMetricsConsumer(address _metricsConsumer) external onlyOwner {
         getStorage().metricsConsumer = _metricsConsumer;
+    }
+
+    function setPricePrediction(address _pricePrediction) external onlyOwner {
+        getStorage().pricePrediction = _pricePrediction;
     }
 
     // ============ Authorization ============
@@ -292,6 +347,43 @@ contract AgentRouter is AgentRouterStorage, OwnableUpgradeable, ReentrancyGuardU
      */
     function isAuthorized(address user, uint256 strategyAgentId) external view returns (bool) {
         return getStorage().authorizedStrategyAgents[user][strategyAgentId];
+    }
+
+    // ============ Marketplace Listing ============
+
+    /**
+     * @notice List a strategy agent on the ScaleX marketplace.
+     * @dev Only the NFT owner can list their agent.
+     */
+    function listOnMarketplace(uint256 strategyAgentId) external {
+        Storage storage $ = getStorage();
+        require(
+            msg.sender == IERC8004Identity($.identityRegistry).ownerOf(strategyAgentId),
+            "Not strategy agent owner"
+        );
+        $.listedOnMarketplace[strategyAgentId] = true;
+        emit AgentListedOnMarketplace(strategyAgentId, msg.sender, block.timestamp);
+    }
+
+    /**
+     * @notice Remove a strategy agent from the ScaleX marketplace.
+     * @dev Only the NFT owner can delist their agent.
+     */
+    function delistFromMarketplace(uint256 strategyAgentId) external {
+        Storage storage $ = getStorage();
+        require(
+            msg.sender == IERC8004Identity($.identityRegistry).ownerOf(strategyAgentId),
+            "Not strategy agent owner"
+        );
+        $.listedOnMarketplace[strategyAgentId] = false;
+        emit AgentDelistedFromMarketplace(strategyAgentId, msg.sender, block.timestamp);
+    }
+
+    /**
+     * @notice Check if a strategy agent is listed on the marketplace.
+     */
+    function isListedOnMarketplace(uint256 strategyAgentId) external view returns (bool) {
+        return getStorage().listedOnMarketplace[strategyAgentId];
     }
 
     // ============ Internal Auth Helper ============
@@ -513,6 +605,87 @@ contract AgentRouter is AgentRouterStorage, OwnableUpgradeable, ReentrancyGuardU
         );
         IBalanceManager($.balanceManager).repayForUser(msg.sender, token, amount);
         emit AgentSelfRepayExecuted(strategyAgentId, msg.sender, token, amount);
+    }
+
+    // ============ Prediction Functions ============
+
+    /**
+     * @notice Place a prediction on behalf of `user`.
+     */
+    function executePredict(
+        address user,
+        uint256 strategyAgentId,
+        uint64 marketId,
+        bool predictUp,
+        uint256 amount
+    ) external {
+        PolicyFactoryStorage.Policy memory policy = _verifyAndGetPolicy(user, strategyAgentId);
+        require(policy.allowPredict, "Predictions not allowed");
+        require(amount <= policy.maxPredictionStake, "Prediction stake exceeds limit");
+
+        Storage storage $ = getStorage();
+        IPricePrediction($.pricePrediction).predictFor(user, marketId, predictUp, amount);
+
+        _recordPredictionToReputation(strategyAgentId, marketId, predictUp, amount);
+
+        emit AgentPredictionPlaced(user, strategyAgentId, msg.sender, marketId, predictUp, amount, block.timestamp);
+    }
+
+    /**
+     * @notice Claim a prediction payout on behalf of `user`.
+     */
+    function executeClaimPrediction(
+        address user,
+        uint256 strategyAgentId,
+        uint64 marketId
+    ) external {
+        PolicyFactoryStorage.Policy memory policy = _verifyAndGetPolicy(user, strategyAgentId);
+        require(policy.allowClaimPrediction, "Claiming predictions not allowed");
+
+        Storage storage $ = getStorage();
+        uint256 payoutBefore = _getUserPredictionClaimable($, user, marketId);
+        IPricePrediction($.pricePrediction).claimFor(user, marketId);
+
+        emit AgentPredictionClaimed(user, strategyAgentId, msg.sender, marketId, payoutBefore, block.timestamp);
+    }
+
+    /**
+     * @notice Place a prediction using the agent's own funds.
+     */
+    function selfPredict(
+        uint256 strategyAgentId,
+        uint64 marketId,
+        bool predictUp,
+        uint256 amount
+    ) external {
+        Storage storage $ = getStorage();
+        require(
+            msg.sender == IERC8004Identity($.identityRegistry).ownerOf(strategyAgentId),
+            "Not strategy agent owner"
+        );
+
+        IPricePrediction($.pricePrediction).predictFor(msg.sender, marketId, predictUp, amount);
+
+        emit AgentSelfPredictionPlaced(strategyAgentId, msg.sender, marketId, predictUp, amount);
+    }
+
+    /**
+     * @notice Claim a prediction payout for the agent's own position.
+     */
+    function selfClaimPrediction(
+        uint256 strategyAgentId,
+        uint64 marketId
+    ) external {
+        Storage storage $ = getStorage();
+        require(
+            msg.sender == IERC8004Identity($.identityRegistry).ownerOf(strategyAgentId),
+            "Not strategy agent owner"
+        );
+
+        uint256 payout = _getUserPredictionClaimable($, msg.sender, marketId);
+        IPricePrediction($.pricePrediction).claimFor(msg.sender, marketId);
+
+        emit AgentSelfPredictionClaimed(strategyAgentId, msg.sender, marketId, payout);
     }
 
     // ============ Lending Functions ============
@@ -774,6 +947,25 @@ contract AgentRouter is AgentRouterStorage, OwnableUpgradeable, ReentrancyGuardU
             "",
             bytes32(0)
         ) {} catch {}
+    }
+
+    function _recordPredictionToReputation(uint256 strategyAgentId, uint64 marketId, bool predictUp, uint256 amount) internal {
+        int128 value = amount <= uint128(type(int128).max) ? int128(int256(amount)) : type(int128).max;
+
+        try IERC8004Reputation(getStorage().reputationRegistry).giveFeedback(
+            strategyAgentId,
+            value,
+            18,
+            "trade",
+            "predict",
+            "",
+            "",
+            bytes32(0)
+        ) {} catch {}
+    }
+
+    function _getUserPredictionClaimable(Storage storage $, address user, uint64 marketId) internal view returns (uint256) {
+        return IPricePrediction($.pricePrediction).getClaimableAmount(marketId, user);
     }
 
     function _recordRepayToReputation(uint256 strategyAgentId, address token, uint256 amount) internal {

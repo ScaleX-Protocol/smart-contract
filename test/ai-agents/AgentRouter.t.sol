@@ -15,6 +15,7 @@ import "./mocks/MockPoolManager.sol";
 import "./mocks/MockOrderBook.sol";
 import "./mocks/MockLendingManager.sol";
 import "./mocks/MockBalanceManager.sol";
+import "./mocks/MockPricePrediction.sol";
 import {Currency} from "../../src/core/libraries/Currency.sol";
 
 /**
@@ -40,6 +41,7 @@ contract AgentRouterTest is Test {
     MockOrderBook public orderBook;
     MockLendingManager public lendingManager;
     MockBalanceManager public balanceManager;
+    MockPricePrediction public pricePrediction;
 
     address public owner;
     address public user1;
@@ -78,6 +80,7 @@ contract AgentRouterTest is Test {
         balanceManager = new MockBalanceManager();
         lendingManager = new MockLendingManager();
         orderBook = new MockOrderBook();
+        pricePrediction = new MockPricePrediction();
 
         // Setup WETH/USDC pool
         wethUsdcPool = IPoolManager.Pool({
@@ -106,6 +109,9 @@ contract AgentRouterTest is Test {
             ))
         );
         agentRouter = AgentRouter(address(arProxy));
+
+        // Configure PricePrediction
+        agentRouter.setPricePrediction(address(pricePrediction));
 
         // Authorize AgentRouter in PolicyFactory
         policyFactory.setAuthorizedRouter(address(agentRouter), true);
@@ -1248,6 +1254,139 @@ contract AgentRouterTest is Test {
         assertEq(lastTime, block.timestamp);
     }
 
+    // ============ Marketplace Listing Tests ============
+
+    function test_ListOnMarketplace() public {
+        vm.startPrank(user1);
+        assertFalse(agentRouter.isListedOnMarketplace(agent1));
+
+        vm.expectEmit(true, true, true, true);
+        emit AgentRouter.AgentListedOnMarketplace(agent1, user1, block.timestamp);
+
+        agentRouter.listOnMarketplace(agent1);
+        assertTrue(agentRouter.isListedOnMarketplace(agent1));
+        vm.stopPrank();
+    }
+
+    function test_DelistFromMarketplace() public {
+        vm.startPrank(user1);
+        agentRouter.listOnMarketplace(agent1);
+        assertTrue(agentRouter.isListedOnMarketplace(agent1));
+
+        vm.expectEmit(true, true, true, true);
+        emit AgentRouter.AgentDelistedFromMarketplace(agent1, user1, block.timestamp);
+
+        agentRouter.delistFromMarketplace(agent1);
+        assertFalse(agentRouter.isListedOnMarketplace(agent1));
+        vm.stopPrank();
+    }
+
+    function test_RevertNonOwnerCannotList() public {
+        vm.prank(user2);
+        vm.expectRevert("Not strategy agent owner");
+        agentRouter.listOnMarketplace(agent1);
+    }
+
+    function test_ListAlreadyListedIsIdempotent() public {
+        vm.startPrank(user1);
+        agentRouter.listOnMarketplace(agent1);
+        assertTrue(agentRouter.isListedOnMarketplace(agent1));
+
+        // Listing again should not revert
+        agentRouter.listOnMarketplace(agent1);
+        assertTrue(agentRouter.isListedOnMarketplace(agent1));
+        vm.stopPrank();
+    }
+
+    // ============ Prediction Tests ============
+
+    function test_ExecutePredict() public {
+        // Authorize agent for user1
+        vm.prank(user1);
+        agentRouter.authorize(agent1, _createCustomPolicy());
+
+        // Agent places prediction on behalf of user1
+        vm.prank(user1);
+        agentRouter.executePredict(user1, agent1, 1, true, 1000e6);
+
+        // Verify mock was called correctly
+        (address callUser, uint64 callMarketId, bool callPredictUp, uint256 callAmount) = pricePrediction.lastPredictCall();
+        assertEq(callUser, user1);
+        assertEq(callMarketId, 1);
+        assertTrue(callPredictUp);
+        assertEq(callAmount, 1000e6);
+        assertEq(pricePrediction.predictCallCount(), 1);
+    }
+
+    function test_ExecuteClaimPrediction() public {
+        // Authorize agent for user1
+        vm.prank(user1);
+        agentRouter.authorize(agent1, _createCustomPolicy());
+
+        // Set claimable amount
+        pricePrediction.setClaimableAmount(1, user1, 2000e6);
+
+        // Agent claims prediction on behalf of user1
+        vm.prank(user1);
+        agentRouter.executeClaimPrediction(user1, agent1, 1);
+
+        // Verify mock was called
+        (address callUser, uint64 callMarketId) = pricePrediction.lastClaimCall();
+        assertEq(callUser, user1);
+        assertEq(callMarketId, 1);
+        assertEq(pricePrediction.claimCallCount(), 1);
+    }
+
+    function test_SelfPredict() public {
+        // Agent places prediction with own funds
+        vm.prank(user1);
+        agentRouter.selfPredict(agent1, 1, true, 500e6);
+
+        // Verify mock was called
+        (address callUser, uint64 callMarketId, bool callPredictUp, uint256 callAmount) = pricePrediction.lastPredictCall();
+        assertEq(callUser, user1);
+        assertEq(callMarketId, 1);
+        assertTrue(callPredictUp);
+        assertEq(callAmount, 500e6);
+    }
+
+    function test_SelfClaimPrediction() public {
+        pricePrediction.setClaimableAmount(1, user1, 1500e6);
+
+        vm.prank(user1);
+        agentRouter.selfClaimPrediction(agent1, 1);
+
+        (address callUser, uint64 callMarketId) = pricePrediction.lastClaimCall();
+        assertEq(callUser, user1);
+        assertEq(callMarketId, 1);
+    }
+
+    function test_ExecutePredictNotAllowed() public {
+        // Create policy with predictions disabled
+        PolicyFactoryStorage.Policy memory p = _createCustomPolicy();
+        p.allowPredict = false;
+
+        vm.prank(user1);
+        agentRouter.authorize(agent1, p);
+
+        vm.prank(user1);
+        vm.expectRevert("Predictions not allowed");
+        agentRouter.executePredict(user1, agent1, 1, true, 1000e6);
+    }
+
+    function test_ExecutePredictExceedsMaxStake() public {
+        // Create policy with low max stake
+        PolicyFactoryStorage.Policy memory p = _createCustomPolicy();
+        p.maxPredictionStake = 100e6;
+
+        vm.prank(user1);
+        agentRouter.authorize(agent1, p);
+
+        vm.prank(user1);
+        vm.expectRevert("Prediction stake exceeds limit");
+        agentRouter.executePredict(user1, agent1, 1, true, 500e6);
+    }
+
     // ============ Helper Functions ============
 
     /// @dev Build a default custom policy for tests.
@@ -1272,6 +1411,9 @@ contract AgentRouterTest is Test {
             allowWithdrawCollateral: true,
             allowPlaceLimitOrder: true,
             allowCancelOrder: true,
+            allowPredict: true,
+            allowClaimPrediction: true,
+            maxPredictionStake: 50000e6,
             allowBuy: true,
             allowSell: true,
             allowAutoBorrow: true,

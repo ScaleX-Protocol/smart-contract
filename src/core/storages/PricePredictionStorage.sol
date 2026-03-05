@@ -32,6 +32,9 @@ abstract contract PricePredictionStorage {
 
         // Protocol fee accumulator (held in this contract's BalanceManager balance)
         uint256 accumulatedFees;
+
+        // Authorized routers (AgentRouter) that can call predictFor/claimFor
+        mapping(address => bool) authorizedRouters;
     }
 
     function getStorage() internal pure returns (Storage storage $) {

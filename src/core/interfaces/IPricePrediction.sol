@@ -123,9 +123,13 @@ interface IPricePrediction {
 
     function predict(uint64 marketId, bool predictUp, uint256 amount) external;
 
+    function predictFor(address user, uint64 marketId, bool predictUp, uint256 amount) external;
+
     function requestSettlement(uint64 marketId) external;
 
     function claim(uint64 marketId) external;
+
+    function claimFor(address user, uint64 marketId) external;
 
     function claimBatch(uint64[] calldata marketIds) external;
 

@@ -228,7 +228,7 @@ retry_rpc_call() {
 }
 
 print_step "Prerequisites: Validating deployment..."
-if ./shellscripts/validate-deployment.sh > /dev/null 2>&1; then
+if ./shellscripts/deployment/validate-deployment.sh > /dev/null 2>&1; then
     print_success "Local deployment validation passed"
 else
     print_error "Local deployment validation failed! Please run deploy.sh first"
@@ -323,6 +323,66 @@ if forge script script/lending/PopulateLendingData.sol:PopulateLendingData --rpc
 else
     print_warning "Lending data population failed, continuing without lending..."
     echo "  🔧 Manual lending setup required"
+fi
+
+# Step 4.1: Update lending interest rate parameters
+print_step "Step 4.1: Updating lending interest rate parameters..."
+echo "  📊 Setting interest rates and creating initial lending utilization"
+echo "  Target utilization: ${BORROW_RATIO:-30}%"
+
+# Interest rate defaults (basis points: 1% = 100)
+# Stablecoins: conservative, Crypto: moderate, RWA stocks: higher
+export IDRX_BASE_RATE="${IDRX_BASE_RATE:-200}"
+export IDRX_OPTIMAL_UTIL="${IDRX_OPTIMAL_UTIL:-8000}"
+export IDRX_RATE_SLOPE1="${IDRX_RATE_SLOPE1:-1000}"
+export IDRX_RATE_SLOPE2="${IDRX_RATE_SLOPE2:-5000}"
+export WETH_BASE_RATE="${WETH_BASE_RATE:-300}"
+export WETH_OPTIMAL_UTIL="${WETH_OPTIMAL_UTIL:-8000}"
+export WETH_RATE_SLOPE1="${WETH_RATE_SLOPE1:-1200}"
+export WETH_RATE_SLOPE2="${WETH_RATE_SLOPE2:-6000}"
+export WBTC_BASE_RATE="${WBTC_BASE_RATE:-250}"
+export WBTC_OPTIMAL_UTIL="${WBTC_OPTIMAL_UTIL:-8000}"
+export WBTC_RATE_SLOPE1="${WBTC_RATE_SLOPE1:-1100}"
+export WBTC_RATE_SLOPE2="${WBTC_RATE_SLOPE2:-5500}"
+export GOLD_BASE_RATE="${GOLD_BASE_RATE:-250}"
+export GOLD_OPTIMAL_UTIL="${GOLD_OPTIMAL_UTIL:-7500}"
+export GOLD_RATE_SLOPE1="${GOLD_RATE_SLOPE1:-900}"
+export GOLD_RATE_SLOPE2="${GOLD_RATE_SLOPE2:-4000}"
+export SILVER_BASE_RATE="${SILVER_BASE_RATE:-250}"
+export SILVER_OPTIMAL_UTIL="${SILVER_OPTIMAL_UTIL:-7500}"
+export SILVER_RATE_SLOPE1="${SILVER_RATE_SLOPE1:-900}"
+export SILVER_RATE_SLOPE2="${SILVER_RATE_SLOPE2:-4000}"
+export GOOGL_BASE_RATE="${GOOGL_BASE_RATE:-400}"
+export GOOGL_OPTIMAL_UTIL="${GOOGL_OPTIMAL_UTIL:-7000}"
+export GOOGL_RATE_SLOPE1="${GOOGL_RATE_SLOPE1:-1500}"
+export GOOGL_RATE_SLOPE2="${GOOGL_RATE_SLOPE2:-7000}"
+export NVDA_BASE_RATE="${NVDA_BASE_RATE:-400}"
+export NVDA_OPTIMAL_UTIL="${NVDA_OPTIMAL_UTIL:-7000}"
+export NVDA_RATE_SLOPE1="${NVDA_RATE_SLOPE1:-1500}"
+export NVDA_RATE_SLOPE2="${NVDA_RATE_SLOPE2:-7000}"
+export AAPL_BASE_RATE="${AAPL_BASE_RATE:-400}"
+export AAPL_OPTIMAL_UTIL="${AAPL_OPTIMAL_UTIL:-7000}"
+export AAPL_RATE_SLOPE1="${AAPL_RATE_SLOPE1:-1500}"
+export AAPL_RATE_SLOPE2="${AAPL_RATE_SLOPE2:-7000}"
+export MNT_BASE_RATE="${MNT_BASE_RATE:-350}"
+export MNT_OPTIMAL_UTIL="${MNT_OPTIMAL_UTIL:-7500}"
+export MNT_RATE_SLOPE1="${MNT_RATE_SLOPE1:-1300}"
+export MNT_RATE_SLOPE2="${MNT_RATE_SLOPE2:-6500}"
+export BORROW_RATIO="${BORROW_RATIO:-30}"
+
+if forge script script/lending/UpdateLendingWithActivity.s.sol:UpdateLendingWithActivity \
+    --rpc-url "${SCALEX_CORE_RPC}" \
+    --broadcast \
+    --slow 2>&1 | tee /tmp/update_lending_params_output.log; then
+
+    LENDING_RATES_UPDATED=$(grep -c "\[OK\].*interest rates set" /tmp/update_lending_params_output.log 2>/dev/null || echo "0")
+    LENDING_NON_ZERO_APY=$(grep -c "\[OK\] Supply APY is non-zero" /tmp/update_lending_params_output.log 2>/dev/null || echo "0")
+    print_success "Lending interest rates updated: $LENDING_RATES_UPDATED tokens"
+    if [[ $LENDING_NON_ZERO_APY -gt 0 ]]; then
+        print_success "$LENDING_NON_ZERO_APY tokens now have non-zero Supply APY"
+    fi
+else
+    print_warning "Lending parameter update failed — continuing with defaults"
 fi
 
 # Step 4.5: Liquidity Provisioning and Borrowing Activities
@@ -928,8 +988,10 @@ if ./shellscripts/validate-data-population.sh; then
     echo "System now contains:"
     echo "  📊 Two active traders with token balances"
     echo "  🤖 One AI agent with ERC-8004 compatible tracking"
+    echo "  🤖 7 showcase agents registered on 8004scan"
+    echo "  🎲 Prediction markets with initial predictions"
     echo "  💰 Token transfers between traders completed"
-    echo "  🏦 Lending protocol infrastructure configured"
+    echo "  🏦 Lending protocol infrastructure configured with interest rates"
     echo "  💵 Actual liquidity provisioned to lending protocol"
     echo "  📤 Active borrowing activities demonstrated (traders + agent)"
     echo "  🛡️  Collateral deposited and borrowing capacity established"
@@ -998,6 +1060,275 @@ else
     fi
 fi
 
+# ========================================
+# SHOWCASE AGENT REGISTRATION (ERC-8004)
+# ========================================
+echo ""
+print_step "Showcase Agent Registration (ERC-8004 on 8004scan)..."
+
+# Parse SEED_PHRASE from .env (handles quoted values)
+SEED_PHRASE=$(grep "^SEED_PHRASE=" .env 2>/dev/null | cut -d'=' -f2- | sed 's/^"\(.*\)"$/\1/' | sed "s/^'\(.*\)'$/\1/")
+
+if [[ -z "$SEED_PHRASE" ]]; then
+    print_warning "SEED_PHRASE not found in .env — skipping showcase agent registration"
+    SHOWCASE_AGENTS_REGISTERED=0
+else
+    IDENTITY_REGISTRY="0x8004A818BFB912233c491871b3d84c89A494BD9e"
+    AGENT_ROUTER_ADDR=$(jq -r '.AgentRouter // ""' "$DEPLOYMENT_FILE" 2>/dev/null || echo "")
+    FUND_AMOUNT_WEI=$(python3 -c "print(int(0.001 * 10**18))")
+    R2_BASE="https://agents.scalex.money/agents"
+
+    # Funder = seed index 0
+    FUNDER_KEY=$(cast wallet derive-private-key "$SEED_PHRASE" 0 2>/dev/null)
+
+    # INDEX|NAME|R2_DIRECTORY
+    SHOWCASE_AGENTS=(
+        "10|Smart Money Tracker|1"
+        "17|Dip Buyer|2"
+        "12|Lending Optimizer|3"
+        "13|Range Trader|4"
+        "14|Stop-Loss Guardian|5"
+        "15|Alpha Scanner|6"
+        "16|Social Sentiment Bot|7"
+    )
+
+    # Phase 1: Fund wallets
+    echo "  Funding agent wallets (seed indices 10-17)..."
+    for agent_entry in "${SHOWCASE_AGENTS[@]}"; do
+        IFS='|' read -r idx name r2dir <<< "$agent_entry"
+        AGENT_KEY=$(cast wallet derive-private-key "$SEED_PHRASE" "$idx" 2>/dev/null)
+        ADDR=$(cast wallet address "$AGENT_KEY" 2>/dev/null)
+        BALANCE=$(cast balance "$ADDR" --rpc-url "$SCALEX_CORE_RPC" 2>/dev/null || echo "0")
+
+        if [[ "$(python3 -c "print(1 if int('$BALANCE') >= $FUND_AMOUNT_WEI else 0)")" == "1" ]]; then
+            echo "    [$idx] $name — already funded, skipping"
+            continue
+        fi
+
+        if cast send "$ADDR" --value "$FUND_AMOUNT_WEI" \
+            --private-key "$FUNDER_KEY" \
+            --rpc-url "$SCALEX_CORE_RPC" > /dev/null 2>&1; then
+            echo "    [$idx] $name — funded 0.001 ETH"
+        else
+            print_warning "    [$idx] $name — funding failed"
+        fi
+        sleep 2
+    done
+
+    # Phase 2: Register agents on IdentityRegistry
+    echo "  Registering agents on IdentityRegistry..."
+    declare -a REGISTERED_AGENT_IDS=()
+    SHOWCASE_AGENTS_REGISTERED=0
+
+    for agent_entry in "${SHOWCASE_AGENTS[@]}"; do
+        IFS='|' read -r idx name r2dir <<< "$agent_entry"
+        AGENT_KEY=$(cast wallet derive-private-key "$SEED_PHRASE" "$idx" 2>/dev/null)
+        METADATA_URL="$R2_BASE/$r2dir/metadata.json"
+
+        REGISTER_RC=0
+        TX_OUTPUT=$(cast send "$IDENTITY_REGISTRY" \
+            "register(string)" "$METADATA_URL" \
+            --private-key "$AGENT_KEY" \
+            --rpc-url "$SCALEX_CORE_RPC" \
+            --json 2>&1) || REGISTER_RC=$?
+
+        if [[ $REGISTER_RC -eq 0 ]]; then
+            # Extract token ID from Transfer event (topics[3] of the first log = ERC-721 Transfer)
+            TOKEN_ID_HEX=$(echo "$TX_OUTPUT" | jq -r '.logs[0].topics[3] // empty' 2>/dev/null)
+            if [[ -n "$TOKEN_ID_HEX" ]]; then
+                TOKEN_ID=$(python3 -c "print(int('$TOKEN_ID_HEX', 16))")
+            else
+                TOKEN_ID="?"
+            fi
+            echo "    [$idx] $name — registered (Token #$TOKEN_ID)"
+            REGISTERED_AGENT_IDS+=("$idx|$name|$TOKEN_ID")
+            SHOWCASE_AGENTS_REGISTERED=$((SHOWCASE_AGENTS_REGISTERED + 1))
+        else
+            print_warning "    [$idx] $name — registration failed"
+        fi
+        sleep 3
+    done
+
+    # Phase 3: List on marketplace
+    if [[ -n "$AGENT_ROUTER_ADDR" && "$AGENT_ROUTER_ADDR" != "null" && "$AGENT_ROUTER_ADDR" != "0x0000000000000000000000000000000000000000" ]]; then
+        echo "  Listing agents on marketplace..."
+        for entry in "${REGISTERED_AGENT_IDS[@]}"; do
+            IFS='|' read -r idx name token_id <<< "$entry"
+            [[ "$token_id" == "?" ]] && continue
+
+            AGENT_KEY=$(cast wallet derive-private-key "$SEED_PHRASE" "$idx" 2>/dev/null)
+            if cast send "$AGENT_ROUTER_ADDR" \
+                "listOnMarketplace(uint256)" "$token_id" \
+                --private-key "$AGENT_KEY" \
+                --rpc-url "$SCALEX_CORE_RPC" > /dev/null 2>&1; then
+                echo "    [$idx] $name (Token #$token_id) — listed"
+            else
+                print_warning "    [$idx] $name — marketplace listing failed"
+            fi
+            sleep 2
+        done
+    fi
+
+    # Phase 4: Verify metadata
+    echo "  Verifying agent metadata..."
+    for entry in "${REGISTERED_AGENT_IDS[@]}"; do
+        IFS='|' read -r idx name token_id <<< "$entry"
+        [[ "$token_id" == "?" ]] && continue
+
+        URI=$(cast call "$IDENTITY_REGISTRY" "tokenURI(uint256)(string)" "$token_id" --rpc-url "$SCALEX_CORE_RPC" 2>/dev/null || echo "")
+        URI_CLEAN=$(echo "$URI" | tr -d '"')
+        if [[ -z "$URI_CLEAN" ]]; then
+            print_warning "    [$idx] $name (Token #$token_id) — tokenURI empty"
+            continue
+        fi
+        HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "$URI_CLEAN" 2>/dev/null || echo "000")
+        if [[ "$HTTP_CODE" == "200" ]]; then
+            echo "    [$idx] $name (Token #$token_id) — metadata OK"
+        else
+            print_warning "    [$idx] $name (Token #$token_id) — metadata HTTP $HTTP_CODE"
+        fi
+    done
+
+    print_success "  Showcase agents registered: $SHOWCASE_AGENTS_REGISTERED / ${#SHOWCASE_AGENTS[@]}"
+fi
+
+# ========================================
+# PREDICTION MARKETS
+# ========================================
+echo ""
+print_step "Prediction Markets..."
+
+PRICE_PREDICTION=$(jq -r '.PricePrediction // ""' "$DEPLOYMENT_FILE" 2>/dev/null || echo "")
+PREDICTION_MARKETS_CREATED=0
+
+if [[ -z "$PRICE_PREDICTION" || "$PRICE_PREDICTION" == "null" ]]; then
+    print_warning "PricePrediction not deployed — skipping prediction markets"
+else
+    ORACLE_ADDR=$(jq -r '.Oracle // ""' "$DEPLOYMENT_FILE")
+    sxWETH_ADDR=$(jq -r '.sxWETH // ""' "$DEPLOYMENT_FILE")
+    sxWBTC_ADDR=$(jq -r '.sxWBTC // ""' "$DEPLOYMENT_FILE")
+    sxGOLD_ADDR=$(jq -r '.sxGOLD // ""' "$DEPLOYMENT_FILE")
+    sxNVIDIA_ADDR=$(jq -r '.sxNVIDIA // ""' "$DEPLOYMENT_FILE")
+    sxAPPLE_ADDR=$(jq -r '.sxAPPLE // ""' "$DEPLOYMENT_FILE")
+    BALANCE_MANAGER_ADDR=$(jq -r '.BalanceManager // ""' "$DEPLOYMENT_FILE")
+    IDRX_ADDR=$(jq -r '.IDRX // ""' "$DEPLOYMENT_FILE")
+    SX_IDRX_ADDR=$(jq -r '.sxIDRX // ""' "$DEPLOYMENT_FILE")
+
+    PRED_DURATION=${MARKET_DURATION:-300}
+
+    echo "  PricePrediction: $PRICE_PREDICTION"
+    echo "  Duration: ${PRED_DURATION}s"
+
+    # Helper: check oracle has history AND non-zero TWAP for a token
+    has_oracle_data() {
+        local token="$1"
+        local history twap
+        history=$(cast call "$ORACLE_ADDR" "hasSufficientHistory(address,uint256)(bool)" "$token" "$PRED_DURATION" --rpc-url "$SCALEX_CORE_RPC" 2>/dev/null || echo "false")
+        [[ "$history" != "true" ]] && return 1
+        twap=$(cast call "$ORACLE_ADDR" "getTWAP(address,uint256)(uint256)" "$token" "$PRED_DURATION" --rpc-url "$SCALEX_CORE_RPC" 2>/dev/null || echo "0")
+        [[ "$twap" != "0" ]]
+    }
+
+    # Helper: create a prediction market
+    create_pred_market() {
+        local base_token="$1" market_type="$2" strike_price="$3" label="$4"
+        local rc=0
+        TX=$(cast send "$PRICE_PREDICTION" \
+            "createMarket(address,uint8,uint256,uint256)(uint64)" \
+            "$base_token" "$market_type" "$strike_price" "$PRED_DURATION" \
+            --rpc-url "$SCALEX_CORE_RPC" \
+            --private-key "$PRIVATE_KEY" \
+            --json 2>/dev/null) || rc=$?
+        if [[ $rc -eq 0 ]]; then
+            TX_HASH=$(echo "$TX" | jq -r '.transactionHash // "unknown"')
+            echo "    $label — created (tx: ${TX_HASH:0:18}...)"
+            PREDICTION_MARKETS_CREATED=$((PREDICTION_MARKETS_CREATED + 1))
+        else
+            print_warning "    $label — failed"
+        fi
+    }
+
+    # Step A: Create directional markets (type=0, strike=0) — only for tokens with oracle history
+    echo "  Creating directional markets (UP/DOWN)..."
+    PRED_TOKENS=("sxWETH:$sxWETH_ADDR" "sxWBTC:$sxWBTC_ADDR" "sxGOLD:$sxGOLD_ADDR" "sxNVIDIA:$sxNVIDIA_ADDR" "sxAPPLE:$sxAPPLE_ADDR")
+    for entry in "${PRED_TOKENS[@]}"; do
+        IFS=':' read -r sym addr <<< "$entry"
+        if [[ -n "$addr" && "$addr" != "null" ]]; then
+            if has_oracle_data "$addr"; then
+                create_pred_market "$addr" "0" "0" "$sym UP/DOWN (${PRED_DURATION}s)"
+            else
+                echo "    $sym — skipped (no oracle data/TWAP)"
+            fi
+        fi
+    done
+
+    # Step B: Create absolute markets (type=1, strike=TWAP)
+    echo "  Creating absolute markets (Above/Below TWAP)..."
+    for entry in "sxWETH:$sxWETH_ADDR" "sxGOLD:$sxGOLD_ADDR"; do
+        IFS=':' read -r sym addr <<< "$entry"
+        if [[ -n "$addr" && "$addr" != "null" && -n "$ORACLE_ADDR" && "$ORACLE_ADDR" != "null" ]]; then
+            if has_oracle_data "$addr"; then
+                TWAP=$(cast call "$ORACLE_ADDR" "getTWAP(address,uint256)(uint256)" "$addr" "$PRED_DURATION" --rpc-url "$SCALEX_CORE_RPC" 2>/dev/null || echo "0")
+                if [[ "$TWAP" != "0" ]]; then
+                    create_pred_market "$addr" "1" "$TWAP" "$sym Above/Below $TWAP (${PRED_DURATION}s)"
+                else
+                    echo "    $sym absolute — skipped (TWAP is 0)"
+                fi
+            else
+                echo "    $sym absolute — skipped (no oracle data/TWAP)"
+            fi
+        fi
+    done
+
+    # Step C: Populate first market with a prediction
+    if [[ $PREDICTION_MARKETS_CREATED -gt 0 ]]; then
+        echo "  Populating prediction on market 1..."
+        DEPLOYER_ADDR=$(cast wallet address --private-key "$PRIVATE_KEY")
+        STAKE_AMOUNT=${STAKE_AMOUNT:-10000000}  # 10 IDRX (6 decimals) — conservative to avoid InsufficientBalance
+
+        # Ensure sxIDRX balance for prediction
+        if [[ -n "$BALANCE_MANAGER_ADDR" && "$BALANCE_MANAGER_ADDR" != "null" && -n "$IDRX_ADDR" && "$IDRX_ADDR" != "null" ]]; then
+            SX_BAL=$(cast call "$BALANCE_MANAGER_ADDR" \
+                "getAvailableBalance(address,address)(uint256)" \
+                "$DEPLOYER_ADDR" "$SX_IDRX_ADDR" \
+                --rpc-url "$SCALEX_CORE_RPC" 2>/dev/null || echo "0")
+
+            if [[ "${SX_BAL:-0}" -lt "$STAKE_AMOUNT" ]]; then
+                DEPOSIT_AMT="$((STAKE_AMOUNT * 5))"
+                # Try mint (testnet only)
+                cast send "$IDRX_ADDR" "mint(address,uint256)" "$DEPLOYER_ADDR" "$((DEPOSIT_AMT * 2))" \
+                    --rpc-url "$SCALEX_CORE_RPC" --private-key "$PRIVATE_KEY" --quiet 2>/dev/null || true
+                # Approve + deposit
+                cast send "$IDRX_ADDR" "approve(address,uint256)" "$BALANCE_MANAGER_ADDR" "$DEPOSIT_AMT" \
+                    --rpc-url "$SCALEX_CORE_RPC" --private-key "$PRIVATE_KEY" --quiet 2>/dev/null || true
+                cast send "$BALANCE_MANAGER_ADDR" \
+                    "deposit(address,uint256,address,address)" "$IDRX_ADDR" "$DEPOSIT_AMT" "$DEPLOYER_ADDR" "$DEPLOYER_ADDR" \
+                    --rpc-url "$SCALEX_CORE_RPC" --private-key "$PRIVATE_KEY" --quiet 2>/dev/null || true
+                echo "    Deposited $DEPOSIT_AMT IDRX for prediction balance"
+            fi
+        fi
+
+        # Predict UP on market 1
+        if cast send "$PRICE_PREDICTION" \
+            "predict(uint64,bool,uint256)" "1" "true" "$STAKE_AMOUNT" \
+            --rpc-url "$SCALEX_CORE_RPC" --private-key "$PRIVATE_KEY" --quiet 2>/dev/null; then
+            echo "    Predicted UP on market 1 with $STAKE_AMOUNT sxIDRX"
+        else
+            print_warning "    Prediction on market 1 failed (insufficient balance or market closed)"
+        fi
+
+        # Print market state
+        MARKET_STATE=$(cast call "$PRICE_PREDICTION" \
+            "getMarket(uint64)((uint64,uint8,uint8,address,uint256,uint256,uint256,uint256,uint256,uint256,bool))" \
+            "1" --rpc-url "$SCALEX_CORE_RPC" 2>/dev/null || echo "(no market)")
+        echo "    Market 1 state: $MARKET_STATE"
+    else
+        echo "  No markets created — skipping predictions"
+    fi
+
+    print_success "  Prediction markets created: $PREDICTION_MARKETS_CREATED"
+fi
+
 # Agent operations summary
 echo ""
 echo "  🤖 AI Agent Operations Summary:"
@@ -1021,5 +1352,8 @@ else
     echo "    ⚠️  Agent infrastructure not deployed - run deploy.sh first"
 fi
 
+echo ""
+echo "  🤖 Showcase Agents: ${SHOWCASE_AGENTS_REGISTERED:-0} registered on 8004scan"
+echo "  🎲 Prediction Markets: ${PREDICTION_MARKETS_CREATED:-0} created"
 echo ""
 print_success "🌟 SCALEX Trading System is populated and ready for use!"

@@ -164,6 +164,10 @@ contract PricePrediction is
         getStorage().maxMarketTvl = maxTvl;
     }
 
+    function setAuthorizedRouter(address router, bool approved) external onlyOwner {
+        getStorage().authorizedRouters[router] = approved;
+    }
+
     function setKeystoneForwarder(address forwarder) external onlyOwner {
         if (forwarder == address(0)) revert InvalidForwarder();
         getStorage().keystoneForwarder = forwarder;
@@ -209,6 +213,71 @@ contract PricePrediction is
         }
 
         emit Predicted(marketId, msg.sender, predictUp, received);
+    }
+
+    /// @notice Stake sxUSDC on behalf of a user. Callable by the user themselves or an authorized router.
+    function predictFor(address user, uint64 marketId, bool predictUp, uint256 amount) external nonReentrant {
+        if (msg.sender != user && !getStorage().authorizedRouters[msg.sender]) revert UnauthorizedRouter(msg.sender);
+
+        Storage storage $ = getStorage();
+        Market storage market = $.markets[marketId];
+
+        if (market.status != MarketStatus.Open) revert MarketNotOpen(marketId);
+        if (block.timestamp >= market.endTime) revert MarketExpired(marketId);
+        if (amount < $.minStakeAmount) revert StakeBelowMinimum(amount, $.minStakeAmount);
+
+        uint256 maxTvl = $.maxMarketTvl;
+        if (maxTvl > 0) {
+            uint256 totalStake = market.totalUp + market.totalDown + amount;
+            if (totalStake > maxTvl) revert MarketTvlExceeded(marketId, maxTvl);
+        }
+
+        IBalanceManager bm = IBalanceManager($.balanceManager);
+        bm.transferFrom(user, address(this), $.collateralCurrency, amount);
+
+        uint256 fee = amount * bm.feeMaker() / bm.getFeeUnit();
+        uint256 received = amount - fee;
+
+        Position storage position = $.positions[marketId][user];
+        if (predictUp) {
+            market.totalUp += received;
+            position.stakeUp += received;
+        } else {
+            market.totalDown += received;
+            position.stakeDown += received;
+        }
+
+        emit Predicted(marketId, user, predictUp, received);
+    }
+
+    /// @notice Claim payout on behalf of a user. Callable by the user themselves or an authorized router.
+    function claimFor(address user, uint64 marketId) external nonReentrant {
+        if (msg.sender != user && !getStorage().authorizedRouters[msg.sender]) revert UnauthorizedRouter(msg.sender);
+
+        Storage storage $ = getStorage();
+        Market storage market = $.markets[marketId];
+        Position storage position = $.positions[marketId][user];
+
+        if (market.status != MarketStatus.Settled && market.status != MarketStatus.Cancelled) {
+            revert MarketNotClaimable(marketId);
+        }
+        if (position.claimed) revert AlreadyClaimed(marketId, user);
+        if (position.stakeUp == 0 && position.stakeDown == 0) revert NoPosition(marketId, user);
+
+        position.claimed = true;
+
+        uint256 payout = _computePayout($, market, position);
+
+        if (payout > 0) {
+            IBalanceManager($.balanceManager).transferFrom(
+                address(this),
+                user,
+                $.collateralCurrency,
+                payout
+            );
+        }
+
+        emit Claimed(marketId, user, payout);
     }
 
     /// @notice Request settlement after market end time.
@@ -406,4 +475,5 @@ contract PricePrediction is
     error NoFeesToWithdraw();
     error FeeTooHigh();
     error InvalidForwarder();
+    error UnauthorizedRouter(address sender);
 }

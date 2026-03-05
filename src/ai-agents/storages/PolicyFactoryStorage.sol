@@ -44,6 +44,11 @@ abstract contract PolicyFactoryStorage {
         bool allowPlaceLimitOrder;
         bool allowCancelOrder;
 
+        // Prediction permissions
+        bool allowPredict;
+        bool allowClaimPrediction;
+        uint256 maxPredictionStake;        // Max stake per prediction
+
         // Buy/Sell Direction
         bool allowBuy;
         bool allowSell;

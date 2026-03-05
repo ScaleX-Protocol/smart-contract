@@ -19,7 +19,7 @@ contract TestBestPrice is Script {
     uint256 constant MM_PRIVATE_KEY = 0x1baeb251ed376027e40d3f5c2315307b9a3ba3c13c5f6e80070618a7ad6781f8;
     address mmAccount = vm.addr(MM_PRIVATE_KEY);
     
-    function testGetBestAskPrice() public {
+    function checkBestAskPrice() public {
         console.log("=== Testing getBestPrice function ===");
         console.log("Getting best ask price");
         console.log("[getBestPrice] Function called with side: SELL");
@@ -49,7 +49,7 @@ contract TestBestPrice is Script {
         }
     }
     
-    function testGetBestBidPrice() public {
+    function checkBestBidPrice() public {
         console.log("\n=== Testing getBestPrice for BID ===");
         console.log("Getting best bid price");
         console.log("[getBestPrice] Function called with side: BUY");
@@ -79,7 +79,7 @@ contract TestBestPrice is Script {
         }
     }
     
-    function testBothPrices() public {
+    function checkBothPrices() public {
         console.log("\n=== Testing Both Best Prices ===");
         
         uint256 bestAsk = 0;
@@ -114,16 +114,16 @@ contract TestBestPrice is Script {
     
     function run() external {
         // Test the exact function call from your MM bot log
-        testGetBestAskPrice();
-        
+        checkBestAskPrice();
+
         console.log("\n==================================================");
-        
+
         // Test bid price as well
-        testGetBestBidPrice();
-        
+        checkBestBidPrice();
+
         console.log("\n==================================================");
-        
+
         // Test both and show spread
-        testBothPrices();
+        checkBothPrices();
     }
 }

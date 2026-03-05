@@ -28,6 +28,12 @@ abstract contract AgentRouterStorage {
 
         // user => strategyAgentId => authorized
         mapping(address => mapping(uint256 => bool)) authorizedStrategyAgents;
+
+        // strategyAgentId => listed on marketplace
+        mapping(uint256 => bool) listedOnMarketplace;
+
+        // PricePrediction contract
+        address pricePrediction;
     }
 
     function getStorage() internal pure returns (Storage storage $) {

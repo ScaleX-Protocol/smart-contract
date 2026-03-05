@@ -30,6 +30,16 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
  *   AGENT_PRIVATE_KEY  - Strategy agent private key (NFT owner, executes orders)
  */
 contract VerifyAgentExecution is Script {
+    // Intermediate struct to reduce stack depth
+    struct Addrs {
+        address identityRegistry;
+        address agentRouter;
+        address balanceManager;
+        address weth;
+        address idrx;
+        address wethIdrxPool;
+    }
+
     function run() external {
         console.log("=== ERC-8004 AGENT EXECUTION VERIFICATION ===");
         console.log("");
@@ -39,23 +49,7 @@ contract VerifyAgentExecution is Script {
         address primaryTrader = vm.addr(primaryKey);
         address agentWallet   = vm.addr(agentKey);
 
-        string memory root       = vm.projectRoot();
-        string memory deployPath = string.concat(root, "/deployments/", vm.toString(block.chainid), ".json");
-        string memory json       = vm.readFile(deployPath);
-
-        address identityRegistry = _extractAddress(json, "IdentityRegistry");
-        address agentRouter      = _extractAddress(json, "AgentRouter");
-        address balanceManager   = _extractAddress(json, "BalanceManager");
-        address weth             = _extractAddress(json, "WETH");
-        address idrx             = _extractAddress(json, "IDRX");
-        address wethIdrxPool     = _extractAddress(json, "WETH_IDRX_Pool");
-
-        require(identityRegistry != address(0), "IdentityRegistry not in deployment");
-        require(agentRouter      != address(0), "AgentRouter not in deployment");
-        require(balanceManager   != address(0), "BalanceManager not in deployment");
-        require(weth             != address(0), "WETH not in deployment");
-        require(idrx             != address(0), "IDRX not in deployment");
-        require(wethIdrxPool     != address(0), "WETH_IDRX_Pool not in deployment");
+        Addrs memory a = _loadAddresses();
 
         console.log("Actors:");
         console.log("  Primary Trader:", primaryTrader);
@@ -63,23 +57,60 @@ contract VerifyAgentExecution is Script {
         console.log("");
 
         // STEP 1: Strategy agent registers its NFT
+        uint256 strategyAgentId = _step1RegisterAgent(agentKey, agentWallet, a.identityRegistry);
+
+        // STEP 2: Primary trader authorizes agent
+        _step2Authorize(primaryKey, strategyAgentId, a.agentRouter);
+
+        // STEP 3: Ensure IDRX balance for BUY order collateral
+        _step3EnsureCollateral(primaryKey, primaryTrader, a.balanceManager, a.idrx);
+
+        // STEP 4 & 5: Place and cancel order
+        _step4And5PlaceAndCancel(agentKey, primaryTrader, strategyAgentId, a);
+
+        // SUMMARY
+        _logSummary(strategyAgentId, primaryTrader, agentWallet);
+    }
+
+    function _loadAddresses() internal view returns (Addrs memory a) {
+        string memory root       = vm.projectRoot();
+        string memory deployPath = string.concat(root, "/deployments/", vm.toString(block.chainid), ".json");
+        string memory json       = vm.readFile(deployPath);
+
+        a.identityRegistry = _extractAddress(json, "IdentityRegistry");
+        a.agentRouter      = _extractAddress(json, "AgentRouter");
+        a.balanceManager   = _extractAddress(json, "BalanceManager");
+        a.weth             = _extractAddress(json, "WETH");
+        a.idrx             = _extractAddress(json, "IDRX");
+        a.wethIdrxPool     = _extractAddress(json, "WETH_IDRX_Pool");
+
+        require(a.identityRegistry != address(0), "IdentityRegistry not in deployment");
+        require(a.agentRouter      != address(0), "AgentRouter not in deployment");
+        require(a.balanceManager   != address(0), "BalanceManager not in deployment");
+        require(a.weth             != address(0), "WETH not in deployment");
+        require(a.idrx             != address(0), "IDRX not in deployment");
+        require(a.wethIdrxPool     != address(0), "WETH_IDRX_Pool not in deployment");
+    }
+
+    function _step1RegisterAgent(uint256 agentKey, address agentWallet, address identityRegistry) internal returns (uint256 strategyAgentId) {
         console.log("Step 1: Strategy agent registers NFT...");
         vm.startBroadcast(agentKey);
-        uint256 strategyAgentId = IERC8004Identity(identityRegistry).register("ipfs://QmStrategyAgentVerify");
+        strategyAgentId = IERC8004Identity(identityRegistry).register("https://agents.scalex.money/agents/1/metadata.json");
         console.log("[OK] Strategy agent NFT minted, tokenId:", strategyAgentId);
         console.log("     NFT owner (= executor):", agentWallet);
         vm.stopBroadcast();
+    }
 
-        // STEP 2: Primary trader calls authorize(strategyAgentId, policy).
-        //         via_ir=true in foundry.toml handles stack-depth for 42-field Policy struct.
+    function _step2Authorize(uint256 primaryKey, uint256 strategyAgentId, address agentRouter) internal {
         console.log("Step 2: Primary trader authorizes strategy agent with policy...");
         vm.startBroadcast(primaryKey);
         AgentRouter(agentRouter).authorize(strategyAgentId, _buildPolicy());
         console.log("[OK] Strategy agent", strategyAgentId, "authorized with policy");
         console.log("     maxOrderSize: 100 WETH, allowLimitOrders: true, allowCancelOrder: true");
         vm.stopBroadcast();
+    }
 
-        // STEP 3: Ensure IDRX balance for BUY order collateral
+    function _step3EnsureCollateral(uint256 primaryKey, address primaryTrader, address balanceManager, address idrx) internal {
         console.log("Step 3: Ensuring IDRX collateral in BalanceManager...");
         vm.startBroadcast(primaryKey);
 
@@ -102,8 +133,14 @@ contract VerifyAgentExecution is Script {
         }
 
         vm.stopBroadcast();
+    }
 
-        // STEP 4: Strategy agent places BUY limit order for primary trader
+    function _step4And5PlaceAndCancel(
+        uint256 agentKey,
+        address primaryTrader,
+        uint256 strategyAgentId,
+        Addrs memory a
+    ) internal {
         console.log("Step 4: Strategy agent places BUY limit order for primary trader...");
         console.log("  user:            ", primaryTrader);
         console.log("  strategyAgentId: ", strategyAgentId);
@@ -113,13 +150,13 @@ contract VerifyAgentExecution is Script {
         vm.startBroadcast(agentKey);
 
         IPoolManager.Pool memory pool = IPoolManager.Pool({
-            baseCurrency:  Currency.wrap(weth),
-            quoteCurrency: Currency.wrap(idrx),
-            orderBook:     IOrderBook(wethIdrxPool)
+            baseCurrency:  Currency.wrap(a.weth),
+            quoteCurrency: Currency.wrap(a.idrx),
+            orderBook:     IOrderBook(a.wethIdrxPool)
         });
 
         uint48 orderId;
-        try AgentRouter(agentRouter).executeLimitOrder(
+        try AgentRouter(a.agentRouter).executeLimitOrder(
             primaryTrader,
             strategyAgentId,
             pool,
@@ -145,7 +182,7 @@ contract VerifyAgentExecution is Script {
 
         // STEP 5: Strategy agent cancels the order
         console.log("Step 5: Strategy agent cancels the order...");
-        try AgentRouter(agentRouter).cancelOrder(
+        try AgentRouter(a.agentRouter).cancelOrder(
             primaryTrader,
             strategyAgentId,
             pool,
@@ -160,8 +197,9 @@ contract VerifyAgentExecution is Script {
         }
 
         vm.stopBroadcast();
+    }
 
-        // SUMMARY
+    function _logSummary(uint256 strategyAgentId, address primaryTrader, address agentWallet) internal pure {
         console.log("");
         console.log("=== VERIFICATION COMPLETE ===");
         console.log("");
@@ -178,7 +216,6 @@ contract VerifyAgentExecution is Script {
     }
 
     /// @dev Builds the Policy struct for agent verification.
-    ///      via_ir=true in foundry.toml handles stack-depth automatically.
     function _buildPolicy() private pure returns (PolicyFactoryStorage.Policy memory p) {
         address[] memory empty = new address[](0);
         p.expiryTimestamp      = type(uint256).max;

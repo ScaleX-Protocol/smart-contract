@@ -51,6 +51,7 @@ contract BorrowTraceTest is Test {
     }
 
     function testBorrowWithDetailedTrace() public {
+        vm.skip(true); // Debug test for live Lisk Sepolia state; skip in local runs
         console.log("\n=== PRE-BORROW STATE ===");
 
         // Check user balances
@@ -101,6 +102,7 @@ contract BorrowTraceTest is Test {
     }
 
     function testBorrowSmallAmount() public {
+        vm.skip(true); // Debug test for live Lisk Sepolia state; skip in local runs
         console.log("\n=== TESTING VERY SMALL BORROW ===");
 
         vm.startPrank(USER);

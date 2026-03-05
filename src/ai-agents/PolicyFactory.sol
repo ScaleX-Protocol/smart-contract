@@ -482,6 +482,9 @@ contract PolicyFactory is PolicyFactoryStorage, OwnableUpgradeable {
         p.allowWithdrawCollateral = true;
         p.allowPlaceLimitOrder = true;
         p.allowCancelOrder = true;
+        p.allowPredict = true;
+        p.allowClaimPrediction = true;
+        p.maxPredictionStake = 500e6;
         p.allowBuy = true;
         p.allowSell = true;
         p.minHealthFactor = 2e18;
@@ -513,6 +516,9 @@ contract PolicyFactory is PolicyFactoryStorage, OwnableUpgradeable {
         p.allowWithdrawCollateral = true;
         p.allowPlaceLimitOrder = true;
         p.allowCancelOrder = true;
+        p.allowPredict = true;
+        p.allowClaimPrediction = true;
+        p.maxPredictionStake = 5000e6;
         p.allowBuy = true;
         p.allowSell = true;
         p.allowAutoBorrow = true;
@@ -549,6 +555,9 @@ contract PolicyFactory is PolicyFactoryStorage, OwnableUpgradeable {
         p.allowWithdrawCollateral = true;
         p.allowPlaceLimitOrder = true;
         p.allowCancelOrder = true;
+        p.allowPredict = true;
+        p.allowClaimPrediction = true;
+        p.maxPredictionStake = 50000e6;
         p.allowBuy = true;
         p.allowSell = true;
         p.allowAutoBorrow = true;

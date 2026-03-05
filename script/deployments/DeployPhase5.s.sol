@@ -16,15 +16,23 @@ import {IPoolManager} from "@scalexcore/interfaces/IPoolManager.sol";
 import {PoolManager} from "@scalexcore/PoolManager.sol";
 import {IOracle} from "@scalexcore/interfaces/IOracle.sol";
 import {Oracle} from "@scalexcore/Oracle.sol";
+import {PricePrediction} from "@scalexcore/PricePrediction.sol";
 
 /**
  * @title DeployPhase5
  * @notice Deploys and configures AI Agent Infrastructure using ERC-8004 contracts
- * @dev Uses upgradeable ERC-8004 registries with UUPS proxy pattern.
+ * @dev On Base Sepolia (84532), uses canonical ERC-8004 registries at 0x8004... addresses
+ *      so agents appear on testnet.8004scan.io. On other chains, deploys fresh registries.
  *      PolicyFactory and AgentRouter use Beacon Proxy + Diamond Storage (ERC-7201),
  *      consistent with BalanceManager and ScaleXRouter.
  */
 contract DeployPhase5 is Script {
+    // Canonical ERC-8004 registries on Base Sepolia (indexed by 8004scan)
+    address constant CANONICAL_IDENTITY   = 0x8004A818BFB912233c491871b3d84c89A494BD9e;
+    address constant CANONICAL_REPUTATION = 0x8004B663056A597Dffe9eCcC1965A193B7388713;
+    address constant CANONICAL_VALIDATION = 0x8004Cb1BF31DAf7788923b405b754f57acEB4272;
+    uint256 constant BASE_SEPOLIA_CHAIN_ID = 84532;
+
     struct Phase5Deployment {
         address identityRegistry;
         address identityImplementation;
@@ -89,47 +97,64 @@ contract DeployPhase5 is Script {
 
         vm.startBroadcast(deployerPrivateKey);
 
-        // Step 1: Deploy IdentityRegistry (Upgradeable via UUPS + ERC1967Proxy)
-        console.log("Step 1: Deploying IdentityRegistry (ERC-8004 Upgradeable)...");
+        // Steps 1-3: ERC-8004 Registries
+        // On Base Sepolia, use canonical 0x8004... registries (indexed by 8004scan)
+        // On other chains, deploy fresh registries
+        address identityAddr;
+        address identityImplAddr;
+        address reputationAddr;
+        address reputationImplAddr;
+        address validationAddr;
+        address validationImplAddr;
 
-        IdentityRegistryUpgradeable identityImpl = new IdentityRegistryUpgradeable();
-        console.log("[OK] IdentityRegistry Implementation:", address(identityImpl));
+        if (block.chainid == BASE_SEPOLIA_CHAIN_ID) {
+            console.log("Steps 1-3: Using CANONICAL ERC-8004 registries (Base Sepolia)...");
+            console.log("  IdentityRegistry:", CANONICAL_IDENTITY);
+            console.log("  ReputationRegistry:", CANONICAL_REPUTATION);
+            console.log("  ValidationRegistry:", CANONICAL_VALIDATION);
+            console.log("  Agents will appear on testnet.8004scan.io");
+            console.log("");
 
-        ERC1967Proxy identityProxy = new ERC1967Proxy(address(identityImpl), "");
-        console.log("[OK] IdentityRegistry Proxy:", address(identityProxy));
+            identityAddr = CANONICAL_IDENTITY;
+            identityImplAddr = CANONICAL_IDENTITY; // canonical, no separate impl
+            reputationAddr = CANONICAL_REPUTATION;
+            reputationImplAddr = CANONICAL_REPUTATION;
+            validationAddr = CANONICAL_VALIDATION;
+            validationImplAddr = CANONICAL_VALIDATION;
+        } else {
+            console.log("Step 1: Deploying IdentityRegistry (ERC-8004 Upgradeable)...");
 
-        IdentityRegistryUpgradeable identityRegistry = IdentityRegistryUpgradeable(address(identityProxy));
-        identityRegistry.initialize();
-        console.log("[OK] IdentityRegistry initialized");
-        console.log("");
+            IdentityRegistryUpgradeable identityImpl = new IdentityRegistryUpgradeable();
+            console.log("[OK] IdentityRegistry Implementation:", address(identityImpl));
 
-        // Step 2: Deploy ReputationRegistry (Upgradeable via UUPS + ERC1967Proxy)
-        console.log("Step 2: Deploying ReputationRegistry (ERC-8004 Upgradeable)...");
+            ERC1967Proxy identityProxy = new ERC1967Proxy(address(identityImpl), "");
+            IdentityRegistryUpgradeable(address(identityProxy)).initialize();
+            console.log("[OK] IdentityRegistry Proxy:", address(identityProxy));
+            console.log("");
 
-        ReputationRegistryUpgradeable reputationImpl = new ReputationRegistryUpgradeable();
-        console.log("[OK] ReputationRegistry Implementation:", address(reputationImpl));
+            console.log("Step 2: Deploying ReputationRegistry (ERC-8004 Upgradeable)...");
 
-        ERC1967Proxy reputationProxy = new ERC1967Proxy(address(reputationImpl), "");
-        console.log("[OK] ReputationRegistry Proxy:", address(reputationProxy));
+            ReputationRegistryUpgradeable reputationImpl = new ReputationRegistryUpgradeable();
+            ERC1967Proxy reputationProxy = new ERC1967Proxy(address(reputationImpl), "");
+            ReputationRegistryUpgradeable(address(reputationProxy)).initialize(address(identityProxy));
+            console.log("[OK] ReputationRegistry Proxy:", address(reputationProxy));
+            console.log("");
 
-        ReputationRegistryUpgradeable reputationRegistry = ReputationRegistryUpgradeable(address(reputationProxy));
-        reputationRegistry.initialize(address(identityRegistry));
-        console.log("[OK] ReputationRegistry initialized");
-        console.log("");
+            console.log("Step 3: Deploying ValidationRegistry (ERC-8004 Upgradeable)...");
 
-        // Step 3: Deploy ValidationRegistry (Upgradeable via UUPS + ERC1967Proxy)
-        console.log("Step 3: Deploying ValidationRegistry (ERC-8004 Upgradeable)...");
+            ValidationRegistryUpgradeable validationImpl = new ValidationRegistryUpgradeable();
+            ERC1967Proxy validationProxy = new ERC1967Proxy(address(validationImpl), "");
+            ValidationRegistryUpgradeable(address(validationProxy)).initialize(address(identityProxy));
+            console.log("[OK] ValidationRegistry Proxy:", address(validationProxy));
+            console.log("");
 
-        ValidationRegistryUpgradeable validationImpl = new ValidationRegistryUpgradeable();
-        console.log("[OK] ValidationRegistry Implementation:", address(validationImpl));
-
-        ERC1967Proxy validationProxy = new ERC1967Proxy(address(validationImpl), "");
-        console.log("[OK] ValidationRegistry Proxy:", address(validationProxy));
-
-        ValidationRegistryUpgradeable validationRegistry = ValidationRegistryUpgradeable(address(validationProxy));
-        validationRegistry.initialize(address(identityRegistry));
-        console.log("[OK] ValidationRegistry initialized");
-        console.log("");
+            identityAddr = address(identityProxy);
+            identityImplAddr = address(identityImpl);
+            reputationAddr = address(reputationProxy);
+            reputationImplAddr = address(reputationImpl);
+            validationAddr = address(validationProxy);
+            validationImplAddr = address(validationImpl);
+        }
 
         // Step 4: Deploy PolicyFactory (Beacon Proxy + Diamond Storage)
         console.log("Step 4: Deploying PolicyFactory (Beacon Proxy)...");
@@ -142,7 +167,7 @@ contract DeployPhase5 is Script {
 
         BeaconProxy policyFactoryProxy = new BeaconProxy(
             address(policyFactoryBeacon),
-            abi.encodeCall(PolicyFactory.initialize, (deployer, address(identityRegistry)))
+            abi.encodeCall(PolicyFactory.initialize, (deployer, identityAddr))
         );
         PolicyFactory policyFactory = PolicyFactory(address(policyFactoryProxy));
         console.log("[OK] PolicyFactory Proxy:", address(policyFactory));
@@ -161,9 +186,9 @@ contract DeployPhase5 is Script {
             address(agentRouterBeacon),
             abi.encodeCall(AgentRouter.initialize, (
                 deployer,
-                address(identityRegistry),
-                address(reputationRegistry),
-                address(validationRegistry),
+                identityAddr,
+                reputationAddr,
+                validationAddr,
                 address(policyFactory),
                 poolManager,
                 balanceManager,
@@ -179,6 +204,17 @@ contract DeployPhase5 is Script {
         policyFactory.setAuthorizedRouter(address(agentRouter), true);
         console.log("[OK] AgentRouter authorized in PolicyFactory");
         console.log("");
+
+        // Step 6b: Configure PricePrediction <-> AgentRouter (if PricePrediction deployed)
+        address pricePredictionAddr = _extractAddress(json, "PricePrediction");
+        if (pricePredictionAddr != address(0)) {
+            console.log("Step 6b: Configuring PricePrediction <-> AgentRouter...");
+            agentRouter.setPricePrediction(pricePredictionAddr);
+            PricePrediction(pricePredictionAddr).setAuthorizedRouter(address(agentRouter), true);
+            console.log("[OK] AgentRouter.setPricePrediction:", pricePredictionAddr);
+            console.log("[OK] PricePrediction.setAuthorizedRouter:", address(agentRouter));
+            console.log("");
+        }
 
         // Step 7: Authorize AgentRouter in BalanceManager
         console.log("Step 7: Authorizing AgentRouter in BalanceManager...");
@@ -237,12 +273,12 @@ contract DeployPhase5 is Script {
         console.log("[SUCCESS] Phase 5 completed with official ERC-8004 contracts!");
         console.log("");
         console.log("Agent Infrastructure addresses:");
-        console.log("  IdentityRegistry (Proxy):", address(identityRegistry));
-        console.log("  IdentityRegistry (Impl):", address(identityImpl));
-        console.log("  ReputationRegistry (Proxy):", address(reputationRegistry));
-        console.log("  ReputationRegistry (Impl):", address(reputationImpl));
-        console.log("  ValidationRegistry (Proxy):", address(validationRegistry));
-        console.log("  ValidationRegistry (Impl):", address(validationImpl));
+        console.log("  IdentityRegistry (Proxy):", identityAddr);
+        console.log("  IdentityRegistry (Impl):", identityImplAddr);
+        console.log("  ReputationRegistry (Proxy):", reputationAddr);
+        console.log("  ReputationRegistry (Impl):", reputationImplAddr);
+        console.log("  ValidationRegistry (Proxy):", validationAddr);
+        console.log("  ValidationRegistry (Impl):", validationImplAddr);
         console.log("  PolicyFactory (Proxy):", address(policyFactory));
         console.log("  PolicyFactory (Impl):", address(policyFactoryImpl));
         console.log("  PolicyFactory (Beacon):", address(policyFactoryBeacon));
@@ -261,13 +297,24 @@ contract DeployPhase5 is Script {
         console.log("");
         console.log("Ready for marketplace deployment!");
 
+        // Write Phase 5 addresses to deployment JSON
+        _updateDeploymentJson(
+            deploymentPath, json,
+            identityAddr, identityImplAddr,
+            reputationAddr, reputationImplAddr,
+            validationAddr, validationImplAddr,
+            address(policyFactory), address(policyFactoryImpl), address(policyFactoryBeacon),
+            address(agentRouter), address(agentRouterImpl), address(agentRouterBeacon)
+        );
+        console.log("[OK] Updated deployment JSON with Phase 5 addresses");
+
         deployment = Phase5Deployment({
-            identityRegistry: address(identityRegistry),
-            identityImplementation: address(identityImpl),
-            reputationRegistry: address(reputationRegistry),
-            reputationImplementation: address(reputationImpl),
-            validationRegistry: address(validationRegistry),
-            validationImplementation: address(validationImpl),
+            identityRegistry: identityAddr,
+            identityImplementation: identityImplAddr,
+            reputationRegistry: reputationAddr,
+            reputationImplementation: reputationImplAddr,
+            validationRegistry: validationAddr,
+            validationImplementation: validationImplAddr,
             policyFactory: address(policyFactory),
             policyFactoryImplementation: address(policyFactoryImpl),
             policyFactoryBeacon: address(policyFactoryBeacon),
@@ -278,6 +325,125 @@ contract DeployPhase5 is Script {
             timestamp: block.timestamp,
             blockNumber: block.number
         });
+    }
+
+    function _updateDeploymentJson(
+        string memory deploymentPath,
+        string memory json,
+        address identityAddr, address identityImplAddr,
+        address reputationAddr, address reputationImplAddr,
+        address validationAddr, address validationImplAddr,
+        address policyFactory_, address policyFactoryImpl_, address policyFactoryBeacon_,
+        address agentRouter_, address agentRouterImpl_, address agentRouterBeacon_
+    ) internal {
+        string memory newJson = _buildJsonPart1(json);
+        newJson = string.concat(newJson, _buildJsonPart2(json));
+        newJson = string.concat(newJson, _buildJsonPart3(json));
+        newJson = string.concat(newJson, _buildJsonPart4(json));
+        newJson = string.concat(newJson, _buildJsonPhase5(
+            identityAddr, identityImplAddr,
+            reputationAddr, reputationImplAddr,
+            validationAddr, validationImplAddr,
+            policyFactory_, agentRouter_,
+            policyFactoryImpl_, policyFactoryBeacon_
+        ));
+        newJson = string.concat(newJson, _buildJsonTail(json, agentRouterImpl_, agentRouterBeacon_));
+        vm.writeFile(deploymentPath, newJson);
+    }
+
+    function _buildJsonPart1(string memory json) internal pure returns (string memory) {
+        return string.concat(
+            "{\n",
+            '  "networkName": "localhost",\n',
+            '  "TokenRegistry": "', vm.toString(_extractAddress(json, "TokenRegistry")), '",\n',
+            '  "Oracle": "', vm.toString(_extractAddress(json, "Oracle")), '",\n',
+            '  "LendingManager": "', vm.toString(_extractAddress(json, "LendingManager")), '",\n',
+            '  "BalanceManager": "', vm.toString(_extractAddress(json, "BalanceManager")), '",\n',
+            '  "PoolManager": "', vm.toString(_extractAddress(json, "PoolManager")), '",\n',
+            '  "ScaleXRouter": "', vm.toString(_extractAddress(json, "ScaleXRouter")), '",\n',
+            '  "SyntheticTokenFactory": "', vm.toString(_extractAddress(json, "SyntheticTokenFactory")), '",\n',
+            '  "AutoBorrowHelper": "', vm.toString(_extractAddress(json, "AutoBorrowHelper")), '",\n'
+        );
+    }
+
+    function _buildJsonPart2(string memory json) internal pure returns (string memory) {
+        return string.concat(
+            '  "IDRX": "', vm.toString(_extractAddress(json, "IDRX")), '",\n',
+            '  "WETH": "', vm.toString(_extractAddress(json, "WETH")), '",\n',
+            '  "WBTC": "', vm.toString(_extractAddress(json, "WBTC")), '",\n',
+            '  "GOLD": "', vm.toString(_extractAddress(json, "GOLD")), '",\n',
+            '  "SILVER": "', vm.toString(_extractAddress(json, "SILVER")), '",\n',
+            '  "GOOGLE": "', vm.toString(_extractAddress(json, "GOOGLE")), '",\n',
+            '  "NVIDIA": "', vm.toString(_extractAddress(json, "NVIDIA")), '",\n',
+            '  "MNT": "', vm.toString(_extractAddress(json, "MNT")), '",\n',
+            '  "APPLE": "', vm.toString(_extractAddress(json, "APPLE")), '",\n'
+        );
+    }
+
+    function _buildJsonPart3(string memory json) internal pure returns (string memory) {
+        return string.concat(
+            '  "sxIDRX": "', vm.toString(_extractAddress(json, "sxIDRX")), '",\n',
+            '  "sxWETH": "', vm.toString(_extractAddress(json, "sxWETH")), '",\n',
+            '  "sxWBTC": "', vm.toString(_extractAddress(json, "sxWBTC")), '",\n',
+            '  "sxGOLD": "', vm.toString(_extractAddress(json, "sxGOLD")), '",\n',
+            '  "sxSILVER": "', vm.toString(_extractAddress(json, "sxSILVER")), '",\n',
+            '  "sxGOOGLE": "', vm.toString(_extractAddress(json, "sxGOOGLE")), '",\n',
+            '  "sxNVIDIA": "', vm.toString(_extractAddress(json, "sxNVIDIA")), '",\n',
+            '  "sxMNT": "', vm.toString(_extractAddress(json, "sxMNT")), '",\n',
+            '  "sxAPPLE": "', vm.toString(_extractAddress(json, "sxAPPLE")), '",\n'
+        );
+    }
+
+    function _buildJsonPart4(string memory json) internal pure returns (string memory) {
+        return string.concat(
+            '  "WETH_IDRX_Pool": "', vm.toString(_extractAddress(json, "WETH_IDRX_Pool")), '",\n',
+            '  "WBTC_IDRX_Pool": "', vm.toString(_extractAddress(json, "WBTC_IDRX_Pool")), '",\n',
+            '  "GOLD_IDRX_Pool": "', vm.toString(_extractAddress(json, "GOLD_IDRX_Pool")), '",\n',
+            '  "SILVER_IDRX_Pool": "', vm.toString(_extractAddress(json, "SILVER_IDRX_Pool")), '",\n',
+            '  "GOOGLE_IDRX_Pool": "', vm.toString(_extractAddress(json, "GOOGLE_IDRX_Pool")), '",\n',
+            '  "NVIDIA_IDRX_Pool": "', vm.toString(_extractAddress(json, "NVIDIA_IDRX_Pool")), '",\n',
+            '  "MNT_IDRX_Pool": "', vm.toString(_extractAddress(json, "MNT_IDRX_Pool")), '",\n',
+            '  "APPLE_IDRX_Pool": "', vm.toString(_extractAddress(json, "APPLE_IDRX_Pool")), '",\n'
+        );
+    }
+
+    function _buildJsonPhase5(
+        address identityAddr, address identityImplAddr,
+        address reputationAddr, address reputationImplAddr,
+        address validationAddr, address validationImplAddr,
+        address policyFactory_, address agentRouter_,
+        address policyFactoryImpl_, address policyFactoryBeacon_
+    ) internal pure returns (string memory) {
+        return string.concat(
+            '  "IdentityRegistry": "', vm.toString(identityAddr), '",\n',
+            '  "IdentityRegistryImpl": "', vm.toString(identityImplAddr), '",\n',
+            '  "ReputationRegistry": "', vm.toString(reputationAddr), '",\n',
+            '  "ReputationRegistryImpl": "', vm.toString(reputationImplAddr), '",\n',
+            '  "ValidationRegistry": "', vm.toString(validationAddr), '",\n',
+            '  "ValidationRegistryImpl": "', vm.toString(validationImplAddr), '",\n',
+            '  "PolicyFactory": "', vm.toString(policyFactory_), '",\n',
+            '  "AgentRouter": "', vm.toString(agentRouter_), '",\n',
+            '  "PolicyFactoryImpl": "', vm.toString(policyFactoryImpl_), '",\n',
+            '  "PolicyFactoryBeacon": "', vm.toString(policyFactoryBeacon_), '",\n'
+        );
+    }
+
+    function _buildJsonTail(
+        string memory json,
+        address agentRouterImpl_,
+        address agentRouterBeacon_
+    ) internal view returns (string memory) {
+        string memory part1 = string.concat(
+            '  "AgentRouterImpl": "', vm.toString(agentRouterImpl_), '",\n',
+            '  "AgentRouterBeacon": "', vm.toString(agentRouterBeacon_), '",\n',
+            '  "deployer": "', vm.toString(_extractAddress(json, "deployer")), '",\n'
+        );
+        return string.concat(part1,
+            '  "timestamp": "', vm.toString(block.timestamp), '",\n',
+            '  "blockNumber": "', vm.toString(block.number), '",\n',
+            '  "deploymentComplete": true\n',
+            "}"
+        );
     }
 
     function _extractAddress(string memory json, string memory key) internal pure returns (address) {

@@ -53,18 +53,19 @@ FUNDER_KEY=$(cast wallet derive-private-key "$SEED_PHRASE" 0 2>/dev/null)
 # ============================================================================
 
 IDENTITY_REGISTRY="0x8004A818BFB912233c491871b3d84c89A494BD9e"  # Canonical ERC-8004 (indexed by 8004scan)
+AGENT_ROUTER=$(jq -r '.AgentRouter' "$SCRIPT_DIR/../../deployments/84532.json" 2>/dev/null || echo "")
 FUND_AMOUNT="0.001"  # ETH per wallet (~163k gas buffer)
 R2_BASE="https://agents.scalex.money/agents"
 
 # INDEX|NAME|R2_DIRECTORY
 AGENTS=(
     "10|Smart Money Tracker|1"
-    "17|Social Sentiment Bot|2"
-    "12|Dip Buyer|3"
-    "13|Lending Optimizer|4"
-    "14|Range Trader|5"
-    "15|Stop-Loss Guardian|6"
-    "16|Alpha Scanner|7"
+    "17|Dip Buyer|2"
+    "12|Lending Optimizer|3"
+    "13|Range Trader|4"
+    "14|Stop-Loss Guardian|5"
+    "15|Alpha Scanner|6"
+    "16|Social Sentiment Bot|7"
 )
 
 # ============================================================================
@@ -304,10 +305,49 @@ done
 echo ""
 
 # ============================================================================
-# Phase 3: Verify
+# Phase 3: List on Marketplace
 # ============================================================================
 
-echo -e "${BLUE}Phase 3: Verification${NC}"
+if [ -n "$AGENT_ROUTER" ] && [ "$AGENT_ROUTER" != "null" ] && [ "$AGENT_ROUTER" != "0x0000000000000000000000000000000000000000" ]; then
+    echo -e "${BLUE}Phase 3: Listing on Marketplace${NC}"
+    echo "----------------------------------------------"
+
+    for entry in "${REGISTERED_IDS[@]}"; do
+        IFS='|' read -r idx name token_id <<< "$entry"
+
+        if [ "$token_id" = "?" ]; then
+            echo -e "  [$idx] $name — ${YELLOW}token ID unknown, skipping marketplace listing${NC}"
+            continue
+        fi
+
+        AGENT_KEY=$(cast wallet derive-private-key "$SEED_PHRASE" "$idx" 2>/dev/null)
+
+        echo -n "  [$idx] $name (Token #$token_id) — listing on marketplace... "
+        LIST_TX=$(cast send "$AGENT_ROUTER" \
+            "listOnMarketplace(uint256)" "$token_id" \
+            --private-key "$AGENT_KEY" \
+            --rpc-url "$RPC_URL" 2>&1)
+
+        if [ $? -eq 0 ]; then
+            echo -e "${GREEN}OK${NC}"
+        else
+            echo -e "${RED}FAILED${NC}"
+            echo "       Error: $(echo "$LIST_TX" | head -3)"
+        fi
+        sleep 2
+    done
+
+    echo ""
+else
+    echo -e "${YELLOW}Skipping marketplace listing — AgentRouter not found in deployments/84532.json${NC}"
+    echo ""
+fi
+
+# ============================================================================
+# Phase 4: Verify
+# ============================================================================
+
+echo -e "${BLUE}Phase 4: Verification${NC}"
 echo "----------------------------------------------"
 
 for entry in "${REGISTERED_IDS[@]}"; do

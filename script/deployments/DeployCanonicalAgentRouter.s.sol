@@ -43,6 +43,16 @@ contract DeployCanonicalAgentRouter is Script {
         uint256 blockNumber;
     }
 
+    // Intermediate struct to reduce stack depth in run()
+    struct DeployedContracts {
+        PolicyFactory policyFactory;
+        address policyFactoryImpl;
+        address policyFactoryBeacon;
+        AgentRouter agentRouter;
+        address agentRouterImpl;
+        address agentRouterBeacon;
+    }
+
     function run() external returns (CanonicalDeployment memory deployment) {
         console.log("=== DEPLOY CANONICAL AGENT ROUTER (ERC-8004 Migration) ===");
         console.log("");
@@ -52,19 +62,48 @@ contract DeployCanonicalAgentRouter is Script {
         console.log("Deployer address:", deployer);
         console.log("");
 
-        // Load existing addresses from deployment file
-        string memory root = vm.projectRoot();
-        uint256 chainId = block.chainid;
-        string memory chainIdStr = vm.toString(chainId);
-        string memory deploymentPath = string.concat(root, "/deployments/", chainIdStr, ".json");
-
-        require(vm.exists(deploymentPath), "Deployment file not found");
-
-        string memory json = vm.readFile(deploymentPath);
+        string memory json = _loadDeploymentJson();
         address poolManager = _extractAddress(json, "PoolManager");
         address balanceManager = _extractAddress(json, "BalanceManager");
         address lendingManager = _extractAddress(json, "LendingManager");
 
+        _logLoadedAddresses(poolManager, balanceManager, lendingManager);
+
+        require(poolManager != address(0), "PoolManager address is zero");
+        require(balanceManager != address(0), "BalanceManager address is zero");
+        require(lendingManager != address(0), "LendingManager address is zero");
+
+        vm.startBroadcast(deployerPrivateKey);
+
+        DeployedContracts memory c = _deployContracts(deployer, poolManager, balanceManager, lendingManager);
+        _authorizeAndDeauthorize(c, json, poolManager, balanceManager);
+
+        vm.stopBroadcast();
+
+        _logDeploymentSummary(c);
+
+        deployment = CanonicalDeployment({
+            policyFactory: address(c.policyFactory),
+            policyFactoryImplementation: c.policyFactoryImpl,
+            policyFactoryBeacon: c.policyFactoryBeacon,
+            agentRouter: address(c.agentRouter),
+            agentRouterImplementation: c.agentRouterImpl,
+            agentRouterBeacon: c.agentRouterBeacon,
+            deployer: deployer,
+            timestamp: block.timestamp,
+            blockNumber: block.number
+        });
+    }
+
+    function _loadDeploymentJson() internal view returns (string memory) {
+        string memory root = vm.projectRoot();
+        string memory chainIdStr = vm.toString(block.chainid);
+        string memory deploymentPath = string.concat(root, "/deployments/", chainIdStr, ".json");
+        require(vm.exists(deploymentPath), "Deployment file not found");
+        return vm.readFile(deploymentPath);
+    }
+
+    function _logLoadedAddresses(address poolManager, address balanceManager, address lendingManager) internal pure {
         console.log("Loaded addresses:");
         console.log("  PoolManager:", poolManager);
         console.log("  BalanceManager:", balanceManager);
@@ -75,41 +114,42 @@ contract DeployCanonicalAgentRouter is Script {
         console.log("  ReputationRegistry:", CANONICAL_REPUTATION);
         console.log("  ValidationRegistry:", CANONICAL_VALIDATION);
         console.log("");
+    }
 
-        require(poolManager != address(0), "PoolManager address is zero");
-        require(balanceManager != address(0), "BalanceManager address is zero");
-        require(lendingManager != address(0), "LendingManager address is zero");
-
-        vm.startBroadcast(deployerPrivateKey);
-
+    function _deployContracts(
+        address deployer,
+        address poolManager,
+        address balanceManager,
+        address lendingManager
+    ) internal returns (DeployedContracts memory c) {
         // Step 1: Deploy PolicyFactory (Beacon Proxy)
         console.log("Step 1: Deploying PolicyFactory...");
 
         PolicyFactory policyFactoryImpl = new PolicyFactory();
         console.log("[OK] PolicyFactory Implementation:", address(policyFactoryImpl));
 
-        UpgradeableBeacon policyFactoryBeacon = new UpgradeableBeacon(address(policyFactoryImpl), deployer);
-        console.log("[OK] PolicyFactory Beacon:", address(policyFactoryBeacon));
+        UpgradeableBeacon pfBeacon = new UpgradeableBeacon(address(policyFactoryImpl), deployer);
+        console.log("[OK] PolicyFactory Beacon:", address(pfBeacon));
 
-        BeaconProxy policyFactoryProxy = new BeaconProxy(
-            address(policyFactoryBeacon),
+        BeaconProxy pfProxy = new BeaconProxy(
+            address(pfBeacon),
             abi.encodeCall(PolicyFactory.initialize, (deployer, CANONICAL_IDENTITY))
         );
-        PolicyFactory policyFactory = PolicyFactory(address(policyFactoryProxy));
+        PolicyFactory policyFactory = PolicyFactory(address(pfProxy));
         console.log("[OK] PolicyFactory Proxy:", address(policyFactory));
         console.log("");
 
         // Step 2: Deploy AgentRouter (Beacon Proxy)
         console.log("Step 2: Deploying AgentRouter...");
 
-        AgentRouter agentRouterImpl = new AgentRouter();
-        console.log("[OK] AgentRouter Implementation:", address(agentRouterImpl));
+        AgentRouter arImpl = new AgentRouter();
+        console.log("[OK] AgentRouter Implementation:", address(arImpl));
 
-        UpgradeableBeacon agentRouterBeacon = new UpgradeableBeacon(address(agentRouterImpl), deployer);
-        console.log("[OK] AgentRouter Beacon:", address(agentRouterBeacon));
+        UpgradeableBeacon arBeacon = new UpgradeableBeacon(address(arImpl), deployer);
+        console.log("[OK] AgentRouter Beacon:", address(arBeacon));
 
-        BeaconProxy agentRouterProxy = new BeaconProxy(
-            address(agentRouterBeacon),
+        BeaconProxy arProxy = new BeaconProxy(
+            address(arBeacon),
             abi.encodeCall(AgentRouter.initialize, (
                 deployer,
                 CANONICAL_IDENTITY,
@@ -121,37 +161,41 @@ contract DeployCanonicalAgentRouter is Script {
                 lendingManager
             ))
         );
-        AgentRouter agentRouter = AgentRouter(address(agentRouterProxy));
+        AgentRouter agentRouter = AgentRouter(address(arProxy));
         console.log("[OK] AgentRouter Proxy:", address(agentRouter));
         console.log("");
 
+        c = DeployedContracts({
+            policyFactory: policyFactory,
+            policyFactoryImpl: address(policyFactoryImpl),
+            policyFactoryBeacon: address(pfBeacon),
+            agentRouter: agentRouter,
+            agentRouterImpl: address(arImpl),
+            agentRouterBeacon: address(arBeacon)
+        });
+    }
+
+    function _authorizeAndDeauthorize(
+        DeployedContracts memory c,
+        string memory json,
+        address poolManager,
+        address balanceManager
+    ) internal {
         // Step 3: Authorize new AgentRouter in PolicyFactory
         console.log("Step 3: Authorizing new AgentRouter in PolicyFactory...");
-        policyFactory.setAuthorizedRouter(address(agentRouter), true);
+        c.policyFactory.setAuthorizedRouter(address(c.agentRouter), true);
         console.log("[OK] AgentRouter authorized in PolicyFactory");
         console.log("");
 
         // Step 4: Authorize new AgentRouter in BalanceManager
         console.log("Step 4: Authorizing new AgentRouter in BalanceManager...");
-        BalanceManager(balanceManager).addAuthorizedOperator(address(agentRouter));
+        BalanceManager(balanceManager).addAuthorizedOperator(address(c.agentRouter));
         console.log("[OK] AgentRouter authorized in BalanceManager");
         console.log("");
 
         // Step 5: Authorize new AgentRouter in all OrderBooks
         console.log("Step 5: Authorizing new AgentRouter in all OrderBooks...");
-        {
-            string[8] memory poolKeys = [
-                "WETH_IDRX_Pool", "WBTC_IDRX_Pool", "GOLD_IDRX_Pool", "SILVER_IDRX_Pool",
-                "GOOGLE_IDRX_Pool", "NVIDIA_IDRX_Pool", "MNT_IDRX_Pool", "APPLE_IDRX_Pool"
-            ];
-            for (uint256 i = 0; i < poolKeys.length; i++) {
-                address orderBook = _extractAddress(json, poolKeys[i]);
-                if (orderBook != address(0)) {
-                    PoolManager(poolManager).addAuthorizedRouterToOrderBook(orderBook, address(agentRouter));
-                    console.log("[OK] Authorized in OrderBook:", orderBook);
-                }
-            }
-        }
+        _authorizeRouterInOrderBooks(json, poolManager, address(c.agentRouter));
         console.log("");
 
         // Step 6: Deauthorize OLD AgentRouter from BalanceManager + OrderBooks
@@ -161,35 +205,20 @@ contract DeployCanonicalAgentRouter is Script {
         } catch {
             console.log("[SKIP] Old AgentRouter not in BalanceManager (already removed or never added)");
         }
-        {
-            string[8] memory poolKeys = [
-                "WETH_IDRX_Pool", "WBTC_IDRX_Pool", "GOLD_IDRX_Pool", "SILVER_IDRX_Pool",
-                "GOOGLE_IDRX_Pool", "NVIDIA_IDRX_Pool", "MNT_IDRX_Pool", "APPLE_IDRX_Pool"
-            ];
-            for (uint256 i = 0; i < poolKeys.length; i++) {
-                address orderBook = _extractAddress(json, poolKeys[i]);
-                if (orderBook != address(0)) {
-                    try IOrderBookAdmin(orderBook).removeAuthorizedRouter(OLD_AGENT_ROUTER) {
-                        console.log("[OK] Old router removed from OrderBook:", orderBook);
-                    } catch {
-                        console.log("[SKIP] Old router not in OrderBook:", orderBook);
-                    }
-                }
-            }
-        }
+        _deauthorizeOldRouterFromOrderBooks(json);
         console.log("");
+    }
 
-        vm.stopBroadcast();
-
+    function _logDeploymentSummary(DeployedContracts memory c) internal pure {
         console.log("=== DEPLOYMENT COMPLETE ===");
         console.log("");
         console.log("New addresses:");
-        console.log("  PolicyFactory (Proxy):", address(policyFactory));
-        console.log("  PolicyFactory (Impl):", address(policyFactoryImpl));
-        console.log("  PolicyFactory (Beacon):", address(policyFactoryBeacon));
-        console.log("  AgentRouter (Proxy):", address(agentRouter));
-        console.log("  AgentRouter (Impl):", address(agentRouterImpl));
-        console.log("  AgentRouter (Beacon):", address(agentRouterBeacon));
+        console.log("  PolicyFactory (Proxy):", address(c.policyFactory));
+        console.log("  PolicyFactory (Impl):", c.policyFactoryImpl);
+        console.log("  PolicyFactory (Beacon):", c.policyFactoryBeacon);
+        console.log("  AgentRouter (Proxy):", address(c.agentRouter));
+        console.log("  AgentRouter (Impl):", c.agentRouterImpl);
+        console.log("  AgentRouter (Beacon):", c.agentRouterBeacon);
         console.log("");
         console.log("Canonical registries (not deployed, existing):");
         console.log("  IdentityRegistry:", CANONICAL_IDENTITY);
@@ -203,18 +232,38 @@ contract DeployCanonicalAgentRouter is Script {
         console.log("4. Update indexer to watch canonical registries");
         console.log("5. Update frontend contract addresses");
         console.log("6. Verify agents appear on testnet.8004scan.io");
+    }
 
-        deployment = CanonicalDeployment({
-            policyFactory: address(policyFactory),
-            policyFactoryImplementation: address(policyFactoryImpl),
-            policyFactoryBeacon: address(policyFactoryBeacon),
-            agentRouter: address(agentRouter),
-            agentRouterImplementation: address(agentRouterImpl),
-            agentRouterBeacon: address(agentRouterBeacon),
-            deployer: deployer,
-            timestamp: block.timestamp,
-            blockNumber: block.number
-        });
+    function _getPoolKeys() internal pure returns (string[8] memory) {
+        return [
+            "WETH_IDRX_Pool", "WBTC_IDRX_Pool", "GOLD_IDRX_Pool", "SILVER_IDRX_Pool",
+            "GOOGLE_IDRX_Pool", "NVIDIA_IDRX_Pool", "MNT_IDRX_Pool", "APPLE_IDRX_Pool"
+        ];
+    }
+
+    function _authorizeRouterInOrderBooks(string memory json, address poolManager, address router) internal {
+        string[8] memory poolKeys = _getPoolKeys();
+        for (uint256 i = 0; i < poolKeys.length; i++) {
+            address orderBook = _extractAddress(json, poolKeys[i]);
+            if (orderBook != address(0)) {
+                PoolManager(poolManager).addAuthorizedRouterToOrderBook(orderBook, router);
+                console.log("[OK] Authorized in OrderBook:", orderBook);
+            }
+        }
+    }
+
+    function _deauthorizeOldRouterFromOrderBooks(string memory json) internal {
+        string[8] memory poolKeys = _getPoolKeys();
+        for (uint256 i = 0; i < poolKeys.length; i++) {
+            address orderBook = _extractAddress(json, poolKeys[i]);
+            if (orderBook != address(0)) {
+                try IOrderBookAdmin(orderBook).removeAuthorizedRouter(OLD_AGENT_ROUTER) {
+                    console.log("[OK] Old router removed from OrderBook:", orderBook);
+                } catch {
+                    console.log("[SKIP] Old router not in OrderBook:", orderBook);
+                }
+            }
+        }
     }
 
     function _extractAddress(string memory json, string memory key) internal pure returns (address) {

@@ -133,6 +133,14 @@ declare -a WALLET_NAMES=(
     "Trader 1"
     "Trader 2"
     "Trader 3"
+    "Smart Money Tracker"
+    "Agent Wallet 11"
+    "Lending Optimizer"
+    "Range Trader"
+    "Stop-Loss Guardian"
+    "Alpha Scanner"
+    "Social Sentiment Bot"
+    "Dip Buyer"
 )
 
 # Parse indices argument
@@ -154,13 +162,13 @@ parse_indices() {
             local start="${part%-*}"
             local end="${part#*-}"
             for ((i=start; i<=end; i++)); do
-                if [ "$i" -ge 0 ] && [ "$i" -le 9 ]; then
+                if [ "$i" -ge 0 ] && [ "$i" -le 17 ]; then
                     indices+=("$i")
                 fi
             done
         else
             # Single index
-            if [ "$part" -ge 0 ] && [ "$part" -le 9 ] 2>/dev/null; then
+            if [ "$part" -ge 0 ] && [ "$part" -le 17 ] 2>/dev/null; then
                 indices+=("$part")
             fi
         fi
